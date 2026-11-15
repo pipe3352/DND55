@@ -36,6 +36,9 @@ pub enum Vfx {
     Thunder,
     Psychic,
     Healing,
+    Light,
+    Buff,
+    Arcane,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -86,6 +89,26 @@ pub enum Event {
     Notice {
         text: String,
     },
+    /// A spell or area effect for every client to animate (projectile, explosion, cone, light...).
+    SpellVisual {
+        caster: EntityId,
+        name: String,
+        vfx: Vfx,
+        from: Cell,
+        targets: Vec<Cell>,
+        /// Area cells affected (for explosions/cones/lines).
+        area: Vec<Cell>,
+    },
+    /// Narration or NPC dialogue from a scripted event.
+    Dialogue {
+        speaker: String,
+        text: String,
+        choices: Vec<String>,
+    },
+    /// A sound requested by the DM or an event (client-side sound id).
+    Sound {
+        id: String,
+    },
 }
 
 impl Event {
@@ -97,6 +120,7 @@ impl Event {
             | Event::TurnStarted { entity, .. } => Some(*entity),
             Event::AttackVisual { target, .. } => Some(*target),
             Event::ReactionPrompt { reactor, .. } => Some(*reactor),
+            Event::SpellVisual { caster, .. } => Some(*caster),
             _ => None,
         }
     }

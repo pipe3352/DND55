@@ -53,11 +53,210 @@ pub enum Command {
         entity: EntityId,
         object: ObjectId,
     },
+    /// Cast a spell. `slot` is the spell slot level (None for cantrips). Targets/point depend on the spell.
+    CastSpell {
+        caster: EntityId,
+        spell: String,
+        slot: Option<u8>,
+        targets: Vec<EntityId>,
+        point: Option<Cell>,
+    },
+    /// Use a class feature (Rage, Second Wind, Flurry of Blows...).
+    UseFeature {
+        entity: EntityId,
+        feature: Feature,
+        target: Option<EntityId>,
+        amount: Option<i32>,
+    },
+    /// Response of an attacked creature: Shield / Uncanny Dodge / Deflect Attacks, or None to take the hit.
+    HitReaction {
+        choice: Option<crate::model::HitReaction>,
+    },
+    EndConcentration {
+        entity: EntityId,
+    },
+    /// Change prepared spells and known cantrips (outside combat).
+    PrepareSpells {
+        entity: EntityId,
+        cantrips: Vec<String>,
+        prepared: Vec<String>,
+    },
+    /// Advance one level (requires the XP threshold or a DM milestone).
+    LevelUp {
+        entity: EntityId,
+        choices: Box<LevelUpChoices>,
+    },
+    /// Spend one Hit Point Die (outside combat, e.g. during a Short Rest).
+    SpendHitDie {
+        entity: EntityId,
+    },
+    UseItem {
+        entity: EntityId,
+        item: String,
+        target: Option<EntityId>,
+    },
+    EquipItem {
+        entity: EntityId,
+        item: String,
+        equip: bool,
+    },
+    GiveItem {
+        from: EntityId,
+        to: EntityId,
+        item: String,
+        quantity: u32,
+    },
+    TakeFromContainer {
+        entity: EntityId,
+        object: ObjectId,
+        item: String,
+        quantity: u32,
+    },
+    /// Use a monster's save-based action (breath weapon...) on a point/targets.
+    MonsterAction {
+        monster: EntityId,
+        action: usize,
+        targets: Vec<EntityId>,
+        point: Option<Cell>,
+    },
+    DialogueChoice {
+        choice: usize,
+    },
+    AddDrawing {
+        room: RoomId,
+        drawing: Box<crate::model::Drawing>,
+    },
     Dm(DmCommand),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Feature {
+    Rage,
+    EndRage,
+    RecklessAttack,
+    SecondWind,
+    ActionSurge,
+    CunningDash,
+    CunningDisengage,
+    SteadyAim,
+    MartialArtsStrike,
+    FlurryOfBlows,
+    PatientDefense { focus: bool },
+    StepOfTheWind { focus: bool },
+    StunningStrike,
+    LayOnHands,
+    BardicInspiration,
+    UseInspiration,
+    DivineSparkHeal,
+    DivineSparkDamage,
+    InnateSorcery,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LevelUpChoices {
+    /// Ability Score Improvement feat at ASI levels: +2 to one or +1 to two.
+    pub asi: Vec<(dnd_rules::Ability, u8)>,
+    pub fighting_style: Option<dnd_rules::character::FightingStyle>,
+    pub expertise: Vec<dnd_rules::Skill>,
+    pub new_cantrips: Vec<String>,
+    pub new_prepared: Vec<String>,
+    pub new_masteries: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DmCommand {
+    /// Map editor: replace an object's properties (same id).
+    UpdateObject {
+        room: RoomId,
+        object: Box<dnd_world::map::MapObject>,
+    },
+    /// Paste/duplicate objects (new ids are assigned).
+    AddObjects {
+        room: RoomId,
+        objects: Vec<dnd_world::map::MapObject>,
+    },
+    RemoveObjects {
+        room: RoomId,
+        objects: Vec<ObjectId>,
+    },
+    MoveObjects {
+        room: RoomId,
+        objects: Vec<ObjectId>,
+        dx: i32,
+        dy: i32,
+    },
+    /// Move a layer up/down in the draw order.
+    MoveLayer {
+        room: RoomId,
+        layer: LayerKind,
+        up: bool,
+    },
+    SetRoomPos {
+        room: RoomId,
+        pos: (f32, f32),
+    },
+    DeleteRoom {
+        room: RoomId,
+    },
+    SetRoomAudio {
+        room: RoomId,
+        music: Option<String>,
+        ambience: Option<String>,
+    },
+    SaveCustomMonster {
+        template: Box<dnd_rules::monster::MonsterTemplate>,
+    },
+    DeleteCustomMonster {
+        id: String,
+    },
+    AwardXp {
+        entities: Vec<EntityId>,
+        xp: u32,
+    },
+    GrantLevel {
+        entity: EntityId,
+    },
+    Rest {
+        long: bool,
+    },
+    EndEffect {
+        effect: u64,
+    },
+    SetContainer {
+        room: RoomId,
+        object: ObjectId,
+        items: Vec<dnd_rules::items::ItemStack>,
+    },
+    GiveItemTo {
+        entity: EntityId,
+        item: String,
+        quantity: u32,
+    },
+    SetCurrency {
+        entity: EntityId,
+        currency: dnd_rules::items::Currency,
+    },
+    SaveScript {
+        script: Box<crate::scripts::ScriptedEvent>,
+    },
+    DeleteScript {
+        id: u64,
+    },
+    FireScript {
+        id: u64,
+        actor: Option<EntityId>,
+    },
+    ClearDrawings {
+        room: RoomId,
+        temporary_only: bool,
+    },
+    DeleteDrawing {
+        room: RoomId,
+        id: u64,
+    },
+    SetPlayersCanDraw {
+        allowed: bool,
+    },
     StartSession,
     ViewRoom {
         room: RoomId,
@@ -214,7 +413,12 @@ impl Command {
                 | DmCommand::SetAmbient { room, .. }
                 | DmCommand::SetLayer { room, .. }
                 | DmCommand::AddLight { room, .. }
-                | DmCommand::ClearLights { room },
+                | DmCommand::ClearLights { room }
+                | DmCommand::UpdateObject { room, .. }
+                | DmCommand::AddObjects { room, .. }
+                | DmCommand::RemoveObjects { room, .. }
+                | DmCommand::MoveObjects { room, .. }
+                | DmCommand::MoveLayer { room, .. },
             ) => Some(*room),
             _ => None,
         }

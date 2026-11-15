@@ -73,6 +73,8 @@ pub struct AttackModifiers {
     pub extra_damage_on_hit: Vec<(String, DamagePart)>,
     /// Great Weapon Fighting: treat 1s and 2s on weapon damage dice as 3.
     pub min_damage_die: u32,
+    /// Die added only after the roll misses (Bardic Inspiration: "when the creature fails a D20 Test").
+    pub on_miss_bonus: Option<(String, DiceExpr)>,
 }
 
 impl AttackModifiers {
@@ -102,6 +104,9 @@ pub struct AttackResult {
     pub disadvantage_reasons: Vec<String>,
     /// Mastery effect that triggered, for the session layer to apply (Sap/Vex need tracking over time).
     pub mastery_triggered: Option<Mastery>,
+    /// Whether `AttackModifiers::on_miss_bonus` was rolled.
+    #[serde(default)]
+    pub on_miss_bonus_used: bool,
 }
 
 impl AttackResult {
@@ -186,6 +191,17 @@ pub fn resolve_attack(
     } else {
         d20.total >= target_ac || (natural_crit && crit_on < 20)
     };
+    let mut hit = hit;
+    let mut on_miss_bonus_used = false;
+    if !hit && !d20.is_natural_1()
+        && let Some((_, dice)) = &mods.on_miss_bonus
+    {
+        let r = dice.roll(rng, false).total;
+        d20.total += r;
+        d20.modifier += r;
+        on_miss_bonus_used = true;
+        hit = d20.total >= target_ac;
+    }
     let critical = hit && (natural_crit || mods.hit_is_auto_critical);
 
     let mut raw: Vec<(String, DamageType, Option<DiceRoll>, i32)> = Vec::new();
@@ -253,6 +269,7 @@ pub fn resolve_attack(
         advantage_reasons: mods.sources.advantage.clone(),
         disadvantage_reasons: mods.sources.disadvantage.clone(),
         mastery_triggered,
+        on_miss_bonus_used,
     }
 }
 

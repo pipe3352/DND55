@@ -8,6 +8,11 @@
 pub mod assets;
 pub mod command;
 pub mod demo;
+pub mod effects;
+mod features;
+mod items;
+pub mod scripts;
+mod spellcasting;
 pub mod event;
 pub mod hexbytes;
 pub mod model;

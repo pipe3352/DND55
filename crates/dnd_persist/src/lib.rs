@@ -131,6 +131,13 @@ pub fn migrate_state(mut value: serde_json::Value) -> Result<serde_json::Value> 
             obj.insert("format_version".into(), 1.into());
         }
     }
+    let v = value.get("format_version").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+    if v < 2 {
+        // Format 2 added effects, scripts, resources, drawings, containers, inventory: all default to empty.
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert("format_version".into(), 2.into());
+        }
+    }
     Ok(value)
 }
 
@@ -616,7 +623,7 @@ mod tests {
         v.as_object_mut().unwrap().remove("settings");
         v["format_version"] = 0.into();
         let migrated: GameState = serde_json::from_value(migrate_state(v).unwrap()).unwrap();
-        assert_eq!(migrated.format_version, 1);
+        assert_eq!(migrated.format_version, STATE_FORMAT_VERSION);
         let mut v = serde_json::to_value(&s.state).unwrap();
         v["format_version"] = 99.into();
         assert!(matches!(migrate_state(v), Err(PersistError::TooNew(99))));

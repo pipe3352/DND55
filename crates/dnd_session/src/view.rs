@@ -52,6 +52,29 @@ pub struct CreatureView {
     pub speed_ft: i32,
     pub death_saves: (u8, u8),
     pub is_monster: bool,
+    /// Spell being concentrated on (visible to everyone: casters' concentration is evident).
+    pub concentration: Option<String>,
+    pub raging: bool,
+    /// Your own creature's expended resources (None for others).
+    pub resources: Option<Resources>,
+    pub status: Option<CombatStatus>,
+    /// Effective AC including Mage Armor/Shield (yours or DM only).
+    pub effective_ac: Option<i32>,
+    /// Monster template id (DM only) and save actions (DM only).
+    pub template: Option<String>,
+    pub save_actions: Vec<dnd_rules::monster::SaveAction>,
+    pub attacks_per_action: u8,
+    pub creature_type: String,
+}
+
+/// A visible ongoing effect.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EffectView {
+    pub id: u64,
+    pub source: EntityId,
+    pub label: String,
+    pub targets: Vec<EntityId>,
+    pub concentration: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -71,6 +94,15 @@ pub struct RoomView {
     pub lights: Vec<PointLight>,
     pub entry: Cell,
     pub is_party_room: bool,
+    #[serde(default)]
+    pub drawings: Vec<Drawing>,
+    /// Contents of opened containers (the DM sees all containers).
+    #[serde(default)]
+    pub containers: Vec<(dnd_world::ObjectId, Vec<dnd_rules::items::ItemStack>)>,
+    #[serde(default)]
+    pub music: Option<String>,
+    #[serde(default)]
+    pub ambience: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -91,6 +123,9 @@ pub struct CombatView {
     /// A reaction you must decide on.
     pub your_reaction: Option<PendingReaction>,
     pub waiting_on_reaction: bool,
+    /// An attack hit you (or a creature you control) and you may react.
+    #[serde(default)]
+    pub your_hit_reaction: Option<PendingHit>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -116,6 +151,9 @@ pub struct DmExtras {
     pub party_room: RoomId,
     pub bestiary: Vec<MonsterSummary>,
     pub exploration_movement: bool,
+    pub custom_monsters: Vec<dnd_rules::monster::MonsterTemplate>,
+    pub scripts: Vec<crate::scripts::ScriptedEvent>,
+    pub players_can_draw: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -131,6 +169,10 @@ pub struct ClientView {
     pub graph: WorldGraph,
     pub log: Vec<String>,
     pub dm: Option<DmExtras>,
+    pub effects: Vec<EffectView>,
+    /// NPC dialogue waiting for a choice.
+    pub dialogue: Option<(String, String, Vec<String>)>,
+    pub players_can_draw: bool,
 }
 
 pub fn audience_includes(a: Audience, who: Principal) -> bool {
@@ -198,11 +240,11 @@ impl Session {
             let (visible, lights_out) = match who {
                 Principal::Dm => (
                     None,
-                    dnd_world::vision::collect_lights(&r.map, &r.extra_lights),
+                    dnd_world::vision::collect_lights(&r.map, &self.dynamic_lights(room_id)),
                 ),
                 Principal::Player(_) => {
                     let vis = self.visibility(room_id, &self.viewers_for(who), &lights);
-                    let ls = dnd_world::vision::collect_lights(&r.map, &r.extra_lights)
+                    let ls = dnd_world::vision::collect_lights(&r.map, &self.dynamic_lights(room_id))
                         .into_iter()
                         .filter(|l| {
                             vis.get((l.cell.1 * r.map.width + l.cell.0) as usize)
@@ -237,6 +279,15 @@ impl Session {
                     (0, 0)
                 },
                 is_party_room: room_id == s.party_room,
+                drawings: r.drawings.iter().filter(|d| who == Principal::Dm || d.visibility == DrawVisibility::All).cloned().collect(),
+                containers: r
+                    .containers
+                    .iter()
+                    .filter(|(id, _)| who == Principal::Dm || r.map.object(**id).is_some_and(|o| o.open && !o.hidden))
+                    .map(|(id, items)| (*id, items.clone()))
+                    .collect(),
+                music: r.music.clone(),
+                ambience: r.ambience.clone(),
             }
         });
 
@@ -281,6 +332,18 @@ impl Session {
                     speed_ft: c.effective_speed(),
                     death_saves: (c.hp.death_saves.successes, c.hp.death_saves.failures),
                     is_monster: matches!(c.kind, CreatureKind::Monster { .. }),
+                    concentration: c.concentration.clone(),
+                    raging: c.status.raging,
+                    resources: mine.then(|| c.resources.clone()),
+                    status: mine.then(|| c.status.clone()),
+                    effective_ac: mine.then(|| self.effective_ac(c)),
+                    template: match (&c.kind, who) {
+                        (CreatureKind::Monster { template_id }, Principal::Dm) => Some(template_id.clone()),
+                        _ => None,
+                    },
+                    save_actions: if who == Principal::Dm { c.save_actions.clone() } else { vec![] },
+                    attacks_per_action: c.attacks_per_action,
+                    creature_type: if full || mine { c.creature_type.clone() } else { String::new() },
                 }
             })
             .collect();
@@ -331,7 +394,8 @@ impl Session {
                     active: active_visible.then_some(cb.turn.entity),
                     turn: your_turn.then(|| cb.turn.clone()),
                     your_reaction,
-                    waiting_on_reaction: cb.pending.is_some(),
+                    waiting_on_reaction: cb.pending.is_some() || cb.pending_hit.is_some(),
+                    your_hit_reaction: cb.pending_hit.as_ref().filter(|p| s.creatures.get(&p.target).is_some_and(|t| Self::controls(who, t) && (who != Principal::Dm || t.controller == Controller::Dm))).cloned(),
                 }
             });
 
@@ -391,7 +455,17 @@ impl Session {
                 })
                 .collect(),
             exploration_movement: s.settings.exploration_movement,
+            custom_monsters: s.custom_monsters.clone(),
+            scripts: s.scripts.clone(),
+            players_can_draw: s.settings.players_can_draw,
         });
+        let effects = s
+            .effects
+            .iter()
+            .filter(|e| who == Principal::Dm || e.targets().iter().chain(std::iter::once(&e.source)).any(|t| visible_ids.contains(t)))
+            .map(|e| EffectView { id: e.id, source: e.source, label: e.label(), targets: e.targets(), concentration: e.concentration })
+            .collect();
+        let dialogue = s.pending_dialogue.as_ref().map(|d| (d.speaker.clone(), d.text.clone(), d.choices.iter().map(|c| c.text.clone()).collect()));
 
         ClientView {
             you: who,
@@ -405,6 +479,9 @@ impl Session {
             graph,
             log,
             dm,
+            effects,
+            dialogue,
+            players_can_draw: s.settings.players_can_draw,
         }
     }
 }
