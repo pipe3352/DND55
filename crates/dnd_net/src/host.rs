@@ -263,12 +263,9 @@ async fn game_loop(
                 }
                 Some(Inbound::Msg { conn, msg }) => g.handle(conn, msg),
                 Some(Inbound::Gone { conn }) => {
-                    if let Some(c) = g.conns.remove(&conn)
-                        && let Principal::Player(p) = c.principal
-                            && !g.conns.values().any(|o| o.principal == c.principal) {
-                                g.session.set_connected(p, false);
-                                g.broadcast(&[]);
-                            }
+                    if g.drop_conn(conn) {
+                        g.broadcast(&[]);
+                    }
                 }
             }
         }
@@ -392,12 +389,26 @@ impl Game {
         }
     }
 
+    /// Removes a connection. Returns true if a player thereby became disconnected (views must update).
+    fn drop_conn(&mut self, conn: ConnId) -> bool {
+        let Some(c) = self.conns.remove(&conn) else { return false };
+        if let Principal::Player(p) = c.principal
+            && !self.conns.values().any(|o| o.principal == c.principal)
+        {
+            self.session.set_connected(p, false);
+            return true;
+        }
+        false
+    }
+
     fn send(&mut self, conn: ConnId, msg: ServerMsg) {
         if let Some(c) = self.conns.get(&conn)
             && c.tx.try_send(msg).is_err()
         {
             // Slow or dead consumer: drop it; it can reconnect with its resume token.
-            self.conns.remove(&conn);
+            if self.drop_conn(conn) {
+                self.broadcast(&[]);
+            }
         }
     }
 
@@ -419,8 +430,13 @@ impl Game {
                 dead.push(*id);
             }
         }
+        let mut changed = false;
         for id in dead {
-            self.conns.remove(&id);
+            changed |= self.drop_conn(id);
+        }
+        if changed {
+            // Tell everyone else that a player dropped (bounded: dead connections are gone now).
+            self.broadcast(&[]);
         }
     }
 }
