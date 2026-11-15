@@ -85,7 +85,7 @@ pub fn area_cells(
                 // "Cube originating from you": the cube's face touches the caster, extending toward the point.
                 let (dx, dy) = (point.0 - origin.0, point.1 - origin.1);
                 let (sx, sy) = if dx.abs() >= dy.abs() {
-                    (dx.signum().max(-1).min(1), 0)
+                    (dx.signum(), 0)
                 } else {
                     (0, dy.signum())
                 };
@@ -231,10 +231,9 @@ impl Session {
                 .effects
                 .iter()
                 .any(|e| e.source == source && e.concentration)
+                && let Some(c) = self.state.creatures.get_mut(&source)
             {
-                if let Some(c) = self.state.creatures.get_mut(&source) {
-                    c.concentration = None;
-                }
+                c.concentration = None;
             }
         }
     }
@@ -1302,9 +1301,8 @@ impl Session {
             let (ok, _) = self.saving_throw(t, save, dc, &spell.name);
             if let Some(r) = &roll {
                 let base = if ok {
-                    if half {
-                        r.total / 2
-                    } else if spell.is_cantrip() && c.has_feature("Potent Cantrip") {
+                    // Half on a success, or a cantrip boosted by Potent Cantrip.
+                    if half || (spell.is_cantrip() && c.has_feature("Potent Cantrip")) {
                         r.total / 2
                     } else {
                         0

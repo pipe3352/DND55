@@ -2,10 +2,10 @@
 fn main() {
     let mut bind = format!("0.0.0.0:{}", dnd_relay::DEFAULT_PORT);
     let args: Vec<String> = std::env::args().collect();
-    if let Some(i) = args.iter().position(|a| a == "--bind") {
-        if let Some(v) = args.get(i + 1) {
-            bind = v.clone();
-        }
+    if let Some(i) = args.iter().position(|a| a == "--bind")
+        && let Some(v) = args.get(i + 1)
+    {
+        bind = v.clone();
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!(

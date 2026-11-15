@@ -12,18 +12,17 @@ pub const APP_DIR: &str = "DND55";
 
 /// Folder that holds `campaigns.db`, `settings.json` and `logs\`.
 pub fn data_dir() -> PathBuf {
-    if let Ok(p) = std::env::var("DND55_DATA_DIR") {
-        if !p.is_empty() {
-            return PathBuf::from(p);
-        }
+    if let Ok(p) = std::env::var("DND55_DATA_DIR")
+        && !p.is_empty()
+    {
+        return PathBuf::from(p);
     }
     if let Some(exe_dir) = std::env::current_exe()
         .ok()
         .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+        && exe_dir.join("portable.txt").exists()
     {
-        if exe_dir.join("portable.txt").exists() {
-            return exe_dir.join("data");
-        }
+        return exe_dir.join("data");
     }
     #[cfg(windows)]
     if let Ok(appdata) = std::env::var("APPDATA") {

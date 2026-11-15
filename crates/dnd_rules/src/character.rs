@@ -1178,6 +1178,6 @@ mod tests {
         });
         // Sorcerer d6: 6+2 +2×(4+2) + Dwarven Toughness 3 + Draconic 3
         assert_eq!(s.max_hp(), 8 + 12 + 3 + 3);
-        assert_eq!(s.armor_class(), 10 + 1 + 0);
+        assert_eq!(s.armor_class(), (10 + 1));
     }
 }

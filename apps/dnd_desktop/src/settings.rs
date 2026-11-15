@@ -193,10 +193,8 @@ pub fn apply_settings(
     } else {
         Lang::En
     };
-    if !initial {
-        if let Err(e) = settings.save() {
-            warn!("could not save settings: {e}");
-        }
+    if !initial && let Err(e) = settings.save() {
+        warn!("could not save settings: {e}");
     }
 }
 

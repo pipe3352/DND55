@@ -36,11 +36,11 @@ use state::*;
 fn main() {
     platform::install_crash_handler();
     let game_settings = settings::GameSettings::load();
-    if let Some(backend) = game_settings.backend.env_value() {
-        if std::env::var("WGPU_BACKEND").is_err() {
-            // SAFETY: called before any other thread exists.
-            unsafe { std::env::set_var("WGPU_BACKEND", backend) };
-        }
+    if let Some(backend) = game_settings.backend.env_value()
+        && std::env::var("WGPU_BACKEND").is_err()
+    {
+        // SAFETY: called before any other thread exists.
+        unsafe { std::env::set_var("WGPU_BACKEND", backend) };
     }
     let (w, h) = game_settings.resolution;
     let audio_ok = game_settings.audio_enabled && platform::audio_available();

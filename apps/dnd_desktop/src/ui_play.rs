@@ -31,7 +31,7 @@ pub fn acting_character(g: &GameUi, view: &ClientView) -> Option<(EntityId, Char
     view.my_characters.first().cloned()
 }
 
-fn creature<'a>(view: &'a ClientView, id: EntityId) -> Option<&'a CreatureView> {
+fn creature(view: &ClientView, id: EntityId) -> Option<&CreatureView> {
     view.creatures.iter().find(|c| c.id == id)
 }
 
@@ -1397,18 +1397,17 @@ pub fn inventory_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) 
             ));
             theme::heading(ui, g.i18n.t("inv.equipped"));
             ui.horizontal_wrapped(|ui| {
-                if let Some(a) = &sheet.body_armor {
-                    if ui
+                if let Some(a) = &sheet.body_armor
+                    && ui
                         .button(format!("🛡 {} ✖", a.replace('_', " ")))
                         .on_hover_text(g.i18n.t("inv.unequip"))
                         .clicked()
-                    {
-                        g.net.cmd(Command::EquipItem {
-                            entity: id,
-                            item: a.clone(),
-                            equip: false,
-                        });
-                    }
+                {
+                    g.net.cmd(Command::EquipItem {
+                        entity: id,
+                        item: a.clone(),
+                        equip: false,
+                    });
                 }
                 if sheet.shield
                     && ui
@@ -1486,14 +1485,14 @@ pub fn inventory_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) 
                                 });
                             }
                         }
-                        ItemKind::Weapon(_) | ItemKind::Armor(_) => {
-                            if ui.button(g.i18n.t("inv.equip")).clicked() {
-                                g.net.cmd(Command::EquipItem {
-                                    entity: id,
-                                    item: it.id.clone(),
-                                    equip: true,
-                                });
-                            }
+                        ItemKind::Weapon(_) | ItemKind::Armor(_)
+                            if ui.button(g.i18n.t("inv.equip")).clicked() =>
+                        {
+                            g.net.cmd(Command::EquipItem {
+                                entity: id,
+                                item: it.id.clone(),
+                                equip: true,
+                            });
                         }
                         _ => {}
                     }

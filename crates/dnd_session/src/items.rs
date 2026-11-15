@@ -59,10 +59,10 @@ impl Session {
                         return rules("bonus action already used");
                     }
                 }
-                if let Some(cb) = self.state.combat.as_mut() {
-                    if cb.turn.entity == entity {
-                        cb.turn.bonus_action_used = true;
-                    }
+                if let Some(cb) = self.state.combat.as_mut()
+                    && cb.turn.entity == entity
+                {
+                    cb.turn.bonus_action_used = true;
                 }
                 let dice = stack.healing_dice().unwrap_or_default();
                 let r = dice.roll(self.rng.as_mut(), false);
@@ -167,10 +167,10 @@ impl Session {
                     sheet.shield = true;
                 }
                 ItemKind::Armor(a) => {
-                    if let Some(old) = sheet.body_armor.replace(a) {
-                        if let Some(it) = items::catalog_item(&old) {
-                            items::add_to(&mut sheet.inventory, it);
-                        }
+                    if let Some(old) = sheet.body_armor.replace(a)
+                        && let Some(it) = items::catalog_item(&old)
+                    {
+                        items::add_to(&mut sheet.inventory, it);
                     }
                 }
                 _ => return rules("only weapons, armor and shields can be equipped"),

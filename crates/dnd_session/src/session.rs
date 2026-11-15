@@ -1291,11 +1291,11 @@ impl Session {
                     );
                 }
             }
-            Some(dnd_rules::equipment::Mastery::Push) => {
-                if self.state.creatures[&target].size as u8 <= dnd_rules::content::Size::Large as u8
-                {
-                    self.push_away(attacker, target, 10);
-                }
+            Some(dnd_rules::equipment::Mastery::Push)
+                if self.state.creatures[&target].size as u8
+                    <= dnd_rules::content::Size::Large as u8 =>
+            {
+                self.push_away(attacker, target, 10);
             }
             _ => {}
         }

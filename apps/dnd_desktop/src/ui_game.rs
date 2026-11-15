@@ -937,62 +937,62 @@ fn overlays(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
     } else if view.players_can_draw || g.ui.tool == Tool::Draw {
         player_draw_toggle(ctx, g, view);
     }
-    if let Some(c) = &view.combat {
-        if let Some(p) = &c.your_reaction {
-            let reactor = view.creatures.iter().find(|x| x.id == p.reactor).cloned();
-            let mover = view
-                .creatures
-                .iter()
-                .find(|x| x.id == p.mover)
-                .map(|m| m.name.clone())
-                .unwrap_or_default();
-            egui::Window::new(g.i18n.t("reaction.title"))
-                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-                .collapsible(false)
-                .show(ctx, |ui| {
-                    ui.label(format!("{mover} {}", g.i18n.t("reaction.leaving")));
-                    if let Some(r) = &reactor {
-                        let melee: Vec<(usize, String)> = r
-                            .attacks
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, a)| a.kind == dnd_rules::equipment::WeaponKind::Melee)
-                            .map(|(i, a)| (i, a.name.clone()))
-                            .collect();
-                        if !melee.iter().any(|(i, _)| *i == g.ui.reaction_attack) {
-                            g.ui.reaction_attack = melee.first().map(|m| m.0).unwrap_or(0);
-                        }
-                        egui::ComboBox::from_id_salt("oa")
-                            .selected_text(
-                                melee
-                                    .iter()
-                                    .find(|m| m.0 == g.ui.reaction_attack)
-                                    .map(|m| m.1.clone())
-                                    .unwrap_or_default(),
-                            )
-                            .show_ui(ui, |ui| {
-                                for (i, n) in &melee {
-                                    ui.selectable_value(&mut g.ui.reaction_attack, *i, n);
-                                }
-                            });
+    if let Some(c) = &view.combat
+        && let Some(p) = &c.your_reaction
+    {
+        let reactor = view.creatures.iter().find(|x| x.id == p.reactor).cloned();
+        let mover = view
+            .creatures
+            .iter()
+            .find(|x| x.id == p.mover)
+            .map(|m| m.name.clone())
+            .unwrap_or_default();
+        egui::Window::new(g.i18n.t("reaction.title"))
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                ui.label(format!("{mover} {}", g.i18n.t("reaction.leaving")));
+                if let Some(r) = &reactor {
+                    let melee: Vec<(usize, String)> = r
+                        .attacks
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, a)| a.kind == dnd_rules::equipment::WeaponKind::Melee)
+                        .map(|(i, a)| (i, a.name.clone()))
+                        .collect();
+                    if !melee.iter().any(|(i, _)| *i == g.ui.reaction_attack) {
+                        g.ui.reaction_attack = melee.first().map(|m| m.0).unwrap_or(0);
                     }
-                    ui.horizontal(|ui| {
-                        if ui.button(g.i18n.t("reaction.attack")).clicked() {
-                            let attack = g.ui.reaction_attack;
-                            g.net.cmd(Command::ReactionDecision {
-                                accept: true,
-                                attack,
-                            });
-                        }
-                        if ui.button(g.i18n.t("reaction.decline")).clicked() {
-                            g.net.cmd(Command::ReactionDecision {
-                                accept: false,
-                                attack: 0,
-                            });
-                        }
-                    });
+                    egui::ComboBox::from_id_salt("oa")
+                        .selected_text(
+                            melee
+                                .iter()
+                                .find(|m| m.0 == g.ui.reaction_attack)
+                                .map(|m| m.1.clone())
+                                .unwrap_or_default(),
+                        )
+                        .show_ui(ui, |ui| {
+                            for (i, n) in &melee {
+                                ui.selectable_value(&mut g.ui.reaction_attack, *i, n);
+                            }
+                        });
+                }
+                ui.horizontal(|ui| {
+                    if ui.button(g.i18n.t("reaction.attack")).clicked() {
+                        let attack = g.ui.reaction_attack;
+                        g.net.cmd(Command::ReactionDecision {
+                            accept: true,
+                            attack,
+                        });
+                    }
+                    if ui.button(g.i18n.t("reaction.decline")).clicked() {
+                        g.net.cmd(Command::ReactionDecision {
+                            accept: false,
+                            attack: 0,
+                        });
+                    }
                 });
-        }
+            });
     }
     // Character creation inside the game (player without a character).
     if g.ui.show_creator && !g.net.is_dm() {
