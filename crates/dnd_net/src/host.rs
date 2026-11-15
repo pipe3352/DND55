@@ -60,9 +60,19 @@ impl HostHandle {
 type ConnId = u64;
 
 enum Inbound {
-    Hello { conn: ConnId, hello: Hello, tx: mpsc::Sender<ServerMsg>, reply: oneshot::Sender<Result<(), String>> },
-    Msg { conn: ConnId, msg: ClientMsg },
-    Gone { conn: ConnId },
+    Hello {
+        conn: ConnId,
+        hello: Hello,
+        tx: mpsc::Sender<ServerMsg>,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    Msg {
+        conn: ConnId,
+        msg: ClientMsg,
+    },
+    Gone {
+        conn: ConnId,
+    },
 }
 
 struct Conn {
@@ -72,19 +82,39 @@ struct Conn {
 }
 
 /// Starts the host on the current Tokio runtime.
-pub async fn start(session: Session, config: HostConfig, save_hook: Option<SaveHook>) -> std::io::Result<HostHandle> {
+pub async fn start(
+    session: Session,
+    config: HostConfig,
+    save_hook: Option<SaveHook>,
+) -> std::io::Result<HostHandle> {
     let listener = TcpListener::bind(config.bind).await?;
     let local_addr = listener.local_addr()?;
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let (in_tx, in_rx) = mpsc::channel::<Inbound>(1024);
 
-    tokio::spawn(game_loop(session, config.clone(), save_hook, in_rx, shutdown_rx.clone()));
+    tokio::spawn(game_loop(
+        session,
+        config.clone(),
+        save_hook,
+        in_rx,
+        shutdown_rx.clone(),
+    ));
     tokio::spawn(accept_loop(listener, in_tx, config.rate_limit, shutdown_rx));
 
-    Ok(HostHandle { local_addr, session_code: config.session_code, dm_secret: config.dm_secret, shutdown: shutdown_tx })
+    Ok(HostHandle {
+        local_addr,
+        session_code: config.session_code,
+        dm_secret: config.dm_secret,
+        shutdown: shutdown_tx,
+    })
 }
 
-async fn accept_loop(listener: TcpListener, in_tx: mpsc::Sender<Inbound>, rate: u32, mut shutdown: watch::Receiver<bool>) {
+async fn accept_loop(
+    listener: TcpListener,
+    in_tx: mpsc::Sender<Inbound>,
+    rate: u32,
+    mut shutdown: watch::Receiver<bool>,
+) {
     let mut next: ConnId = 1;
     loop {
         tokio::select! {
@@ -100,19 +130,45 @@ async fn accept_loop(listener: TcpListener, in_tx: mpsc::Sender<Inbound>, rate: 
     }
 }
 
-async fn connection(conn: ConnId, stream: tokio::net::TcpStream, in_tx: mpsc::Sender<Inbound>, rate: u32, mut shutdown: watch::Receiver<bool>) {
+async fn connection(
+    conn: ConnId,
+    stream: tokio::net::TcpStream,
+    in_tx: mpsc::Sender<Inbound>,
+    rate: u32,
+    mut shutdown: watch::Receiver<bool>,
+) {
     let mut wire = protocol::framed(stream);
     // The first message must be Hello, within 10 seconds.
-    let hello = match tokio::time::timeout(Duration::from_secs(10), protocol::recv::<ClientMsg>(&mut wire)).await {
+    let hello = match tokio::time::timeout(
+        Duration::from_secs(10),
+        protocol::recv::<ClientMsg>(&mut wire),
+    )
+    .await
+    {
         Ok(Ok(ClientMsg::Hello(h))) => h,
         _ => {
-            let _ = protocol::send(&mut wire, &ServerMsg::Rejected { reason: "expected Hello".into() }).await;
+            let _ = protocol::send(
+                &mut wire,
+                &ServerMsg::Rejected {
+                    reason: "expected Hello".into(),
+                },
+            )
+            .await;
             return;
         }
     };
     let (tx, mut rx) = mpsc::channel::<ServerMsg>(512);
     let (reply_tx, reply_rx) = oneshot::channel();
-    if in_tx.send(Inbound::Hello { conn, hello, tx, reply: reply_tx }).await.is_err() {
+    if in_tx
+        .send(Inbound::Hello {
+            conn,
+            hello,
+            tx,
+            reply: reply_tx,
+        })
+        .await
+        .is_err()
+    {
         return;
     }
     match reply_rx.await {
@@ -166,9 +222,24 @@ struct Game {
     dirty_since_autosave: bool,
 }
 
-async fn game_loop(session: Session, config: HostConfig, save_hook: Option<SaveHook>, mut in_rx: mpsc::Receiver<Inbound>, mut shutdown: watch::Receiver<bool>) {
-    let mut g = Game { session, config: config.clone(), save_hook, conns: HashMap::new(), tokens: HashMap::new(), dirty_since_autosave: false };
-    let period = config.autosave_every.unwrap_or(Duration::from_secs(3600 * 24 * 365));
+async fn game_loop(
+    session: Session,
+    config: HostConfig,
+    save_hook: Option<SaveHook>,
+    mut in_rx: mpsc::Receiver<Inbound>,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    let mut g = Game {
+        session,
+        config: config.clone(),
+        save_hook,
+        conns: HashMap::new(),
+        tokens: HashMap::new(),
+        dirty_since_autosave: false,
+    };
+    let period = config
+        .autosave_every
+        .unwrap_or(Duration::from_secs(3600 * 24 * 365));
     let mut autosave = tokio::time::interval_at(Instant::now() + period, period);
     loop {
         tokio::select! {
@@ -192,14 +263,12 @@ async fn game_loop(session: Session, config: HostConfig, save_hook: Option<SaveH
                 }
                 Some(Inbound::Msg { conn, msg }) => g.handle(conn, msg),
                 Some(Inbound::Gone { conn }) => {
-                    if let Some(c) = g.conns.remove(&conn) {
-                        if let Principal::Player(p) = c.principal {
-                            if !g.conns.values().any(|o| o.principal == c.principal) {
+                    if let Some(c) = g.conns.remove(&conn)
+                        && let Principal::Player(p) = c.principal
+                            && !g.conns.values().any(|o| o.principal == c.principal) {
                                 g.session.set_connected(p, false);
                                 g.broadcast(&[]);
                             }
-                        }
-                    }
                 }
             }
         }
@@ -209,21 +278,33 @@ async fn game_loop(session: Session, config: HostConfig, save_hook: Option<SaveH
 impl Game {
     fn admit(&mut self, h: &Hello) -> Result<(Principal, String), String> {
         if h.protocol != PROTOCOL_VERSION {
-            return Err(format!("version mismatch: host protocol {PROTOCOL_VERSION}, client protocol {}", h.protocol));
+            return Err(format!(
+                "version mismatch: host protocol {PROTOCOL_VERSION}, client protocol {}",
+                h.protocol
+            ));
         }
-        if !h.session_code.trim().eq_ignore_ascii_case(&self.config.session_code) {
+        if !h
+            .session_code
+            .trim()
+            .eq_ignore_ascii_case(&self.config.session_code)
+        {
             return Err("wrong session code".into());
         }
         if let Some(secret) = &h.dm_secret {
-            return if *secret == self.config.dm_secret { Ok((Principal::Dm, secret.clone())) } else { Err("invalid DM credentials".into()) };
+            return if *secret == self.config.dm_secret {
+                Ok((Principal::Dm, secret.clone()))
+            } else {
+                Err("invalid DM credentials".into())
+            };
         }
-        if let Some(tok) = &h.resume_token {
-            if let Some(p) = self.tokens.get(tok).copied() {
-                // Reclaim the seat: drop any stale connection for this player.
-                self.conns.retain(|_, c| c.principal != Principal::Player(p));
-                self.session.set_connected(p, true);
-                return Ok((Principal::Player(p), tok.clone()));
-            }
+        if let Some(tok) = &h.resume_token
+            && let Some(p) = self.tokens.get(tok).copied()
+        {
+            // Reclaim the seat: drop any stale connection for this player.
+            self.conns
+                .retain(|_, c| c.principal != Principal::Player(p));
+            self.session.set_connected(p, true);
+            return Ok((Principal::Player(p), tok.clone()));
         }
         let name = h.name.trim();
         if name.is_empty() || name.chars().count() > 32 || name.chars().any(|c| c.is_control()) {
@@ -239,7 +320,9 @@ impl Game {
     }
 
     fn handle(&mut self, conn: ConnId, msg: ClientMsg) {
-        let Some(principal) = self.conns.get(&conn).map(|c| c.principal) else { return };
+        let Some(principal) = self.conns.get(&conn).map(|c| c.principal) else {
+            return;
+        };
         match msg {
             ClientMsg::Hello(_) => {}
             ClientMsg::Ping { t } => self.send(conn, ServerMsg::Pong { t }),
@@ -252,7 +335,9 @@ impl Game {
             ClientMsg::Cmd { seq, command } => match self.session.apply(principal, command) {
                 Ok(events) => {
                     self.dirty_since_autosave = true;
-                    let travelled = events.iter().any(|r| matches!(r.event, dnd_session::event::Event::RoomChanged { .. }));
+                    let travelled = events
+                        .iter()
+                        .any(|r| matches!(r.event, dnd_session::event::Event::RoomChanged { .. }));
                     self.send(conn, ServerMsg::CmdResult { seq, error: None });
                     self.broadcast(&events);
                     if travelled {
@@ -260,11 +345,23 @@ impl Game {
                         self.autosave();
                     }
                 }
-                Err(e) => self.send(conn, ServerMsg::CmdResult { seq, error: Some(e.to_string()) }),
+                Err(e) => self.send(
+                    conn,
+                    ServerMsg::CmdResult {
+                        seq,
+                        error: Some(e.to_string()),
+                    },
+                ),
             },
             ClientMsg::Host { seq, request } => {
                 if principal != Principal::Dm {
-                    self.send(conn, ServerMsg::CmdResult { seq, error: Some("not authorized".into()) });
+                    self.send(
+                        conn,
+                        ServerMsg::CmdResult {
+                            seq,
+                            error: Some("not authorized".into()),
+                        },
+                    );
                     return;
                 }
                 match request {
@@ -288,19 +385,19 @@ impl Game {
         if !self.dirty_since_autosave {
             return;
         }
-        if let Some(hook) = self.save_hook.as_mut() {
-            if hook(&self.session, SaveTrigger::Auto).is_ok() {
-                self.dirty_since_autosave = false;
-            }
+        if let Some(hook) = self.save_hook.as_mut()
+            && hook(&self.session, SaveTrigger::Auto).is_ok()
+        {
+            self.dirty_since_autosave = false;
         }
     }
 
     fn send(&mut self, conn: ConnId, msg: ServerMsg) {
-        if let Some(c) = self.conns.get(&conn) {
-            if c.tx.try_send(msg).is_err() {
-                // Slow or dead consumer: drop it; it can reconnect with its resume token.
-                self.conns.remove(&conn);
-            }
+        if let Some(c) = self.conns.get(&conn)
+            && c.tx.try_send(msg).is_err()
+        {
+            // Slow or dead consumer: drop it; it can reconnect with its resume token.
+            self.conns.remove(&conn);
         }
     }
 

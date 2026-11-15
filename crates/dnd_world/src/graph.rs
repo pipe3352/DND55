@@ -45,7 +45,11 @@ impl RoomEdge {
     }
     /// Arrival cell when travelling from `origin` across this edge.
     pub fn arrival_from(&self, origin: RoomId) -> Option<Cell> {
-        if origin == self.from { self.arrival } else { self.return_arrival }
+        if origin == self.from {
+            self.arrival
+        } else {
+            self.return_arrival
+        }
     }
 }
 
@@ -128,16 +132,27 @@ impl WorldGraph {
 
     /// Edges that can be travelled from `room` (respecting one-way direction).
     pub fn exits(&self, room: RoomId) -> impl Iterator<Item = &RoomEdge> {
-        self.edges.iter().filter(move |e| e.from == room || (!e.one_way && e.to == room))
+        self.edges
+            .iter()
+            .filter(move |e| e.from == room || (!e.one_way && e.to == room))
     }
 
     /// Destination when leaving `room` through `edge`.
     pub fn other_end(edge: &RoomEdge, room: RoomId) -> RoomId {
-        if edge.from == room { edge.to } else { edge.from }
+        if edge.from == room {
+            edge.to
+        } else {
+            edge.from
+        }
     }
 
     /// Validates a transition. With `dm_override` the DM may ignore locks or move to any room.
-    pub fn validate_travel(&self, from: RoomId, to: RoomId, dm_override: bool) -> Result<Option<&RoomEdge>, TravelError> {
+    pub fn validate_travel(
+        &self,
+        from: RoomId,
+        to: RoomId,
+        dm_override: bool,
+    ) -> Result<Option<&RoomEdge>, TravelError> {
         if !self.nodes.contains_key(&from) || !self.nodes.contains_key(&to) {
             return Err(TravelError::UnknownRoom);
         }
@@ -179,7 +194,8 @@ impl WorldGraph {
             n.dm_notes.clear();
         }
         let keep: BTreeSet<RoomId> = g.nodes.keys().copied().collect();
-        g.edges.retain(|e| !e.secret && keep.contains(&e.from) && keep.contains(&e.to));
+        g.edges
+            .retain(|e| !e.secret && keep.contains(&e.from) && keep.contains(&e.to));
         for e in &mut g.edges {
             e.prerequisite.clear();
         }
@@ -193,7 +209,10 @@ mod tests {
 
     fn chain() -> (WorldGraph, Vec<RoomId>) {
         let mut g = WorldGraph::default();
-        let ids: Vec<RoomId> = ["Entrance", "Forest", "Cave", "Temple", "Boss"].iter().map(|n| g.add_room(*n)).collect();
+        let ids: Vec<RoomId> = ["Entrance", "Forest", "Cave", "Temple", "Boss"]
+            .iter()
+            .map(|n| g.add_room(*n))
+            .collect();
         for w in ids.windows(2) {
             g.connect(w[0], w[1], false);
         }
@@ -205,11 +224,17 @@ mod tests {
         let (mut g, r) = chain();
         assert!(g.validate_travel(r[0], r[1], false).is_ok());
         assert!(g.validate_travel(r[1], r[0], false).is_ok(), "two-way");
-        assert_eq!(g.validate_travel(r[0], r[2], false), Err(TravelError::NotConnected));
+        assert_eq!(
+            g.validate_travel(r[0], r[2], false),
+            Err(TravelError::NotConnected)
+        );
         assert!(g.validate_travel(r[0], r[2], true).is_ok(), "DM override");
         let e = g.edges[1].id;
         g.edge_mut(e).unwrap().locked = true;
-        assert_eq!(g.validate_travel(r[1], r[2], false), Err(TravelError::Locked));
+        assert_eq!(
+            g.validate_travel(r[1], r[2], false),
+            Err(TravelError::Locked)
+        );
         assert!(g.validate_travel(r[1], r[2], true).is_ok());
     }
 
@@ -218,7 +243,10 @@ mod tests {
         let (mut g, r) = chain();
         let back = g.connect(r[4], r[0], true).unwrap(); // portal back to entrance: creates a cycle
         assert!(g.validate_travel(r[4], r[0], false).is_ok());
-        assert_eq!(g.validate_travel(r[0], r[4], false), Err(TravelError::NotConnected));
+        assert_eq!(
+            g.validate_travel(r[0], r[4], false),
+            Err(TravelError::NotConnected)
+        );
         assert_eq!(g.reachable(r[2], false).len(), 5);
         g.remove_edge(back);
         g.edges[3].locked = true;

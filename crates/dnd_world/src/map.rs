@@ -17,8 +17,14 @@ pub enum LayerKind {
 }
 
 impl LayerKind {
-    pub const DEFAULT_ORDER: [LayerKind; 6] =
-        [LayerKind::Terrain, LayerKind::FloorDecoration, LayerKind::Walls, LayerKind::Furniture, LayerKind::Overhead, LayerKind::Effects];
+    pub const DEFAULT_ORDER: [LayerKind; 6] = [
+        LayerKind::Terrain,
+        LayerKind::FloorDecoration,
+        LayerKind::Walls,
+        LayerKind::Furniture,
+        LayerKind::Overhead,
+        LayerKind::Effects,
+    ];
 }
 
 /// Palette entry: the asset plus the collision flags this map uses for it. Flags are copied from the
@@ -94,7 +100,11 @@ impl MapObject {
     }
 
     pub fn footprint(&self) -> impl Iterator<Item = Cell> + '_ {
-        let (w, h) = if self.rotation % 2 == 1 { (self.h, self.w) } else { (self.w, self.h) };
+        let (w, h) = if self.rotation % 2 == 1 {
+            (self.h, self.w)
+        } else {
+            (self.w, self.h)
+        };
         (0..h as i32).flat_map(move |dy| (0..w as i32).map(move |dx| (self.x + dx, self.y + dy)))
     }
     pub fn covers(&self, c: Cell) -> bool {
@@ -151,7 +161,15 @@ impl GridMap {
             width,
             height,
             palette: vec![],
-            layers: LayerKind::DEFAULT_ORDER.iter().map(|k| Layer { kind: *k, visible: true, locked: false, tiles: vec![0; n] }).collect(),
+            layers: LayerKind::DEFAULT_ORDER
+                .iter()
+                .map(|k| Layer {
+                    kind: *k,
+                    visible: true,
+                    locked: false,
+                    tiles: vec![0; n],
+                })
+                .collect(),
             objects: vec![],
             ambient,
             background: [20, 18, 16],
@@ -167,10 +185,16 @@ impl GridMap {
     }
 
     pub fn layer_mut(&mut self, kind: LayerKind) -> &mut Layer {
-        self.layers.iter_mut().find(|l| l.kind == kind).expect("all layers exist")
+        self.layers
+            .iter_mut()
+            .find(|l| l.kind == kind)
+            .expect("all layers exist")
     }
     pub fn layer(&self, kind: LayerKind) -> &Layer {
-        self.layers.iter().find(|l| l.kind == kind).expect("all layers exist")
+        self.layers
+            .iter()
+            .find(|l| l.kind == kind)
+            .expect("all layers exist")
     }
 
     fn palette_index(&mut self, a: &AssetDef) -> Result<u16, MapError> {
@@ -190,7 +214,12 @@ impl GridMap {
     }
 
     /// Paints (`Some`) or erases (`None`) a tile. Returns the previous palette value for undo.
-    pub fn set_tile(&mut self, kind: LayerKind, c: Cell, asset: Option<&AssetDef>) -> Result<u16, MapError> {
+    pub fn set_tile(
+        &mut self,
+        kind: LayerKind,
+        c: Cell,
+        asset: Option<&AssetDef>,
+    ) -> Result<u16, MapError> {
         if !self.in_bounds(c) {
             return Err(MapError::OutOfBounds);
         }
@@ -217,7 +246,13 @@ impl GridMap {
     }
 
     /// Rectangle fill (inclusive corners).
-    pub fn fill_rect(&mut self, kind: LayerKind, a: Cell, b: Cell, asset: Option<&AssetDef>) -> Result<(), MapError> {
+    pub fn fill_rect(
+        &mut self,
+        kind: LayerKind,
+        a: Cell,
+        b: Cell,
+        asset: Option<&AssetDef>,
+    ) -> Result<(), MapError> {
         for y in a.1.min(b.1)..=a.1.max(b.1) {
             for x in a.0.min(b.0)..=a.0.max(b.0) {
                 if self.in_bounds((x, y)) {
@@ -229,7 +264,12 @@ impl GridMap {
     }
 
     /// Bucket fill: replaces the contiguous (4-connected) region that has the same tile as `start`.
-    pub fn flood_fill(&mut self, kind: LayerKind, start: Cell, asset: Option<&AssetDef>) -> Result<usize, MapError> {
+    pub fn flood_fill(
+        &mut self,
+        kind: LayerKind,
+        start: Cell,
+        asset: Option<&AssetDef>,
+    ) -> Result<usize, MapError> {
         if !self.in_bounds(start) {
             return Err(MapError::OutOfBounds);
         }
@@ -257,7 +297,12 @@ impl GridMap {
             }
             layer.tiles[i] = new;
             changed += 1;
-            stack.extend([(c.0 + 1, c.1), (c.0 - 1, c.1), (c.0, c.1 + 1), (c.0, c.1 - 1)]);
+            stack.extend([
+                (c.0 + 1, c.1),
+                (c.0 - 1, c.1),
+                (c.0, c.1 + 1),
+                (c.0, c.1 - 1),
+            ]);
         }
         Ok(changed)
     }
@@ -266,18 +311,22 @@ impl GridMap {
     /// Out-of-bounds cells block everything.
     pub fn flags(&self, c: Cell) -> CellFlags {
         if !self.in_bounds(c) {
-            return CellFlags { blocks_movement: true, blocks_sight: true, difficult: false };
+            return CellFlags {
+                blocks_movement: true,
+                blocks_sight: true,
+                difficult: false,
+            };
         }
         let mut f = CellFlags::default();
         let i = self.idx(c);
         for l in &self.layers {
             let v = l.tiles[i];
-            if v != 0 {
-                if let Some(p) = self.palette.get(v as usize - 1) {
-                    f.blocks_movement |= p.blocks_movement;
-                    f.blocks_sight |= p.blocks_sight;
-                    f.difficult |= p.difficult;
-                }
+            if v != 0
+                && let Some(p) = self.palette.get(v as usize - 1)
+            {
+                f.blocks_movement |= p.blocks_movement;
+                f.blocks_sight |= p.blocks_sight;
+                f.difficult |= p.difficult;
             }
         }
         for o in self.objects.iter().filter(|o| o.covers(c)) {
@@ -315,8 +364,10 @@ mod tests {
     fn paint_erase_and_flags() {
         let cat = Catalog::builtin();
         let mut m = GridMap::new(10, 8, AmbientLight::Bright).unwrap();
-        m.fill_rect(LayerKind::Terrain, (0, 0), (9, 7), cat.get("stone_floor")).unwrap();
-        m.set_tile(LayerKind::Walls, (3, 3), cat.get("stone_wall")).unwrap();
+        m.fill_rect(LayerKind::Terrain, (0, 0), (9, 7), cat.get("stone_floor"))
+            .unwrap();
+        m.set_tile(LayerKind::Walls, (3, 3), cat.get("stone_wall"))
+            .unwrap();
         assert!(m.flags((3, 3)).blocks_movement && m.flags((3, 3)).blocks_sight);
         assert!(!m.flags((4, 3)).blocks_movement);
         assert!(m.flags((-1, 0)).blocks_movement);
@@ -330,7 +381,10 @@ mod tests {
         let cat = Catalog::builtin();
         let mut m = GridMap::new(4, 4, AmbientLight::Bright).unwrap();
         m.layer_mut(LayerKind::Terrain).locked = true;
-        assert_eq!(m.set_tile(LayerKind::Terrain, (0, 0), cat.get("grass")), Err(MapError::LayerLocked));
+        assert_eq!(
+            m.set_tile(LayerKind::Terrain, (0, 0), cat.get("grass")),
+            Err(MapError::LayerLocked)
+        );
     }
 
     #[test]
@@ -338,9 +392,12 @@ mod tests {
         let cat = Catalog::builtin();
         let mut m = GridMap::new(5, 5, AmbientLight::Bright).unwrap();
         for y in 0..5 {
-            m.set_tile(LayerKind::Terrain, (2, y), cat.get("stone_wall")).unwrap();
+            m.set_tile(LayerKind::Terrain, (2, y), cat.get("stone_wall"))
+                .unwrap();
         }
-        let n = m.flood_fill(LayerKind::Terrain, (0, 0), cat.get("grass")).unwrap();
+        let n = m
+            .flood_fill(LayerKind::Terrain, (0, 0), cat.get("grass"))
+            .unwrap();
         assert_eq!(n, 10);
         assert!(m.tile(LayerKind::Terrain, (4, 4)).is_none());
     }
@@ -349,7 +406,12 @@ mod tests {
     fn multi_cell_objects_and_doors() {
         let cat = Catalog::builtin();
         let mut m = GridMap::new(6, 6, AmbientLight::Bright).unwrap();
-        m.objects.push(MapObject::from_asset(ObjectId(1), cat.get("big_tree").unwrap(), 1, 1));
+        m.objects.push(MapObject::from_asset(
+            ObjectId(1),
+            cat.get("big_tree").unwrap(),
+            1,
+            1,
+        ));
         for c in [(1, 1), (2, 1), (1, 2), (2, 2)] {
             assert!(m.flags(c).blocks_movement);
         }

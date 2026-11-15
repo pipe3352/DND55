@@ -1,6 +1,24 @@
 [package]
 name = "dnd_desktop"
-version = "0.1.0"
-edition = "2024"
+description = "D&D 5.5 desktop RPG client and DM host (Bevy + egui)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "dnd55"
+path = "src/main.rs"
 
 [dependencies]
+dnd_rules.workspace = true
+dnd_world.workspace = true
+dnd_session.workspace = true
+dnd_persist.workspace = true
+dnd_net.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+image.workspace = true
+bevy = { version = "0.20.1", default-features = false, features = ["2d", "audio", "wav", "png"] }
+bevy_egui = "0.43.1"
+rfd = "0.15"

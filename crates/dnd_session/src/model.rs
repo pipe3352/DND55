@@ -111,7 +111,13 @@ impl Creature {
             .max(5)
     }
 
-    pub fn from_sheet(id: EntityId, sheet: CharacterSheet, room: RoomId, pos: Cell, player: PlayerId) -> Self {
+    pub fn from_sheet(
+        id: EntityId,
+        sheet: CharacterSheet,
+        room: RoomId,
+        pos: Cell,
+        player: PlayerId,
+    ) -> Self {
         let scores = sheet.scores();
         let mut c = Creature {
             id,
@@ -125,7 +131,10 @@ impl Creature {
             conditions: ConditionSet::default(),
             armor_class: sheet.armor_class(),
             speed_ft: sheet.speed_ft(),
-            senses: Senses { darkvision_ft: sheet.darkvision_ft(), ..Default::default() },
+            senses: Senses {
+                darkvision_ft: sheet.darkvision_ft(),
+                ..Default::default()
+            },
             defenses: Defenses::default(),
             attacks: sheet.attacks(),
             initiative_bonus: sheet.initiative_bonus(),
@@ -134,22 +143,34 @@ impl Creature {
             portrait: None,
             effects: ActiveEffects::default(),
             carried_light: None,
-            kind: CreatureKind::Pc { sheet: Box::new(sheet) },
+            kind: CreatureKind::Pc {
+                sheet: Box::new(sheet),
+            },
         };
-        if c.sheet().is_some_and(|s| s.species == dnd_rules::content::SpeciesId::Dwarf) {
+        if c.sheet()
+            .is_some_and(|s| s.species == dnd_rules::content::SpeciesId::Dwarf)
+        {
             // Dwarven Resilience: Resistance to Poison damage.
             c.defenses.resistances.insert(dnd_rules::DamageType::Poison);
         }
         c
     }
 
-    pub fn from_template(id: EntityId, t: &MonsterTemplate, name: String, room: RoomId, pos: Cell) -> Self {
+    pub fn from_template(
+        id: EntityId,
+        t: &MonsterTemplate,
+        name: String,
+        room: RoomId,
+        pos: Cell,
+    ) -> Self {
         Creature {
             id,
             name,
             room,
             pos,
-            kind: CreatureKind::Monster { template_id: t.id.clone() },
+            kind: CreatureKind::Monster {
+                template_id: t.id.clone(),
+            },
             controller: Controller::Dm,
             faction: Faction::Hostile,
             size: t.size,
@@ -157,7 +178,10 @@ impl Creature {
             conditions: ConditionSet::default(),
             armor_class: t.armor_class,
             speed_ft: t.speed_ft,
-            senses: Senses { darkvision_ft: t.darkvision_ft, ..Default::default() },
+            senses: Senses {
+                darkvision_ft: t.darkvision_ft,
+                ..Default::default()
+            },
             defenses: t.defenses.clone(),
             attacks: t.attacks.clone(),
             initiative_bonus: t.initiative_bonus,
@@ -188,7 +212,15 @@ pub struct RoomState {
 impl RoomState {
     pub fn new(map: GridMap) -> Self {
         let n = (map.width * map.height) as usize;
-        RoomState { entry: (1, 1), map, map_rev: 1, visited: false, explored: vec![false; n], extra_lights: vec![], music: None }
+        RoomState {
+            entry: (1, 1),
+            map,
+            map_rev: 1,
+            visited: false,
+            explored: vec![false; n],
+            extra_lights: vec![],
+            music: None,
+        }
     }
 }
 
@@ -269,7 +301,11 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { diagonal_rule: DiagonalRule::Uniform, shared_party_vision: true, exploration_movement: true }
+        Settings {
+            diagonal_rule: DiagonalRule::Uniform,
+            shared_party_vision: true,
+            exploration_movement: true,
+        }
     }
 }
 

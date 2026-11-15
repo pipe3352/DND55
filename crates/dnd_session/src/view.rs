@@ -17,7 +17,11 @@ use std::collections::{BTreeSet, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HpView {
-    Exact { current: i32, max: i32, temp: i32 },
+    Exact {
+        current: i32,
+        max: i32,
+        temp: i32,
+    },
     /// What players see of non-party creatures.
     Status(HealthStatus),
 }
@@ -154,7 +158,10 @@ impl Session {
                     .filter(|c| {
                         (c.faction == Faction::Party && !c.hidden)
                             || Self::controls(who, c)
-                            || (!c.hidden && viewers.iter().any(|v| v.id == c.id || self.can_see(v, c, &lights)))
+                            || (!c.hidden
+                                && viewers
+                                    .iter()
+                                    .any(|v| v.id == c.id || self.can_see(v, c, &lights)))
                     })
                     .map(|c| c.id)
                     .collect()
@@ -163,11 +170,18 @@ impl Session {
     }
 
     /// Filters routed events for one recipient. Events about creatures the recipient can't see are dropped.
-    pub fn events_for(&self, who: Principal, events: &[Routed], visible: &HashSet<EntityId>) -> Vec<crate::event::Event> {
+    pub fn events_for(
+        &self,
+        who: Principal,
+        events: &[Routed],
+        visible: &HashSet<EntityId>,
+    ) -> Vec<crate::event::Event> {
         events
             .iter()
             .filter(|r| audience_includes(r.audience, who))
-            .filter(|r| who == Principal::Dm || r.event.subject().is_none_or(|e| visible.contains(&e)))
+            .filter(|r| {
+                who == Principal::Dm || r.event.subject().is_none_or(|e| visible.contains(&e))
+            })
             .map(|r| r.event.clone())
             .collect()
     }
@@ -182,12 +196,18 @@ impl Session {
         let lights = self.light_levels(room_id);
         let room = s.rooms.get(&room_id).map(|r| {
             let (visible, lights_out) = match who {
-                Principal::Dm => (None, dnd_world::vision::collect_lights(&r.map, &r.extra_lights)),
+                Principal::Dm => (
+                    None,
+                    dnd_world::vision::collect_lights(&r.map, &r.extra_lights),
+                ),
                 Principal::Player(_) => {
                     let vis = self.visibility(room_id, &self.viewers_for(who), &lights);
                     let ls = dnd_world::vision::collect_lights(&r.map, &r.extra_lights)
                         .into_iter()
-                        .filter(|l| vis.get((l.cell.1 * r.map.width + l.cell.0) as usize).is_some_and(|v| *v > 0))
+                        .filter(|l| {
+                            vis.get((l.cell.1 * r.map.width + l.cell.0) as usize)
+                                .is_some_and(|v| *v > 0)
+                        })
                         .collect();
                     (Some(vis), ls)
                 }
@@ -199,13 +219,23 @@ impl Session {
                 name: node.map(|n| n.name.clone()).unwrap_or_default(),
                 description: node.map(|n| n.description.clone()).unwrap_or_default(),
                 map_rev: r.map_rev,
-                map: stale.then(|| if who == Principal::Dm { r.map.clone() } else { r.map.player_view() }),
+                map: stale.then(|| {
+                    if who == Principal::Dm {
+                        r.map.clone()
+                    } else {
+                        r.map.player_view()
+                    }
+                }),
                 width: r.map.width,
                 height: r.map.height,
                 visible,
                 explored: r.explored.clone(),
                 lights: lights_out,
-                entry: if who == Principal::Dm { r.entry } else { (0, 0) },
+                entry: if who == Principal::Dm {
+                    r.entry
+                } else {
+                    (0, 0)
+                },
                 is_party_room: room_id == s.party_room,
             }
         });
@@ -215,10 +245,15 @@ impl Session {
             .values()
             .filter(|c| c.room == room_id && visible_ids.contains(&c.id))
             .map(|c| {
-                let full = who == Principal::Dm || c.faction == Faction::Party || Self::controls(who, c);
+                let full =
+                    who == Principal::Dm || c.faction == Faction::Party || Self::controls(who, c);
                 let mine = Self::controls(who, c);
                 let hp = if full {
-                    HpView::Exact { current: c.hp.current, max: c.hp.max, temp: c.hp.temp }
+                    HpView::Exact {
+                        current: c.hp.current,
+                        max: c.hp.max,
+                        temp: c.hp.temp,
+                    }
                 } else {
                     HpView::Status(match c.hp.life_state() {
                         LifeState::Dead => HealthStatus::Dead,
@@ -253,51 +288,78 @@ impl Session {
         let my_characters = s
             .creatures
             .values()
-            .filter(|c| matches!(who, Principal::Player(p) if c.controller == Controller::Player(p)))
+            .filter(
+                |c| matches!(who, Principal::Player(p) if c.controller == Controller::Player(p)),
+            )
             .filter_map(|c| c.sheet().map(|sh| (c.id, sh.clone())))
             .collect();
 
-        let combat = s.combat.as_ref().filter(|cb| cb.room == room_id || who != Principal::Dm).map(|cb| {
-            let order = cb
-                .order
-                .iter()
-                .filter(|e| visible_ids.contains(&e.entity))
-                .map(|e| InitiativeView {
-                    entity: e.entity,
-                    name: s.creatures.get(&e.entity).map(|c| c.name.clone()).unwrap_or_default(),
-                    total: e.total,
-                })
-                .collect();
-            let active_c = s.creatures.get(&cb.turn.entity);
-            let active_visible = visible_ids.contains(&cb.turn.entity);
-            let your_turn = active_c.is_some_and(|c| Self::controls(who, c));
-            let your_reaction = cb
-                .pending
-                .as_ref()
-                .filter(|p| s.creatures.get(&p.reactor).is_some_and(|r| Self::controls(who, r)))
-                .cloned();
-            CombatView {
-                round: cb.round,
-                order,
-                active: active_visible.then_some(cb.turn.entity),
-                turn: your_turn.then(|| cb.turn.clone()),
-                your_reaction,
-                waiting_on_reaction: cb.pending.is_some(),
-            }
-        });
+        let combat = s
+            .combat
+            .as_ref()
+            .filter(|cb| cb.room == room_id || who != Principal::Dm)
+            .map(|cb| {
+                let order = cb
+                    .order
+                    .iter()
+                    .filter(|e| visible_ids.contains(&e.entity))
+                    .map(|e| InitiativeView {
+                        entity: e.entity,
+                        name: s
+                            .creatures
+                            .get(&e.entity)
+                            .map(|c| c.name.clone())
+                            .unwrap_or_default(),
+                        total: e.total,
+                    })
+                    .collect();
+                let active_c = s.creatures.get(&cb.turn.entity);
+                let active_visible = visible_ids.contains(&cb.turn.entity);
+                let your_turn = active_c.is_some_and(|c| Self::controls(who, c));
+                let your_reaction = cb
+                    .pending
+                    .as_ref()
+                    .filter(|p| {
+                        s.creatures
+                            .get(&p.reactor)
+                            .is_some_and(|r| Self::controls(who, r))
+                    })
+                    .cloned();
+                CombatView {
+                    round: cb.round,
+                    order,
+                    active: active_visible.then_some(cb.turn.entity),
+                    turn: your_turn.then(|| cb.turn.clone()),
+                    your_reaction,
+                    waiting_on_reaction: cb.pending.is_some(),
+                }
+            });
 
         let graph = match who {
             Principal::Dm => s.graph.clone(),
             Principal::Player(_) => {
-                let visited: BTreeSet<RoomId> = s.rooms.iter().filter(|(_, r)| r.visited).map(|(id, _)| *id).collect();
+                let visited: BTreeSet<RoomId> = s
+                    .rooms
+                    .iter()
+                    .filter(|(_, r)| r.visited)
+                    .map(|(id, _)| *id)
+                    .collect();
                 let mut g = s.graph.player_view(&visited);
                 g.nodes.retain(|id, _| visited.contains(id));
-                g.edges.retain(|e| visited.contains(&e.from) && visited.contains(&e.to));
+                g.edges
+                    .retain(|e| visited.contains(&e.from) && visited.contains(&e.to));
                 g
             }
         };
 
-        let mut log: Vec<String> = s.log.iter().rev().filter(|l| audience_includes(l.audience, who)).take(200).map(|l| l.text.clone()).collect();
+        let mut log: Vec<String> = s
+            .log
+            .iter()
+            .rev()
+            .filter(|l| audience_includes(l.audience, who))
+            .take(200)
+            .map(|l| l.text.clone())
+            .collect();
         log.reverse();
 
         let players = s
@@ -306,7 +368,10 @@ impl Session {
             .map(|p| PlayerPublic {
                 id: p.id,
                 name: p.name.clone(),
-                character: p.character.and_then(|id| s.creatures.get(&id)).map(|c| c.name.clone()),
+                character: p
+                    .character
+                    .and_then(|id| s.creatures.get(&id))
+                    .map(|c| c.name.clone()),
                 ready: p.ready,
                 connected: p.connected,
             })
@@ -317,7 +382,13 @@ impl Session {
             bestiary: self
                 .bestiary()
                 .into_iter()
-                .map(|m| MonsterSummary { id: m.id, name: m.name, challenge: m.challenge, armor_class: m.armor_class, hit_points: m.hit_points })
+                .map(|m| MonsterSummary {
+                    id: m.id,
+                    name: m.name,
+                    challenge: m.challenge,
+                    armor_class: m.armor_class,
+                    hit_points: m.hit_points,
+                })
                 .collect(),
             exploration_movement: s.settings.exploration_movement,
         });

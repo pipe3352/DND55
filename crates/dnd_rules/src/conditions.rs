@@ -48,7 +48,9 @@ impl ConditionSet {
             return true;
         }
         match c {
-            Incapacitated => [Paralyzed, Petrified, Stunned, Unconscious].iter().any(|x| self.conditions.contains(x)),
+            Incapacitated => [Paralyzed, Petrified, Stunned, Unconscious]
+                .iter()
+                .any(|x| self.conditions.contains(x)),
             Prone => self.conditions.contains(&Unconscious),
             _ => false,
         }
@@ -69,7 +71,10 @@ impl ConditionSet {
     /// Exhaustion: reduced by 5 ft per level.
     pub fn effective_speed(&self, base_ft: i32) -> i32 {
         use Condition::*;
-        if [Grappled, Restrained, Paralyzed, Petrified, Unconscious].iter().any(|c| self.has(*c)) {
+        if [Grappled, Restrained, Paralyzed, Petrified, Unconscious]
+            .iter()
+            .any(|c| self.has(*c))
+        {
             return 0;
         }
         (base_ft - 5 * self.exhaustion as i32).max(0)
@@ -79,7 +84,9 @@ impl ConditionSet {
     pub fn auto_fails_save(&self, a: Ability) -> bool {
         use Condition::*;
         matches!(a, Ability::Strength | Ability::Dexterity)
-            && [Paralyzed, Petrified, Stunned, Unconscious].iter().any(|c| self.has(*c))
+            && [Paralyzed, Petrified, Stunned, Unconscious]
+                .iter()
+                .any(|c| self.has(*c))
     }
 
     /// Incapacitated: can't take any action, Bonus Action, or Reaction.
@@ -104,7 +111,12 @@ pub struct AttackSituation {
 }
 
 /// Collects advantage/disadvantage sources for an attack roll from both creatures' conditions.
-pub fn attack_roll_sources(attacker: &ConditionSet, target: &ConditionSet, s: AttackSituation, sources: &mut ModeSources) {
+pub fn attack_roll_sources(
+    attacker: &ConditionSet,
+    target: &ConditionSet,
+    s: AttackSituation,
+    sources: &mut ModeSources,
+) {
     use Condition::*;
     // Attacker's own conditions.
     if attacker.has(Blinded) {
@@ -138,7 +150,12 @@ pub fn attack_roll_sources(attacker: &ConditionSet, target: &ConditionSet, s: At
     if target.has(Blinded) {
         sources.adv("target Blinded");
     }
-    if target.has(Paralyzed) || target.has(Petrified) || target.has(Stunned) || target.has(Unconscious) || target.has(Restrained) {
+    if target.has(Paralyzed)
+        || target.has(Petrified)
+        || target.has(Stunned)
+        || target.has(Unconscious)
+        || target.has(Restrained)
+    {
         sources.adv("target Paralyzed/Petrified/Stunned/Unconscious/Restrained");
     }
     if target.has(Prone) {
@@ -164,10 +181,18 @@ mod tests {
     use crate::d20::RollMode;
 
     fn set(cs: &[Condition]) -> ConditionSet {
-        ConditionSet { conditions: cs.iter().copied().collect(), exhaustion: 0 }
+        ConditionSet {
+            conditions: cs.iter().copied().collect(),
+            exhaustion: 0,
+        }
     }
     fn sit() -> AttackSituation {
-        AttackSituation { attacker_within_5ft: true, attacker_can_see_target: true, target_can_see_attacker: true, ..Default::default() }
+        AttackSituation {
+            attacker_within_5ft: true,
+            attacker_can_see_target: true,
+            target_can_see_attacker: true,
+            ..Default::default()
+        }
     }
     fn mode(a: &ConditionSet, t: &ConditionSet, s: AttackSituation) -> RollMode {
         let mut m = ModeSources::default();
@@ -189,24 +214,40 @@ mod tests {
         let none = set(&[]);
         let prone = set(&[Condition::Prone]);
         assert_eq!(mode(&none, &prone, sit()), RollMode::Advantage);
-        let far = AttackSituation { attacker_within_5ft: false, ..sit() };
+        let far = AttackSituation {
+            attacker_within_5ft: false,
+            ..sit()
+        };
         assert_eq!(mode(&none, &prone, far), RollMode::Disadvantage);
     }
 
     #[test]
     fn poisoned_attacker_vs_restrained_target_cancels() {
-        assert_eq!(mode(&set(&[Condition::Poisoned]), &set(&[Condition::Restrained]), sit()), RollMode::Normal);
+        assert_eq!(
+            mode(
+                &set(&[Condition::Poisoned]),
+                &set(&[Condition::Restrained]),
+                sit()
+            ),
+            RollMode::Normal
+        );
     }
 
     #[test]
     fn invisible_rules() {
         let none = set(&[]);
         let inv = set(&[Condition::Invisible]);
-        let cant_see = AttackSituation { attacker_can_see_target: false, ..sit() };
+        let cant_see = AttackSituation {
+            attacker_can_see_target: false,
+            ..sit()
+        };
         assert_eq!(mode(&none, &inv, cant_see), RollMode::Disadvantage);
         // If the attacker can somehow see the invisible target, no benefit.
         assert_eq!(mode(&none, &inv, sit()), RollMode::Normal);
-        let unseen_attacker = AttackSituation { target_can_see_attacker: false, ..sit() };
+        let unseen_attacker = AttackSituation {
+            target_can_see_attacker: false,
+            ..sit()
+        };
         assert_eq!(mode(&inv, &none, unseen_attacker), RollMode::Advantage);
     }
 
@@ -215,7 +256,10 @@ mod tests {
         let g = set(&[Condition::Grappled]);
         let none = set(&[]);
         assert_eq!(mode(&g, &none, sit()), RollMode::Disadvantage);
-        let vs_grappler = AttackSituation { target_is_attackers_grappler: true, ..sit() };
+        let vs_grappler = AttackSituation {
+            target_is_attackers_grappler: true,
+            ..sit()
+        };
         assert_eq!(mode(&g, &none, vs_grappler), RollMode::Normal);
     }
 
@@ -246,10 +290,17 @@ mod tests {
     #[test]
     fn dodge_requires_seeing_the_attacker() {
         let none = set(&[]);
-        let s = AttackSituation { target_dodging: true, ..sit() };
+        let s = AttackSituation {
+            target_dodging: true,
+            ..sit()
+        };
         assert_eq!(mode(&none, &none, s), RollMode::Disadvantage);
         // Dodge doesn't apply against an attacker the target can't see — and that unseen attacker has Advantage.
-        let s = AttackSituation { target_dodging: true, target_can_see_attacker: false, ..sit() };
+        let s = AttackSituation {
+            target_dodging: true,
+            target_can_see_attacker: false,
+            ..sit()
+        };
         assert_eq!(mode(&none, &none, s), RollMode::Advantage);
     }
 }

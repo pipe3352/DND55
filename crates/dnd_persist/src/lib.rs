@@ -102,7 +102,10 @@ pub struct CampaignExport {
 }
 
 fn now() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 fn sha(s: &[u8]) -> String {
@@ -111,7 +114,10 @@ fn sha(s: &[u8]) -> String {
 
 /// Upgrades a serialized `GameState` from an older format version to the current one.
 pub fn migrate_state(mut value: serde_json::Value) -> Result<serde_json::Value> {
-    let v = value.get("format_version").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+    let v = value
+        .get("format_version")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
     if v > STATE_FORMAT_VERSION {
         return Err(PersistError::TooNew(v));
     }
@@ -119,7 +125,9 @@ pub fn migrate_state(mut value: serde_json::Value) -> Result<serde_json::Value> 
     if v < 1 {
         // Format 0 (pre-release) had no `settings`; default them.
         if let Some(obj) = value.as_object_mut() {
-            obj.entry("settings").or_insert_with(|| serde_json::to_value(dnd_session::model::Settings::default()).expect("serializable"));
+            obj.entry("settings").or_insert_with(|| {
+                serde_json::to_value(dnd_session::model::Settings::default()).expect("serializable")
+            });
             obj.insert("format_version".into(), 1.into());
         }
     }
@@ -153,7 +161,9 @@ impl Store {
     }
 
     fn migrate(&mut self) -> Result<()> {
-        let v: i64 = self.conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        let v: i64 = self
+            .conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if v > SCHEMA_VERSION {
             return Err(PersistError::SchemaTooNew(v));
         }
@@ -199,39 +209,64 @@ impl Store {
 
     pub fn create_campaign(&self, name: &str) -> Result<i64> {
         let t = now();
-        self.conn.execute("INSERT INTO campaigns (name, created_at, updated_at) VALUES (?1, ?2, ?2)", params![name, t])?;
+        self.conn.execute(
+            "INSERT INTO campaigns (name, created_at, updated_at) VALUES (?1, ?2, ?2)",
+            params![name, t],
+        )?;
         Ok(self.conn.last_insert_rowid())
     }
 
     pub fn list_campaigns(&self) -> Result<Vec<CampaignInfo>> {
         let mut st = self.conn.prepare("SELECT id, name, created_at, updated_at FROM campaigns ORDER BY updated_at DESC, id DESC")?;
-        let rows = st.query_map([], |r| Ok(CampaignInfo { id: r.get(0)?, name: r.get(1)?, created_at: r.get(2)?, updated_at: r.get(3)? }))?;
+        let rows = st.query_map([], |r| {
+            Ok(CampaignInfo {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                created_at: r.get(2)?,
+                updated_at: r.get(3)?,
+            })
+        })?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
     pub fn delete_campaign(&self, id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM campaigns WHERE id = ?1", [id])?;
+        self.conn
+            .execute("DELETE FROM campaigns WHERE id = ?1", [id])?;
         Ok(())
     }
 
     // ---------------------------------------------------------------- saves
 
     /// Saves atomically. Autosaves beyond [`AUTOSAVE_KEEP`] are pruned in the same transaction.
-    pub fn save(&mut self, campaign: i64, kind: SaveKind, label: &str, state: &GameState, assets: &AssetStore) -> Result<i64> {
+    pub fn save(
+        &mut self,
+        campaign: i64,
+        kind: SaveKind,
+        label: &str,
+        state: &GameState,
+        assets: &AssetStore,
+    ) -> Result<i64> {
         let json = serde_json::to_string(state)?;
         let hash = sha(json.as_bytes());
         let t = now();
         let tx = self.conn.transaction()?;
-        let exists: Option<i64> = tx.query_row("SELECT id FROM campaigns WHERE id = ?1", [campaign], |r| r.get(0)).optional()?;
+        let exists: Option<i64> = tx
+            .query_row("SELECT id FROM campaigns WHERE id = ?1", [campaign], |r| {
+                r.get(0)
+            })
+            .optional()?;
         if exists.is_none() {
             return Err(PersistError::NotFound);
         }
         // Store only assets referenced by the state.
         for c in state.creatures.values() {
-            if let Some(h) = &c.portrait {
-                if let Some(bytes) = assets.get(h) {
-                    tx.execute("INSERT OR IGNORE INTO assets (hash, bytes) VALUES (?1, ?2)", params![h, bytes])?;
-                }
+            if let Some(h) = &c.portrait
+                && let Some(bytes) = assets.get(h)
+            {
+                tx.execute(
+                    "INSERT OR IGNORE INTO assets (hash, bytes) VALUES (?1, ?2)",
+                    params![h, bytes],
+                )?;
             }
         }
         tx.execute(
@@ -239,7 +274,10 @@ impl Store {
             params![campaign, kind.as_str(), label, t, state.format_version, json, hash],
         )?;
         let id = tx.last_insert_rowid();
-        tx.execute("UPDATE campaigns SET updated_at = ?2, name = ?3 WHERE id = ?1", params![campaign, t, state.campaign_name])?;
+        tx.execute(
+            "UPDATE campaigns SET updated_at = ?2, name = ?3 WHERE id = ?1",
+            params![campaign, t, state.campaign_name],
+        )?;
         if kind == SaveKind::Auto {
             tx.execute(
                 "DELETE FROM saves WHERE campaign_id = ?1 AND kind = 'auto' AND id NOT IN
@@ -270,7 +308,11 @@ impl Store {
     pub fn load(&self, save_id: i64) -> Result<(GameState, AssetStore)> {
         let (json, hash): (String, String) = self
             .conn
-            .query_row("SELECT state_json, sha256 FROM saves WHERE id = ?1", [save_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(
+                "SELECT state_json, sha256 FROM saves WHERE id = ?1",
+                [save_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .optional()?
             .ok_or(PersistError::NotFound)?;
         if sha(json.as_bytes()) != hash {
@@ -281,11 +323,16 @@ impl Store {
         let mut assets = AssetStore::default();
         for c in state.creatures.values() {
             if let Some(h) = &c.portrait {
-                let bytes: Option<Vec<u8>> = self.conn.query_row("SELECT bytes FROM assets WHERE hash = ?1", [h], |r| r.get(0)).optional()?;
-                if let Some(b) = bytes {
-                    if sha(&b) == *h {
-                        assets.blobs.insert(h.clone(), b);
-                    }
+                let bytes: Option<Vec<u8>> = self
+                    .conn
+                    .query_row("SELECT bytes FROM assets WHERE hash = ?1", [h], |r| {
+                        r.get(0)
+                    })
+                    .optional()?;
+                if let Some(b) = bytes
+                    && sha(&b) == *h
+                {
+                    assets.blobs.insert(h.clone(), b);
                 }
             }
         }
@@ -309,7 +356,8 @@ impl Store {
         if dest.exists() {
             std::fs::remove_file(dest)?;
         }
-        self.conn.execute("VACUUM INTO ?1", [dest.to_string_lossy()])?;
+        self.conn
+            .execute("VACUUM INTO ?1", [dest.to_string_lossy()])?;
         Ok(())
     }
 
@@ -323,7 +371,11 @@ impl Store {
             ruleset: state.ruleset.clone(),
             name: state.campaign_name.clone(),
             state: serde_json::to_value(&state)?,
-            assets: assets.blobs.iter().map(|(h, b)| (h.clone(), hex::encode(b))).collect(),
+            assets: assets
+                .blobs
+                .iter()
+                .map(|(h, b)| (h.clone(), hex::encode(b)))
+                .collect(),
         })
     }
 
@@ -344,7 +396,12 @@ impl Store {
 
     // ---------------------------------------------------------------- character library
 
-    pub fn save_character(&self, id: Option<i64>, sheet: &CharacterSheet, portrait_png: Option<&[u8]>) -> Result<i64> {
+    pub fn save_character(
+        &self,
+        id: Option<i64>,
+        sheet: &CharacterSheet,
+        portrait_png: Option<&[u8]>,
+    ) -> Result<i64> {
         let json = serde_json::to_string(sheet)?;
         let t = now();
         match id {
@@ -370,20 +427,35 @@ impl Store {
 
     pub fn list_characters(&self) -> Result<Vec<StoredCharacter>> {
         let mut st = self.conn.prepare("SELECT id, name, sheet_json, portrait, updated_at FROM characters ORDER BY updated_at DESC")?;
-        let rows = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, Option<Vec<u8>>>(3)?, r.get::<_, i64>(4)?)))?;
+        let rows = st.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Option<Vec<u8>>>(3)?,
+                r.get::<_, i64>(4)?,
+            ))
+        })?;
         let mut out = Vec::new();
         for row in rows {
             let (id, name, json, portrait_png, updated_at) = row?;
             // Skip rows that fail to decode rather than failing the whole list.
             if let Ok(sheet) = serde_json::from_str(&json) {
-                out.push(StoredCharacter { id, name, sheet, portrait_png, updated_at });
+                out.push(StoredCharacter {
+                    id,
+                    name,
+                    sheet,
+                    portrait_png,
+                    updated_at,
+                });
             }
         }
         Ok(out)
     }
 
     pub fn delete_character(&self, id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM characters WHERE id = ?1", [id])?;
+        self.conn
+            .execute("DELETE FROM characters WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -404,15 +476,23 @@ mod tests {
     fn sample() -> dnd_session::Session {
         let mut s = demo_campaign();
         let p = s.add_player("Alice");
-        s.apply(Principal::Player(p), Command::SubmitCharacter { sheet: Box::new(CharacterSheet::example_fighter("Alice")), portrait_png: Some(test_png()) })
-            .unwrap();
+        s.apply(
+            Principal::Player(p),
+            Command::SubmitCharacter {
+                sheet: Box::new(CharacterSheet::example_fighter("Alice")),
+                portrait_png: Some(test_png()),
+            },
+        )
+        .unwrap();
         s
     }
 
     fn test_png() -> Vec<u8> {
         let img = image::RgbaImage::from_pixel(8, 8, image::Rgba([200, 30, 30, 255]));
         let mut out = std::io::Cursor::new(Vec::new());
-        image::DynamicImage::ImageRgba8(img).write_to(&mut out, image::ImageFormat::Png).unwrap();
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut out, image::ImageFormat::Png)
+            .unwrap();
         out.into_inner()
     }
 
@@ -421,7 +501,9 @@ mod tests {
         let mut store = Store::open_in_memory().unwrap();
         let s = sample();
         let c = store.create_campaign(&s.state.campaign_name).unwrap();
-        let id = store.save(c, SaveKind::Manual, "Session 1", &s.state, &s.assets).unwrap();
+        let id = store
+            .save(c, SaveKind::Manual, "Session 1", &s.state, &s.assets)
+            .unwrap();
         let (state, assets) = store.load(id).unwrap();
         assert_eq!(state, s.state);
         assert_eq!(assets, s.assets);
@@ -433,12 +515,19 @@ mod tests {
         let mut store = Store::open_in_memory().unwrap();
         let s = sample();
         let c = store.create_campaign("x").unwrap();
-        store.save(c, SaveKind::Manual, "keep me", &s.state, &s.assets).unwrap();
+        store
+            .save(c, SaveKind::Manual, "keep me", &s.state, &s.assets)
+            .unwrap();
         for i in 0..12 {
-            store.save(c, SaveKind::Auto, &format!("auto {i}"), &s.state, &s.assets).unwrap();
+            store
+                .save(c, SaveKind::Auto, &format!("auto {i}"), &s.state, &s.assets)
+                .unwrap();
         }
         let saves = store.list_saves(c).unwrap();
-        assert_eq!(saves.iter().filter(|s| s.kind == SaveKind::Auto).count(), AUTOSAVE_KEEP);
+        assert_eq!(
+            saves.iter().filter(|s| s.kind == SaveKind::Auto).count(),
+            AUTOSAVE_KEEP
+        );
         assert!(saves.iter().any(|s| s.label == "keep me"));
         assert_eq!(saves[0].label, "auto 11");
     }
@@ -448,9 +537,14 @@ mod tests {
         let mut store = Store::open_in_memory().unwrap();
         let mut s = sample();
         let c = store.create_campaign("x").unwrap();
-        let good = store.save(c, SaveKind::Manual, "good", &s.state, &s.assets).unwrap();
-        s.apply(Principal::Dm, Command::Dm(DmCommand::StartSession)).unwrap();
-        let bad = store.save(c, SaveKind::Auto, "bad", &s.state, &s.assets).unwrap();
+        let good = store
+            .save(c, SaveKind::Manual, "good", &s.state, &s.assets)
+            .unwrap();
+        s.apply(Principal::Dm, Command::Dm(DmCommand::StartSession))
+            .unwrap();
+        let bad = store
+            .save(c, SaveKind::Auto, "bad", &s.state, &s.assets)
+            .unwrap();
         store.raw().execute("UPDATE saves SET state_json = replace(state_json, 'Sunken', 'Broken') WHERE id = ?1", [bad]).unwrap();
         assert!(matches!(store.load(bad), Err(PersistError::Corrupt(_))));
         let (info, state, _) = store.load_latest_valid(c).unwrap();
@@ -463,7 +557,9 @@ mod tests {
         let mut store = Store::open_in_memory().unwrap();
         let s = sample();
         let c = store.create_campaign("x").unwrap();
-        store.save(c, SaveKind::Manual, "one", &s.state, &s.assets).unwrap();
+        store
+            .save(c, SaveKind::Manual, "one", &s.state, &s.assets)
+            .unwrap();
         {
             // Simulate a crash: start writing, never commit.
             let tx = store.conn.transaction().unwrap();
@@ -483,7 +579,9 @@ mod tests {
         {
             let mut store = Store::open(&db).unwrap();
             let c = store.create_campaign("x").unwrap();
-            save_id = store.save(c, SaveKind::Manual, "a", &s.state, &s.assets).unwrap();
+            save_id = store
+                .save(c, SaveKind::Manual, "a", &s.state, &s.assets)
+                .unwrap();
             store.backup_to(&dir.join("backup.db")).unwrap();
         }
         let store = Store::open(&db).unwrap();
@@ -498,10 +596,14 @@ mod tests {
         let mut store = Store::open_in_memory().unwrap();
         let s = sample();
         let c = store.create_campaign("x").unwrap();
-        store.save(c, SaveKind::Manual, "a", &s.state, &s.assets).unwrap();
+        store
+            .save(c, SaveKind::Manual, "a", &s.state, &s.assets)
+            .unwrap();
         let exported = serde_json::to_string(&store.export_campaign(c).unwrap()).unwrap();
         let mut other = Store::open_in_memory().unwrap();
-        let id = other.import_campaign(&serde_json::from_str(&exported).unwrap()).unwrap();
+        let id = other
+            .import_campaign(&serde_json::from_str(&exported).unwrap())
+            .unwrap();
         let (_, state, assets) = other.load_latest_valid(id).unwrap();
         assert_eq!(state, s.state);
         assert_eq!(assets.blobs.len(), 1);
@@ -526,7 +628,9 @@ mod tests {
         let mut sheet = CharacterSheet::example_fighter("Brunhild");
         let id = store.save_character(None, &sheet, None).unwrap();
         sheet.biography = "Born in the mountains.".into();
-        store.save_character(Some(id), &sheet, Some(&[1, 2, 3])).unwrap();
+        store
+            .save_character(Some(id), &sheet, Some(&[1, 2, 3]))
+            .unwrap();
         let list = store.list_characters().unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].sheet.biography, "Born in the mountains.");

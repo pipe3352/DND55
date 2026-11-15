@@ -42,23 +42,36 @@ pub enum ClientMsg {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ServerMsg {
-    Welcome { you: Principal, resume_token: String, campaign: String },
-    Rejected { reason: String },
+    Welcome {
+        you: Principal,
+        resume_token: String,
+        campaign: String,
+    },
+    Rejected {
+        reason: String,
+    },
     View(Box<ClientView>),
     Events(Vec<Event>),
-    CmdResult { seq: u64, error: Option<String> },
+    CmdResult {
+        seq: u64,
+        error: Option<String>,
+    },
     Asset {
         hash: String,
         #[serde(with = "dnd_session::hexbytes")]
         bytes: Vec<u8>,
     },
-    Pong { t: u64 },
+    Pong {
+        t: u64,
+    },
 }
 
 pub type Wire = Framed<TcpStream, LengthDelimitedCodec>;
 
 pub fn framed(stream: TcpStream) -> Wire {
-    let codec = LengthDelimitedCodec::builder().max_frame_length(MAX_FRAME).new_codec();
+    let codec = LengthDelimitedCodec::builder()
+        .max_frame_length(MAX_FRAME)
+        .new_codec();
     Framed::new(stream, codec)
 }
 

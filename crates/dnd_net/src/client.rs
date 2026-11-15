@@ -13,7 +13,8 @@ pub enum NetEvent {
 
 /// A connection to a host. Drop it to disconnect.
 pub struct NetClient {
-    pub incoming: std_mpsc::Receiver<NetEvent>,
+    // Mutex makes the client `Sync` so it can live in an ECS resource; only one consumer polls it.
+    incoming: std::sync::Mutex<std_mpsc::Receiver<NetEvent>>,
     outgoing: mpsc::UnboundedSender<ClientMsg>,
     _thread: std::thread::JoinHandle<()>,
 }
@@ -68,7 +69,11 @@ impl NetClient {
                 });
             })
             .expect("spawn network thread");
-        NetClient { incoming: in_rx, outgoing: out_tx, _thread: thread }
+        NetClient {
+            incoming: std::sync::Mutex::new(in_rx),
+            outgoing: out_tx,
+            _thread: thread,
+        }
     }
 
     pub fn send(&self, msg: ClientMsg) -> bool {
@@ -77,6 +82,14 @@ impl NetClient {
 
     /// Non-blocking drain of everything received so far.
     pub fn poll(&self) -> Vec<NetEvent> {
-        self.incoming.try_iter().collect()
+        self.incoming
+            .lock()
+            .map(|rx| rx.try_iter().collect())
+            .unwrap_or_default()
+    }
+
+    /// Blocking receive with timeout (tests and tools).
+    pub fn recv_timeout(&self, d: std::time::Duration) -> Option<NetEvent> {
+        self.incoming.lock().ok()?.recv_timeout(d).ok()
     }
 }

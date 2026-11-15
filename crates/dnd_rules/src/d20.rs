@@ -56,7 +56,12 @@ pub struct D20Roll {
 }
 
 impl D20Roll {
-    pub fn roll(rng: &mut dyn DiceRng, mode: RollMode, modifier: i32, exhaustion_level: u8) -> Self {
+    pub fn roll(
+        rng: &mut dyn DiceRng,
+        mode: RollMode,
+        modifier: i32,
+        exhaustion_level: u8,
+    ) -> Self {
         let first = rng.roll_die(20);
         let (dice, natural) = match mode {
             RollMode::Normal => (vec![first], first),
@@ -70,7 +75,14 @@ impl D20Roll {
             }
         };
         let exhaustion_penalty = 2 * exhaustion_level as i32;
-        D20Roll { mode, dice, natural, modifier, exhaustion_penalty, total: natural as i32 + modifier - exhaustion_penalty }
+        D20Roll {
+            mode,
+            dice,
+            natural,
+            modifier,
+            exhaustion_penalty,
+            total: natural as i32 + modifier - exhaustion_penalty,
+        }
     }
 
     pub fn is_natural_20(&self) -> bool {
@@ -86,7 +98,11 @@ impl D20Roll {
             RollMode::Advantage => format!("d20 adv{:?}→{}", self.dice, self.natural),
             RollMode::Disadvantage => format!("d20 dis{:?}→{}", self.dice, self.natural),
         };
-        let exh = if self.exhaustion_penalty > 0 { format!(" -{} (exhaustion)", self.exhaustion_penalty) } else { String::new() };
+        let exh = if self.exhaustion_penalty > 0 {
+            format!(" -{} (exhaustion)", self.exhaustion_penalty)
+        } else {
+            String::new()
+        };
         format!("{dice} {:+}{exh} = {}", self.modifier, self.total)
     }
 }

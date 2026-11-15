@@ -23,6 +23,7 @@ pub mod opt {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Vec<u8>>, D::Error> {
         let s = Option::<String>::deserialize(d)?;
-        s.map(|s| hex::decode(s).map_err(serde::de::Error::custom)).transpose()
+        s.map(|s| hex::decode(s).map_err(serde::de::Error::custom))
+            .transpose()
     }
 }

@@ -72,7 +72,11 @@ impl Weapon {
     }
     /// Melee reach in feet ("A Reach weapon adds 5 feet to your reach").
     pub fn reach_ft(&self) -> u32 {
-        if self.has(WeaponProperty::Reach) { 10 } else { 5 }
+        if self.has(WeaponProperty::Reach) {
+            10
+        } else {
+            5
+        }
     }
 }
 
@@ -160,25 +164,137 @@ pub struct Armor {
 
 macro_rules! a {
     ($id:literal, $name:literal, $cat:expr, $ac:literal, $dex:expr, $str:expr, $st:literal) => {
-        Armor { id: $id, name: $name, category: $cat, base_ac: $ac, dex: $dex, strength_req: $str, stealth_disadvantage: $st }
+        Armor {
+            id: $id,
+            name: $name,
+            category: $cat,
+            base_ac: $ac,
+            dex: $dex,
+            strength_req: $str,
+            stealth_disadvantage: $st,
+        }
     };
 }
 
 /// The SRD 5.2.1 Armor table.
 pub static ARMOR: &[Armor] = &[
-    a!("padded", "Padded Armor", ArmorCategory::Light, 11, Some(None), None, true),
-    a!("leather", "Leather Armor", ArmorCategory::Light, 11, Some(None), None, false),
-    a!("studded_leather", "Studded Leather Armor", ArmorCategory::Light, 12, Some(None), None, false),
-    a!("hide", "Hide Armor", ArmorCategory::Medium, 12, Some(Some(2)), None, false),
-    a!("chain_shirt", "Chain Shirt", ArmorCategory::Medium, 13, Some(Some(2)), None, false),
-    a!("scale_mail", "Scale Mail", ArmorCategory::Medium, 14, Some(Some(2)), None, true),
-    a!("breastplate", "Breastplate", ArmorCategory::Medium, 14, Some(Some(2)), None, false),
-    a!("half_plate", "Half Plate Armor", ArmorCategory::Medium, 15, Some(Some(2)), None, true),
-    a!("ring_mail", "Ring Mail", ArmorCategory::Heavy, 14, None, None, true),
-    a!("chain_mail", "Chain Mail", ArmorCategory::Heavy, 16, None, Some(13), true),
-    a!("splint", "Splint Armor", ArmorCategory::Heavy, 17, None, Some(15), true),
-    a!("plate", "Plate Armor", ArmorCategory::Heavy, 18, None, Some(15), true),
-    a!("shield", "Shield", ArmorCategory::Shield, 2, None, None, false),
+    a!(
+        "padded",
+        "Padded Armor",
+        ArmorCategory::Light,
+        11,
+        Some(None),
+        None,
+        true
+    ),
+    a!(
+        "leather",
+        "Leather Armor",
+        ArmorCategory::Light,
+        11,
+        Some(None),
+        None,
+        false
+    ),
+    a!(
+        "studded_leather",
+        "Studded Leather Armor",
+        ArmorCategory::Light,
+        12,
+        Some(None),
+        None,
+        false
+    ),
+    a!(
+        "hide",
+        "Hide Armor",
+        ArmorCategory::Medium,
+        12,
+        Some(Some(2)),
+        None,
+        false
+    ),
+    a!(
+        "chain_shirt",
+        "Chain Shirt",
+        ArmorCategory::Medium,
+        13,
+        Some(Some(2)),
+        None,
+        false
+    ),
+    a!(
+        "scale_mail",
+        "Scale Mail",
+        ArmorCategory::Medium,
+        14,
+        Some(Some(2)),
+        None,
+        true
+    ),
+    a!(
+        "breastplate",
+        "Breastplate",
+        ArmorCategory::Medium,
+        14,
+        Some(Some(2)),
+        None,
+        false
+    ),
+    a!(
+        "half_plate",
+        "Half Plate Armor",
+        ArmorCategory::Medium,
+        15,
+        Some(Some(2)),
+        None,
+        true
+    ),
+    a!(
+        "ring_mail",
+        "Ring Mail",
+        ArmorCategory::Heavy,
+        14,
+        None,
+        None,
+        true
+    ),
+    a!(
+        "chain_mail",
+        "Chain Mail",
+        ArmorCategory::Heavy,
+        16,
+        None,
+        Some(13),
+        true
+    ),
+    a!(
+        "splint",
+        "Splint Armor",
+        ArmorCategory::Heavy,
+        17,
+        None,
+        Some(15),
+        true
+    ),
+    a!(
+        "plate",
+        "Plate Armor",
+        ArmorCategory::Heavy,
+        18,
+        None,
+        Some(15),
+        true
+    ),
+    a!(
+        "shield",
+        "Shield",
+        ArmorCategory::Shield,
+        2,
+        None,
+        None,
+        false
+    ),
 ];
 
 pub fn armor(id: &str) -> Option<&'static Armor> {
@@ -205,9 +321,15 @@ mod tests {
     #[test]
     fn weapon_table_spot_checks() {
         let ls = weapon("longsword").unwrap();
-        assert_eq!((ls.dice_count, ls.dice_sides, ls.versatile_sides, ls.mastery), (1, 8, Some(10), Mastery::Sap));
+        assert_eq!(
+            (ls.dice_count, ls.dice_sides, ls.versatile_sides, ls.mastery),
+            (1, 8, Some(10), Mastery::Sap)
+        );
         let gs = weapon("greatsword").unwrap();
-        assert_eq!((gs.dice_count, gs.dice_sides, gs.mastery), (2, 6, Mastery::Graze));
+        assert_eq!(
+            (gs.dice_count, gs.dice_sides, gs.mastery),
+            (2, 6, Mastery::Graze)
+        );
         assert_eq!(weapon("dagger").unwrap().mastery, Mastery::Nick);
         assert_eq!(weapon("longbow").unwrap().range, Some((150, 600)));
         assert_eq!(weapon("glaive").unwrap().reach_ft(), 10);

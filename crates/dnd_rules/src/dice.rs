@@ -40,7 +40,14 @@ pub enum DiceParseError {
 
 impl DiceExpr {
     pub fn dice(count: u32, sides: u32) -> Self {
-        Self { terms: vec![DiceTerm { count, sides, negative: false }], modifier: 0 }
+        Self {
+            terms: vec![DiceTerm {
+                count,
+                sides,
+                negative: false,
+            }],
+            modifier: 0,
+        }
     }
     pub fn with_modifier(mut self, m: i32) -> Self {
         self.modifier += m;
@@ -52,7 +59,11 @@ impl DiceExpr {
         if input.len() > MAX_EXPR_LEN {
             return Err(DiceParseError::TooLong);
         }
-        let s: String = input.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_ascii_lowercase();
+        let s: String = input
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+            .to_ascii_lowercase();
         if s.is_empty() {
             return Err(DiceParseError::Empty);
         }
@@ -75,20 +86,34 @@ impl DiceExpr {
             }
             let tok = &s[start..i];
             if tok.is_empty() {
-                return Err(DiceParseError::Invalid(s[start.saturating_sub(1)..].to_string()));
+                return Err(DiceParseError::Invalid(
+                    s[start.saturating_sub(1)..].to_string(),
+                ));
             }
             if let Some((c, sd)) = tok.split_once('d') {
-                let count: u32 = if c.is_empty() { 1 } else { c.parse().map_err(|_| DiceParseError::Invalid(tok.into()))? };
-                let sides: u32 = sd.parse().map_err(|_| DiceParseError::Invalid(tok.into()))?;
+                let count: u32 = if c.is_empty() {
+                    1
+                } else {
+                    c.parse().map_err(|_| DiceParseError::Invalid(tok.into()))?
+                };
+                let sides: u32 = sd
+                    .parse()
+                    .map_err(|_| DiceParseError::Invalid(tok.into()))?;
                 if count == 0 || sides == 0 || count > MAX_DICE_PER_TERM || sides > MAX_SIDES {
                     return Err(DiceParseError::OutOfBounds);
                 }
-                expr.terms.push(DiceTerm { count, sides, negative });
+                expr.terms.push(DiceTerm {
+                    count,
+                    sides,
+                    negative,
+                });
                 if expr.terms.len() > MAX_TERMS {
                     return Err(DiceParseError::OutOfBounds);
                 }
             } else {
-                let v: i32 = tok.parse().map_err(|_| DiceParseError::Invalid(tok.into()))?;
+                let v: i32 = tok
+                    .parse()
+                    .map_err(|_| DiceParseError::Invalid(tok.into()))?;
                 if v > 10_000 {
                     return Err(DiceParseError::OutOfBounds);
                 }
@@ -110,7 +135,12 @@ impl DiceExpr {
             total += if t.negative { -sum } else { sum };
             terms.push(TermRoll { term: *t, rolls });
         }
-        DiceRoll { expr: self.clone(), critical, terms, total }
+        DiceRoll {
+            expr: self.clone(),
+            critical,
+            terms,
+            total,
+        }
     }
 
     pub fn average(&self) -> f64 {
@@ -166,7 +196,11 @@ pub struct DiceRoll {
 impl DiceRoll {
     /// Human-readable breakdown, e.g. `2d6+3: [4, 2] +3 = 9`.
     pub fn breakdown(&self) -> String {
-        let mut s = format!("{}{}: ", self.expr, if self.critical { " (crit)" } else { "" });
+        let mut s = format!(
+            "{}{}: ",
+            self.expr,
+            if self.critical { " (crit)" } else { "" }
+        );
         for (i, t) in self.terms.iter().enumerate() {
             if i > 0 || t.term.negative {
                 s.push_str(if t.term.negative { " -" } else { " +" });
@@ -188,21 +222,35 @@ mod tests {
 
     #[test]
     fn parses_common_expressions() {
-        assert_eq!(DiceExpr::parse("1d20+5").unwrap(), DiceExpr::dice(1, 20).with_modifier(5));
-        assert_eq!(DiceExpr::parse("2d6+3").unwrap(), DiceExpr::dice(2, 6).with_modifier(3));
+        assert_eq!(
+            DiceExpr::parse("1d20+5").unwrap(),
+            DiceExpr::dice(1, 20).with_modifier(5)
+        );
+        assert_eq!(
+            DiceExpr::parse("2d6+3").unwrap(),
+            DiceExpr::dice(2, 6).with_modifier(3)
+        );
         assert_eq!(DiceExpr::parse("4d8").unwrap(), DiceExpr::dice(4, 8));
         assert_eq!(DiceExpr::parse("d100").unwrap(), DiceExpr::dice(1, 100));
-        assert_eq!(DiceExpr::parse(" 2D6 + 1d4 - 1 ").unwrap().to_string(), "2d6+1d4-1");
+        assert_eq!(
+            DiceExpr::parse(" 2D6 + 1d4 - 1 ").unwrap().to_string(),
+            "2d6+1d4-1"
+        );
         assert_eq!(DiceExpr::parse("5").unwrap().to_string(), "5");
         assert_eq!(DiceExpr::parse("-1d4").unwrap().to_string(), "-1d4");
     }
 
     #[test]
     fn rejects_bad_or_abusive_input() {
-        for bad in ["", "d", "2d", "1d0", "0d6", "1d20++5", "abc", "1d20+x", "101d6", "1d1001", "1d6 1d6"] {
+        for bad in [
+            "", "d", "2d", "1d0", "0d6", "1d20++5", "abc", "1d20+x", "101d6", "1d1001", "1d6 1d6",
+        ] {
             assert!(DiceExpr::parse(bad).is_err(), "should reject {bad:?}");
         }
-        assert_eq!(DiceExpr::parse(&"1".repeat(100)), Err(DiceParseError::TooLong));
+        assert_eq!(
+            DiceExpr::parse(&"1".repeat(100)),
+            Err(DiceParseError::TooLong)
+        );
     }
 
     #[test]

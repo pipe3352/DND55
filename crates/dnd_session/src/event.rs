@@ -40,25 +40,61 @@ pub enum Vfx {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Event {
-    Log { text: String },
-    DiceRolled { actor: String, label: String, detail: String, total: i32 },
-    Moved { entity: EntityId, path: Vec<Cell> },
-    AttackVisual { attacker: EntityId, target: EntityId, vfx: Vfx, ranged: bool, hit: bool },
-    Floating { entity: EntityId, text: String, kind: FloatKind },
-    RoomChanged { room: RoomId, name: String },
+    Log {
+        text: String,
+    },
+    DiceRolled {
+        actor: String,
+        label: String,
+        detail: String,
+        total: i32,
+    },
+    Moved {
+        entity: EntityId,
+        path: Vec<Cell>,
+    },
+    AttackVisual {
+        attacker: EntityId,
+        target: EntityId,
+        vfx: Vfx,
+        ranged: bool,
+        hit: bool,
+    },
+    Floating {
+        entity: EntityId,
+        text: String,
+        kind: FloatKind,
+    },
+    RoomChanged {
+        room: RoomId,
+        name: String,
+    },
     CombatStarted,
-    TurnStarted { entity: EntityId, round: u32 },
+    TurnStarted {
+        entity: EntityId,
+        round: u32,
+    },
     CombatEnded,
-    ReactionPrompt { reactor: EntityId, mover: EntityId },
-    Chat { from: String, text: String },
-    Notice { text: String },
+    ReactionPrompt {
+        reactor: EntityId,
+        mover: EntityId,
+    },
+    Chat {
+        from: String,
+        text: String,
+    },
+    Notice {
+        text: String,
+    },
 }
 
 impl Event {
     /// The creature an event is about; used to avoid leaking hidden creatures to players.
     pub fn subject(&self) -> Option<EntityId> {
         match self {
-            Event::Moved { entity, .. } | Event::Floating { entity, .. } | Event::TurnStarted { entity, .. } => Some(*entity),
+            Event::Moved { entity, .. }
+            | Event::Floating { entity, .. }
+            | Event::TurnStarted { entity, .. } => Some(*entity),
             Event::AttackVisual { target, .. } => Some(*target),
             Event::ReactionPrompt { reactor, .. } => Some(*reactor),
             _ => None,

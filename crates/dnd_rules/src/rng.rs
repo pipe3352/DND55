@@ -56,7 +56,9 @@ pub struct ScriptedRng {
 
 impl ScriptedRng {
     pub fn new(values: impl IntoIterator<Item = u32>) -> Self {
-        Self { values: values.into_iter().collect() }
+        Self {
+            values: values.into_iter().collect(),
+        }
     }
     pub fn remaining(&self) -> usize {
         self.values.len()
@@ -66,7 +68,10 @@ impl ScriptedRng {
 impl DiceRng for ScriptedRng {
     fn roll_die(&mut self, sides: u32) -> u32 {
         let v = self.values.pop_front().expect("ScriptedRng exhausted");
-        assert!(v >= 1 && v <= sides, "scripted value {v} impossible on a d{sides}");
+        assert!(
+            v >= 1 && v <= sides,
+            "scripted value {v} impossible on a d{sides}"
+        );
         v
     }
 }

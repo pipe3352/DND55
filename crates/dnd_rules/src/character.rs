@@ -24,7 +24,10 @@ pub enum ScoreMethod {
 /// or increase all three by 1. None of these increases can raise a score above 20."
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BackgroundBonus {
-    PlusTwoPlusOne { plus_two: Ability, plus_one: Ability },
+    PlusTwoPlusOne {
+        plus_two: Ability,
+        plus_one: Ability,
+    },
     ThreePlusOnes,
 }
 
@@ -66,10 +69,18 @@ pub struct Issue {
 }
 
 fn err(key: &str, detail: impl Into<String>) -> Issue {
-    Issue { severity: Severity::Error, key: key.into(), detail: detail.into() }
+    Issue {
+        severity: Severity::Error,
+        key: key.into(),
+        detail: detail.into(),
+    }
 }
 fn warn(key: &str, detail: impl Into<String>) -> Issue {
-    Issue { severity: Severity::Warning, key: key.into(), detail: detail.into() }
+    Issue {
+        severity: Severity::Warning,
+        key: key.into(),
+        detail: detail.into(),
+    }
 }
 
 /// SRD "Ability Score Point Costs" table (8..=15).
@@ -134,7 +145,9 @@ impl CharacterSheet {
         let con = self.modifier(Ability::Constitution);
         let bonus = self.species_def().hp_per_level_bonus;
         let first = (die + con).max(1) + bonus;
-        let later = (1..self.level as i32).map(|_| (die / 2 + 1 + con).max(1) + bonus).sum::<i32>();
+        let later = (1..self.level as i32)
+            .map(|_| (die / 2 + 1 + con).max(1) + bonus)
+            .sum::<i32>();
         first + later
     }
 
@@ -164,13 +177,25 @@ impl CharacterSheet {
     }
 
     pub fn skill_proficient(&self, s: Skill) -> bool {
-        self.class_skills.contains(&s) || self.background_def().skills.contains(&s) || self.species_skill == Some(s)
+        self.class_skills.contains(&s)
+            || self.background_def().skills.contains(&s)
+            || self.species_skill == Some(s)
     }
     pub fn skill_bonus(&self, s: Skill) -> i32 {
-        self.modifier(s.ability()) + if self.skill_proficient(s) { self.proficiency_bonus() } else { 0 }
+        self.modifier(s.ability())
+            + if self.skill_proficient(s) {
+                self.proficiency_bonus()
+            } else {
+                0
+            }
     }
     pub fn save_bonus(&self, a: Ability) -> i32 {
-        self.modifier(a) + if self.class_def().saving_throws.contains(&a) { self.proficiency_bonus() } else { 0 }
+        self.modifier(a)
+            + if self.class_def().saving_throws.contains(&a) {
+                self.proficiency_bonus()
+            } else {
+                0
+            }
     }
     pub fn passive_perception(&self) -> i32 {
         10 + self.skill_bonus(Skill::Perception)
@@ -183,17 +208,30 @@ impl CharacterSheet {
         let str_m = self.modifier(Ability::Strength);
         let dex_m = self.modifier(Ability::Dexterity);
         for id in &self.weapons {
-            let Some(w) = equipment::weapon(id) else { continue };
+            let Some(w) = equipment::weapon(id) else {
+                continue;
+            };
             let proficient = self.class_def().proficient_with(w);
-            let mastery = if self.weapon_masteries.iter().any(|m| m == id) && proficient { Some(w.mastery) } else { None };
+            let mastery = if self.weapon_masteries.iter().any(|m| m == id) && proficient {
+                Some(w.mastery)
+            } else {
+                None
+            };
             // Melee uses Strength, ranged uses Dexterity; Finesse lets you choose (we take the better).
-            let melee_mod = if w.has(WeaponProperty::Finesse) { str_m.max(dex_m) } else { str_m };
+            let melee_mod = if w.has(WeaponProperty::Finesse) {
+                str_m.max(dex_m)
+            } else {
+                str_m
+            };
             let (ability_mod, reach, range) = match w.kind {
                 WeaponKind::Melee => (melee_mod, w.reach_ft(), None),
                 WeaponKind::Ranged => (dex_m, 0, w.range),
             };
             let to_hit = ability_mod + if proficient { pb } else { 0 };
-            let dmg = vec![DamagePart { dice: w.damage_dice().with_modifier(ability_mod), damage_type: w.damage_type }];
+            let dmg = vec![DamagePart {
+                dice: w.damage_dice().with_modifier(ability_mod),
+                damage_type: w.damage_type,
+            }];
             out.push(AttackProfile {
                 name: w.name.to_string(),
                 kind: w.kind,
@@ -225,7 +263,10 @@ impl CharacterSheet {
             name: "Unarmed Strike".into(),
             kind: WeaponKind::Melee,
             to_hit: str_m + pb,
-            damage: vec![DamagePart { dice: DiceExpr::default().with_modifier(1 + str_m), damage_type: DamageType::Bludgeoning }],
+            damage: vec![DamagePart {
+                dice: DiceExpr::default().with_modifier(1 + str_m),
+                damage_type: DamageType::Bludgeoning,
+            }],
             extra_damage_with_advantage: vec![],
             reach_ft: 5,
             range_ft: None,
@@ -246,10 +287,16 @@ impl CharacterSheet {
             issues.push(err("char.level", "Level must be 1–20"));
         }
         if self.level > 1 {
-            issues.push(warn("char.level.features", "Class features above level 1 are not yet automated"));
+            issues.push(warn(
+                "char.level.features",
+                "Class features above level 1 are not yet automated",
+            ));
         }
         if !self.species_def().sizes.contains(&self.size) {
-            issues.push(err("char.size", format!("{} can't be {:?}", self.species_def().name, self.size)));
+            issues.push(err(
+                "char.size",
+                format!("{} can't be {:?}", self.species_def().name, self.size),
+            ));
         }
 
         // Ability scores.
@@ -259,25 +306,44 @@ impl CharacterSheet {
                 let mut sorted = base;
                 sorted.sort_unstable_by(|a, b| b.cmp(a));
                 if sorted != STANDARD_ARRAY {
-                    issues.push(err("char.scores.standard_array", "Scores must be 15, 14, 13, 12, 10, 8 in any order"));
+                    issues.push(err(
+                        "char.scores.standard_array",
+                        "Scores must be 15, 14, 13, 12, 10, 8 in any order",
+                    ));
                 }
             }
-            ScoreMethod::PointBuy => match base.iter().map(|s| point_cost(*s)).collect::<Option<Vec<_>>>() {
-                None => issues.push(err("char.scores.point_buy_range", "Point-buy scores must be between 8 and 15")),
+            ScoreMethod::PointBuy => match base
+                .iter()
+                .map(|s| point_cost(*s))
+                .collect::<Option<Vec<_>>>()
+            {
+                None => issues.push(err(
+                    "char.scores.point_buy_range",
+                    "Point-buy scores must be between 8 and 15",
+                )),
                 Some(costs) => {
                     let total: u32 = costs.iter().sum();
                     if total > POINT_BUY_BUDGET {
-                        issues.push(err("char.scores.point_buy_budget", format!("Spent {total} of {POINT_BUY_BUDGET} points")));
+                        issues.push(err(
+                            "char.scores.point_buy_budget",
+                            format!("Spent {total} of {POINT_BUY_BUDGET} points"),
+                        ));
                     }
                 }
             },
             ScoreMethod::Rolled => {
                 if base.iter().any(|s| !(3..=18).contains(s)) {
-                    issues.push(err("char.scores.rolled_range", "Rolled scores must be 3–18"));
+                    issues.push(err(
+                        "char.scores.rolled_range",
+                        "Rolled scores must be 3–18",
+                    ));
                 }
             }
             ScoreMethod::ManualDmApproved => {
-                issues.push(warn("char.scores.manual", "Manually entered scores (DM override)"));
+                issues.push(warn(
+                    "char.scores.manual",
+                    "Manually entered scores (DM override)",
+                ));
             }
         }
 
@@ -285,23 +351,37 @@ impl CharacterSheet {
         let bg = self.background_def();
         if let BackgroundBonus::PlusTwoPlusOne { plus_two, plus_one } = self.background_bonus {
             if plus_two == plus_one {
-                issues.push(err("char.background.same_ability", "+2 and +1 must go to different abilities"));
+                issues.push(err(
+                    "char.background.same_ability",
+                    "+2 and +1 must go to different abilities",
+                ));
             }
             if !bg.abilities.contains(&plus_two) || !bg.abilities.contains(&plus_one) {
-                issues.push(err("char.background.ability", format!("{} only allows {:?}", bg.name, bg.abilities)));
+                issues.push(err(
+                    "char.background.ability",
+                    format!("{} only allows {:?}", bg.name, bg.abilities),
+                ));
             }
         }
         let raw_after: Vec<u8> = match self.background_bonus {
             BackgroundBonus::PlusTwoPlusOne { plus_two, plus_one } => Ability::ALL
                 .iter()
-                .map(|a| base[a.index()] + if *a == plus_two { 2 } else { 0 } + if *a == plus_one { 1 } else { 0 })
+                .map(|a| {
+                    base[a.index()]
+                        + if *a == plus_two { 2 } else { 0 }
+                        + if *a == plus_one { 1 } else { 0 }
+                })
                 .collect(),
-            BackgroundBonus::ThreePlusOnes => {
-                Ability::ALL.iter().map(|a| base[a.index()] + u8::from(bg.abilities.contains(a))).collect()
-            }
+            BackgroundBonus::ThreePlusOnes => Ability::ALL
+                .iter()
+                .map(|a| base[a.index()] + u8::from(bg.abilities.contains(a)))
+                .collect(),
         };
         if raw_after.iter().any(|s| *s > 20) {
-            issues.push(err("char.scores.max20", "Background increases can't raise a score above 20"));
+            issues.push(err(
+                "char.scores.max20",
+                "Background increases can't raise a score above 20",
+            ));
         }
 
         // Skills.
@@ -313,24 +393,39 @@ impl CharacterSheet {
             issues.push(err("char.skills.duplicate", "Duplicate class skill"));
         }
         if self.class_skills.len() != cd.skill_choices as usize {
-            issues.push(err("char.skills.count", format!("{} chooses {} skills", cd.name, cd.skill_choices)));
+            issues.push(err(
+                "char.skills.count",
+                format!("{} chooses {} skills", cd.name, cd.skill_choices),
+            ));
         }
         if !cd.skill_list.is_empty() {
             for s in &self.class_skills {
                 if !cd.skill_list.contains(s) {
-                    issues.push(err("char.skills.not_in_list", format!("{s:?} isn't a {} skill option", cd.name)));
+                    issues.push(err(
+                        "char.skills.not_in_list",
+                        format!("{s:?} isn't a {} skill option", cd.name),
+                    ));
                 }
             }
         }
         for s in &self.class_skills {
             if bg.skills.contains(s) {
-                issues.push(warn("char.skills.overlap", format!("{s:?} is already granted by the background; choose another")));
+                issues.push(warn(
+                    "char.skills.overlap",
+                    format!("{s:?} is already granted by the background; choose another"),
+                ));
             }
         }
         match (self.species, self.species_skill) {
-            (SpeciesId::Human, None) => issues.push(err("char.species.skillful", "Human Skillful: choose one skill")),
+            (SpeciesId::Human, None) => issues.push(err(
+                "char.species.skillful",
+                "Human Skillful: choose one skill",
+            )),
             (SpeciesId::Human, Some(_)) => {}
-            (_, Some(_)) => issues.push(err("char.species.extra_skill", "Only Humans gain the Skillful skill")),
+            (_, Some(_)) => issues.push(err(
+                "char.species.extra_skill",
+                "Only Humans gain the Skillful skill",
+            )),
             _ => {}
         }
 
@@ -338,15 +433,20 @@ impl CharacterSheet {
         if let Some(id) = &self.body_armor {
             match equipment::armor(id) {
                 None => issues.push(err("char.armor.unknown", format!("Unknown armor {id}"))),
-                Some(a) if a.category == ArmorCategory::Shield => issues.push(err("char.armor.shield_as_body", "Use the shield flag")),
+                Some(a) if a.category == ArmorCategory::Shield => {
+                    issues.push(err("char.armor.shield_as_body", "Use the shield flag"))
+                }
                 Some(a) => {
                     if !cd.trained_in_armor(a.category) {
                         issues.push(warn("char.armor.untrained", format!("No training with {:?} armor: Disadvantage on Str/Dex D20 Tests and no spellcasting", a.category)));
                     }
-                    if let Some(req) = a.strength_req {
-                        if self.scores().get(Ability::Strength) < req {
-                            issues.push(warn("char.armor.strength", format!("{} needs Str {req}: Speed reduced by 10 ft", a.name)));
-                        }
+                    if let Some(req) = a.strength_req
+                        && self.scores().get(Ability::Strength) < req
+                    {
+                        issues.push(warn(
+                            "char.armor.strength",
+                            format!("{} needs Str {req}: Speed reduced by 10 ft", a.name),
+                        ));
                     }
                 }
             }
@@ -360,17 +460,29 @@ impl CharacterSheet {
             }
         }
         if self.weapon_masteries.len() > cd.weapon_mastery_count as usize {
-            issues.push(err("char.mastery.count", format!("{} masters {} weapon kinds at level 1", cd.name, cd.weapon_mastery_count)));
+            issues.push(err(
+                "char.mastery.count",
+                format!(
+                    "{} masters {} weapon kinds at level 1",
+                    cd.name, cd.weapon_mastery_count
+                ),
+            ));
         }
         for m in &self.weapon_masteries {
             match equipment::weapon(m) {
                 None => issues.push(err("char.mastery.unknown", format!("Unknown weapon {m}"))),
                 Some(w) => {
                     if !cd.proficient_with(w) {
-                        issues.push(err("char.mastery.not_proficient", format!("Not proficient with {}", w.name)));
+                        issues.push(err(
+                            "char.mastery.not_proficient",
+                            format!("Not proficient with {}", w.name),
+                        ));
                     }
                     if self.class == ClassId::Barbarian && w.kind != WeaponKind::Melee {
-                        issues.push(err("char.mastery.barbarian_melee", "Barbarian masteries must be melee weapons"));
+                        issues.push(err(
+                            "char.mastery.barbarian_melee",
+                            "Barbarian masteries must be melee weapons",
+                        ));
                     }
                 }
             }
@@ -379,7 +491,9 @@ impl CharacterSheet {
     }
 
     pub fn is_valid(&self) -> bool {
-        self.validate().iter().all(|i| i.severity != Severity::Error)
+        self.validate()
+            .iter()
+            .all(|i| i.severity != Severity::Error)
     }
 
     /// A ready-made level 1 Fighter used by tests, the demo campaign and quick-start.
@@ -393,7 +507,10 @@ impl CharacterSheet {
             background: BackgroundId::Soldier,
             score_method: ScoreMethod::StandardArray,
             base_scores: AbilityScores::new(15, 13, 14, 8, 12, 10),
-            background_bonus: BackgroundBonus::PlusTwoPlusOne { plus_two: Ability::Strength, plus_one: Ability::Constitution },
+            background_bonus: BackgroundBonus::PlusTwoPlusOne {
+                plus_two: Ability::Strength,
+                plus_one: Ability::Constitution,
+            },
             class_skills: vec![Skill::Perception, Skill::Survival],
             species_skill: None,
             body_armor: Some("chain_mail".into()),
@@ -416,21 +533,40 @@ mod tests {
         let c = CharacterSheet::example_fighter("Brunhild");
         assert!(c.is_valid(), "{:?}", c.validate());
         let s = c.scores();
-        assert_eq!((s.get(Ability::Strength), s.get(Ability::Constitution)), (17, 15));
+        assert_eq!(
+            (s.get(Ability::Strength), s.get(Ability::Constitution)),
+            (17, 15)
+        );
         // Fighter: 10 + Con mod (+2) + Dwarven Toughness (+1)
         assert_eq!(c.max_hp(), 13);
         assert_eq!(c.armor_class(), 18); // Chain Mail 16 + Shield 2
         assert_eq!(c.save_bonus(Ability::Strength), 3 + 2);
         assert_eq!(c.save_bonus(Ability::Wisdom), 1);
-        assert_eq!(c.skill_bonus(Skill::Athletics), 3 + 2, "Soldier grants Athletics");
+        assert_eq!(
+            c.skill_bonus(Skill::Athletics),
+            3 + 2,
+            "Soldier grants Athletics"
+        );
         assert_eq!(c.darkvision_ft(), 120);
-        let ls = c.attacks().into_iter().find(|a| a.name == "Longsword").unwrap();
+        let ls = c
+            .attacks()
+            .into_iter()
+            .find(|a| a.name == "Longsword")
+            .unwrap();
         assert_eq!(ls.to_hit, 5);
         assert_eq!(ls.damage[0].dice.to_string(), "1d8+3");
         assert_eq!(ls.mastery, Some(Mastery::Sap));
-        let unarmed = c.attacks().into_iter().find(|a| a.name == "Unarmed Strike").unwrap();
+        let unarmed = c
+            .attacks()
+            .into_iter()
+            .find(|a| a.name == "Unarmed Strike")
+            .unwrap();
         assert_eq!(unarmed.damage[0].dice.to_string(), "4");
-        assert!(c.attacks().iter().any(|a| a.name == "Javelin (thrown)" && a.range_ft == Some((30, 120))));
+        assert!(
+            c.attacks()
+                .iter()
+                .any(|a| a.name == "Javelin (thrown)" && a.range_ft == Some((30, 120)))
+        );
     }
 
     #[test]
@@ -440,7 +576,10 @@ mod tests {
         assert!(!c.is_valid());
 
         let mut c = CharacterSheet::example_fighter("X");
-        c.background_bonus = BackgroundBonus::PlusTwoPlusOne { plus_two: Ability::Charisma, plus_one: Ability::Strength };
+        c.background_bonus = BackgroundBonus::PlusTwoPlusOne {
+            plus_two: Ability::Charisma,
+            plus_one: Ability::Strength,
+        };
         assert!(!c.is_valid(), "Soldier can't raise Charisma");
 
         let mut c = CharacterSheet::example_fighter("X");
@@ -462,7 +601,12 @@ mod tests {
 
     #[test]
     fn level_one_hp_by_class() {
-        for (class, expected) in [(ClassId::Barbarian, 12), (ClassId::Ranger, 10), (ClassId::Rogue, 8), (ClassId::Wizard, 6)] {
+        for (class, expected) in [
+            (ClassId::Barbarian, 12),
+            (ClassId::Ranger, 10),
+            (ClassId::Rogue, 8),
+            (ClassId::Wizard, 6),
+        ] {
             let mut c = CharacterSheet::example_fighter("X");
             c.species = SpeciesId::Elf;
             c.class = class;

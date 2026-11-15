@@ -62,7 +62,14 @@ pub enum DeathSaveResult {
 
 impl HitPoints {
     pub fn new(max: i32, zero_hp_rule: ZeroHpRule) -> Self {
-        Self { current: max, max, temp: 0, death_saves: DeathSaves::default(), dead: false, zero_hp_rule }
+        Self {
+            current: max,
+            max,
+            temp: 0,
+            death_saves: DeathSaves::default(),
+            dead: false,
+            zero_hp_rule,
+        }
     }
 
     pub fn life_state(&self) -> LifeState {
@@ -187,7 +194,11 @@ impl HitPoints {
         }
         if self.death_saves.successes >= 3 {
             // On your third success you become Stable; both counts reset when you become Stable.
-            self.death_saves = DeathSaves { successes: 0, failures: 0, stable: true };
+            self.death_saves = DeathSaves {
+                successes: 0,
+                failures: 0,
+                stable: true,
+            };
             return DeathSaveResult::BecameStable;
         }
         result
@@ -209,7 +220,10 @@ mod tests {
         let mut hp = HitPoints::new(20, ZeroHpRule::Character);
         hp.offer_temp_hp(5, true);
         let r = hp.take_damage(7, false);
-        assert_eq!((r.absorbed_by_temp, r.hp_lost, hp.current, hp.temp), (5, 2, 18, 0));
+        assert_eq!(
+            (r.absorbed_by_temp, r.hp_lost, hp.current, hp.temp),
+            (5, 2, 18, 0)
+        );
     }
 
     #[test]

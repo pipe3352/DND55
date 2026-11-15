@@ -34,14 +34,24 @@ impl AssetStore {
         if !png.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
             return Err(AssetError::NotPng);
         }
-        let img = image::load_from_memory_with_format(png, image::ImageFormat::Png).map_err(|_| AssetError::NotPng)?;
-        if img.width() > MAX_SOURCE_DIMENSION || img.height() > MAX_SOURCE_DIMENSION || img.width() == 0 || img.height() == 0 {
+        let img = image::load_from_memory_with_format(png, image::ImageFormat::Png)
+            .map_err(|_| AssetError::NotPng)?;
+        if img.width() > MAX_SOURCE_DIMENSION
+            || img.height() > MAX_SOURCE_DIMENSION
+            || img.width() == 0
+            || img.height() == 0
+        {
             return Err(AssetError::TooBig);
         }
-        let img = if img.width() > PORTRAIT_SIZE || img.height() > PORTRAIT_SIZE { img.thumbnail(PORTRAIT_SIZE, PORTRAIT_SIZE) } else { img };
+        let img = if img.width() > PORTRAIT_SIZE || img.height() > PORTRAIT_SIZE {
+            img.thumbnail(PORTRAIT_SIZE, PORTRAIT_SIZE)
+        } else {
+            img
+        };
         let rgba = image::DynamicImage::ImageRgba8(img.to_rgba8());
         let mut out = std::io::Cursor::new(Vec::new());
-        rgba.write_to(&mut out, image::ImageFormat::Png).map_err(|_| AssetError::NotPng)?;
+        rgba.write_to(&mut out, image::ImageFormat::Png)
+            .map_err(|_| AssetError::NotPng)?;
         let bytes = out.into_inner();
         let hash = hex::encode(Sha256::digest(&bytes));
         self.blobs.insert(hash.clone(), bytes);
@@ -55,9 +65,13 @@ impl AssetStore {
 
 #[cfg(test)]
 pub(crate) fn test_png(w: u32, h: u32) -> Vec<u8> {
-    let img = image::RgbaImage::from_fn(w, h, |x, y| image::Rgba([(x % 256) as u8, (y % 256) as u8, 128, 255]));
+    let img = image::RgbaImage::from_fn(w, h, |x, y| {
+        image::Rgba([(x % 256) as u8, (y % 256) as u8, 128, 255])
+    });
     let mut out = std::io::Cursor::new(Vec::new());
-    image::DynamicImage::ImageRgba8(img).write_to(&mut out, image::ImageFormat::Png).unwrap();
+    image::DynamicImage::ImageRgba8(img)
+        .write_to(&mut out, image::ImageFormat::Png)
+        .unwrap();
     out.into_inner()
 }
 
@@ -80,6 +94,9 @@ mod tests {
         let mut fake = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
         fake.extend([0u8; 64]);
         assert_eq!(s.add_portrait(&fake), Err(AssetError::NotPng));
-        assert_eq!(s.add_portrait(&vec![0u8; MAX_UPLOAD_BYTES + 1]), Err(AssetError::TooLarge));
+        assert_eq!(
+            s.add_portrait(&vec![0u8; MAX_UPLOAD_BYTES + 1]),
+            Err(AssetError::TooLarge)
+        );
     }
 }

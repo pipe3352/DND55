@@ -30,5 +30,7 @@ pub fn new_session_code() -> String {
     const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     let mut b = [0u8; 6];
     getrandom::fill(&mut b).expect("OS entropy available");
-    b.iter().map(|v| ALPHABET[(*v as usize) % ALPHABET.len()] as char).collect()
+    b.iter()
+        .map(|v| ALPHABET[(*v as usize) % ALPHABET.len()] as char)
+        .collect()
 }

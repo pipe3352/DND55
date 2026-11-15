@@ -36,7 +36,11 @@ pub struct AttackProfile {
 impl AttackProfile {
     /// Text like `Longsword +5, 1d8+3 Slashing`.
     pub fn summary(&self) -> String {
-        let dmg: Vec<String> = self.damage.iter().map(|d| format!("{} {:?}", d.dice, d.damage_type)).collect();
+        let dmg: Vec<String> = self
+            .damage
+            .iter()
+            .map(|d| format!("{} {:?}", d.dice, d.damage_type))
+            .collect();
         format!("{} {:+}, {}", self.name, self.to_hit, dmg.join(" + "))
     }
 }
@@ -86,18 +90,30 @@ impl AttackResult {
             self.target_ac
         );
         if !self.advantage_reasons.is_empty() || !self.disadvantage_reasons.is_empty() {
-            s.push_str(&format!(" [adv: {:?}; dis: {:?}]", self.advantage_reasons, self.disadvantage_reasons));
+            s.push_str(&format!(
+                " [adv: {:?}; dis: {:?}]",
+                self.advantage_reasons, self.disadvantage_reasons
+            ));
         }
         for d in &self.damage {
             let o = &d.outcome;
-            let flags = [(o.immune, "immune"), (o.resisted, "resisted"), (o.vulnerable, "vulnerable")]
-                .iter()
-                .filter(|f| f.0)
-                .map(|f| f.1)
-                .collect::<Vec<_>>()
-                .join(",");
+            let flags = [
+                (o.immune, "immune"),
+                (o.resisted, "resisted"),
+                (o.vulnerable, "vulnerable"),
+            ]
+            .iter()
+            .filter(|f| f.0)
+            .map(|f| f.1)
+            .collect::<Vec<_>>()
+            .join(",");
             match &d.roll {
-                Some(r) => s.push_str(&format!("; {} → {} {:?}", r.breakdown(), o.final_amount, o.damage_type)),
+                Some(r) => s.push_str(&format!(
+                    "; {} → {} {:?}",
+                    r.breakdown(),
+                    o.final_amount,
+                    o.damage_type
+                )),
                 None => s.push_str(&format!("; {} {:?}", o.final_amount, o.damage_type)),
             }
             if !flags.is_empty() {
@@ -142,7 +158,10 @@ pub fn resolve_attack(
         for part in parts {
             let roll = part.dice.roll(rng, critical);
             let outcome = target_defenses.apply(part.damage_type, roll.total.max(0), 0);
-            damage.push(DamageDealt { roll: Some(roll), outcome });
+            damage.push(DamageDealt {
+                roll: Some(roll),
+                outcome,
+            });
         }
         let dealt: i32 = damage.iter().map(|d| d.outcome.final_amount).sum();
         mastery_triggered = match profile.mastery {
@@ -154,9 +173,16 @@ pub fn resolve_attack(
         };
     } else if profile.mastery == Some(Mastery::Graze) && profile.ability_mod > 0 {
         // Graze: on a miss, damage equal to the ability modifier used for the attack roll, same type.
-        let dtype = profile.damage.first().map(|d| d.damage_type).unwrap_or(DamageType::Slashing);
+        let dtype = profile
+            .damage
+            .first()
+            .map(|d| d.damage_type)
+            .unwrap_or(DamageType::Slashing);
         let outcome = target_defenses.apply(dtype, profile.ability_mod, 0);
-        damage.push(DamageDealt { roll: None, outcome });
+        damage.push(DamageDealt {
+            roll: None,
+            outcome,
+        });
         mastery_triggered = Some(Mastery::Graze);
     }
     let total_damage = damage.iter().map(|d| d.outcome.final_amount).sum();
@@ -184,7 +210,10 @@ mod tests {
             name: "Longsword".into(),
             kind: WeaponKind::Melee,
             to_hit: 5,
-            damage: vec![DamagePart { dice: DiceExpr::dice(1, 8).with_modifier(3), damage_type: DamageType::Slashing }],
+            damage: vec![DamagePart {
+                dice: DiceExpr::dice(1, 8).with_modifier(3),
+                damage_type: DamageType::Slashing,
+            }],
             extra_damage_with_advantage: vec![],
             reach_ft: 5,
             range_ft: None,
@@ -196,7 +225,13 @@ mod tests {
     #[test]
     fn hit_when_total_meets_ac() {
         let mut rng = ScriptedRng::new([10, 6]);
-        let r = resolve_attack(&mut rng, &longsword(None), 15, &Defenses::default(), &AttackModifiers::default());
+        let r = resolve_attack(
+            &mut rng,
+            &longsword(None),
+            15,
+            &Defenses::default(),
+            &AttackModifiers::default(),
+        );
         assert!(r.hit && !r.critical);
         assert_eq!(r.total_damage, 9);
     }
@@ -204,7 +239,13 @@ mod tests {
     #[test]
     fn miss_when_below_ac() {
         let mut rng = ScriptedRng::new([9]);
-        let r = resolve_attack(&mut rng, &longsword(None), 15, &Defenses::default(), &AttackModifiers::default());
+        let r = resolve_attack(
+            &mut rng,
+            &longsword(None),
+            15,
+            &Defenses::default(),
+            &AttackModifiers::default(),
+        );
         assert!(!r.hit);
         assert_eq!(r.total_damage, 0);
         assert_eq!(rng.remaining(), 0, "no damage dice rolled on a miss");
@@ -213,7 +254,13 @@ mod tests {
     #[test]
     fn natural_20_always_hits_and_crits() {
         let mut rng = ScriptedRng::new([20, 8, 8]);
-        let r = resolve_attack(&mut rng, &longsword(None), 40, &Defenses::default(), &AttackModifiers::default());
+        let r = resolve_attack(
+            &mut rng,
+            &longsword(None),
+            40,
+            &Defenses::default(),
+            &AttackModifiers::default(),
+        );
         assert!(r.hit && r.critical);
         assert_eq!(r.total_damage, 8 + 8 + 3, "dice doubled, modifier once");
     }
@@ -222,14 +269,29 @@ mod tests {
     fn natural_1_always_misses() {
         let mut p = longsword(None);
         p.to_hit = 30;
-        let r = resolve_attack(&mut ScriptedRng::new([1]), &p, 5, &Defenses::default(), &AttackModifiers::default());
+        let r = resolve_attack(
+            &mut ScriptedRng::new([1]),
+            &p,
+            5,
+            &Defenses::default(),
+            &AttackModifiers::default(),
+        );
         assert!(!r.hit);
     }
 
     #[test]
     fn auto_critical_against_paralyzed_within_5ft() {
-        let mods = AttackModifiers { hit_is_auto_critical: true, ..Default::default() };
-        let r = resolve_attack(&mut ScriptedRng::new([12, 1, 1]), &longsword(None), 10, &Defenses::default(), &mods);
+        let mods = AttackModifiers {
+            hit_is_auto_critical: true,
+            ..Default::default()
+        };
+        let r = resolve_attack(
+            &mut ScriptedRng::new([12, 1, 1]),
+            &longsword(None),
+            10,
+            &Defenses::default(),
+            &mods,
+        );
         assert!(r.critical);
         assert_eq!(r.total_damage, 5);
     }
@@ -238,16 +300,40 @@ mod tests {
     fn graze_on_miss_and_sap_vex_on_hit() {
         let mut gs = longsword(Some(Mastery::Graze));
         gs.name = "Greatsword".into();
-        let r = resolve_attack(&mut ScriptedRng::new([2]), &gs, 15, &Defenses::default(), &AttackModifiers::default());
+        let r = resolve_attack(
+            &mut ScriptedRng::new([2]),
+            &gs,
+            15,
+            &Defenses::default(),
+            &AttackModifiers::default(),
+        );
         assert!(!r.hit);
-        assert_eq!((r.total_damage, r.mastery_triggered), (3, Some(Mastery::Graze)));
+        assert_eq!(
+            (r.total_damage, r.mastery_triggered),
+            (3, Some(Mastery::Graze))
+        );
 
-        let r = resolve_attack(&mut ScriptedRng::new([15, 4]), &longsword(Some(Mastery::Sap)), 12, &Defenses::default(), &AttackModifiers::default());
+        let r = resolve_attack(
+            &mut ScriptedRng::new([15, 4]),
+            &longsword(Some(Mastery::Sap)),
+            12,
+            &Defenses::default(),
+            &AttackModifiers::default(),
+        );
         assert_eq!(r.mastery_triggered, Some(Mastery::Sap));
 
         // Vex requires dealing damage: an immune target takes 0, so no Vex.
-        let immune = Defenses { immunities: [DamageType::Slashing].into(), ..Default::default() };
-        let r = resolve_attack(&mut ScriptedRng::new([15, 4]), &longsword(Some(Mastery::Vex)), 12, &immune, &AttackModifiers::default());
+        let immune = Defenses {
+            immunities: [DamageType::Slashing].into(),
+            ..Default::default()
+        };
+        let r = resolve_attack(
+            &mut ScriptedRng::new([15, 4]),
+            &longsword(Some(Mastery::Vex)),
+            12,
+            &immune,
+            &AttackModifiers::default(),
+        );
         assert!(r.hit);
         assert_eq!(r.mastery_triggered, None);
     }
@@ -255,12 +341,27 @@ mod tests {
     #[test]
     fn extra_damage_only_with_advantage() {
         let mut p = longsword(None);
-        p.extra_damage_with_advantage = vec![DamagePart { dice: DiceExpr::dice(1, 4), damage_type: DamageType::Slashing }];
+        p.extra_damage_with_advantage = vec![DamagePart {
+            dice: DiceExpr::dice(1, 4),
+            damage_type: DamageType::Slashing,
+        }];
         let mut mods = AttackModifiers::default();
         mods.sources.adv("test");
-        let r = resolve_attack(&mut ScriptedRng::new([3, 15, 5, 2]), &p, 12, &Defenses::default(), &mods);
+        let r = resolve_attack(
+            &mut ScriptedRng::new([3, 15, 5, 2]),
+            &p,
+            12,
+            &Defenses::default(),
+            &mods,
+        );
         assert_eq!(r.total_damage, 5 + 3 + 2);
-        let r = resolve_attack(&mut ScriptedRng::new([15, 5]), &p, 12, &Defenses::default(), &AttackModifiers::default());
+        let r = resolve_attack(
+            &mut ScriptedRng::new([15, 5]),
+            &p,
+            12,
+            &Defenses::default(),
+            &AttackModifiers::default(),
+        );
         assert_eq!(r.total_damage, 8);
     }
 }

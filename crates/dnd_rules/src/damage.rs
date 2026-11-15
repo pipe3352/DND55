@@ -80,7 +80,14 @@ impl Defenses {
         if vulnerable {
             amount *= 2;
         }
-        DamageOutcome { damage_type, rolled, final_amount: amount, resisted, vulnerable, immune }
+        DamageOutcome {
+            damage_type,
+            rolled,
+            final_amount: amount,
+            resisted,
+            vulnerable,
+            immune,
+        }
     }
 }
 
@@ -92,7 +99,11 @@ mod tests {
     fn srd_order_of_application_example() {
         // SRD example: Resistance to all damage, Vulnerability to Fire, an aura reducing all damage by 5.
         // 28 Fire damage -> 23 -> 11 (round down) -> 22.
-        let d = Defenses { resist_all: true, vulnerabilities: [DamageType::Fire].into(), ..Default::default() };
+        let d = Defenses {
+            resist_all: true,
+            vulnerabilities: [DamageType::Fire].into(),
+            ..Default::default()
+        };
         let o = d.apply(DamageType::Fire, 28, -5);
         assert_eq!(o.final_amount, 22);
         assert!(o.resisted && o.vulnerable);
@@ -100,7 +111,11 @@ mod tests {
 
     #[test]
     fn resistance_does_not_stack_and_rounds_down() {
-        let d = Defenses { resist_all: true, resistances: [DamageType::Necrotic].into(), ..Default::default() };
+        let d = Defenses {
+            resist_all: true,
+            resistances: [DamageType::Necrotic].into(),
+            ..Default::default()
+        };
         assert_eq!(d.apply(DamageType::Necrotic, 9, 0).final_amount, 4);
     }
 

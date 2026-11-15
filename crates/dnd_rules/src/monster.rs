@@ -48,12 +48,21 @@ impl MonsterTemplate {
     }
 }
 
-fn melee(name: &str, to_hit: i32, dice: DiceExpr, t: DamageType, ability_mod: i32) -> AttackProfile {
+fn melee(
+    name: &str,
+    to_hit: i32,
+    dice: DiceExpr,
+    t: DamageType,
+    ability_mod: i32,
+) -> AttackProfile {
     AttackProfile {
         name: name.into(),
         kind: WeaponKind::Melee,
         to_hit,
-        damage: vec![DamagePart { dice, damage_type: t }],
+        damage: vec![DamagePart {
+            dice,
+            damage_type: t,
+        }],
         extra_damage_with_advantage: vec![],
         reach_ft: 5,
         range_ft: None,
@@ -62,16 +71,47 @@ fn melee(name: &str, to_hit: i32, dice: DiceExpr, t: DamageType, ability_mod: i3
     }
 }
 
-fn ranged(name: &str, to_hit: i32, range: (u32, u32), dice: DiceExpr, t: DamageType, ability_mod: i32) -> AttackProfile {
-    AttackProfile { kind: WeaponKind::Ranged, reach_ft: 0, range_ft: Some(range), ..melee(name, to_hit, dice, t, ability_mod) }
+fn ranged(
+    name: &str,
+    to_hit: i32,
+    range: (u32, u32),
+    dice: DiceExpr,
+    t: DamageType,
+    ability_mod: i32,
+) -> AttackProfile {
+    AttackProfile {
+        kind: WeaponKind::Ranged,
+        reach_ft: 0,
+        range_ft: Some(range),
+        ..melee(name, to_hit, dice, t, ability_mod)
+    }
 }
 
 /// Starter bestiary transcribed from SRD 5.2.1.
 pub fn srd_bestiary() -> Vec<MonsterTemplate> {
-    let mut goblin_scimitar = melee("Scimitar", 4, DiceExpr::dice(1, 6).with_modifier(2), DamageType::Slashing, 2);
-    goblin_scimitar.extra_damage_with_advantage = vec![DamagePart { dice: DiceExpr::dice(1, 4), damage_type: DamageType::Slashing }];
-    let mut goblin_bow = ranged("Shortbow", 4, (80, 320), DiceExpr::dice(1, 6).with_modifier(2), DamageType::Piercing, 2);
-    goblin_bow.extra_damage_with_advantage = vec![DamagePart { dice: DiceExpr::dice(1, 4), damage_type: DamageType::Piercing }];
+    let mut goblin_scimitar = melee(
+        "Scimitar",
+        4,
+        DiceExpr::dice(1, 6).with_modifier(2),
+        DamageType::Slashing,
+        2,
+    );
+    goblin_scimitar.extra_damage_with_advantage = vec![DamagePart {
+        dice: DiceExpr::dice(1, 4),
+        damage_type: DamageType::Slashing,
+    }];
+    let mut goblin_bow = ranged(
+        "Shortbow",
+        4,
+        (80, 320),
+        DiceExpr::dice(1, 6).with_modifier(2),
+        DamageType::Piercing,
+        2,
+    );
+    goblin_bow.extra_damage_with_advantage = vec![DamagePart {
+        dice: DiceExpr::dice(1, 4),
+        damage_type: DamageType::Piercing,
+    }];
 
     vec![
         MonsterTemplate {
@@ -96,7 +136,8 @@ pub fn srd_bestiary() -> Vec<MonsterTemplate> {
             attacks: vec![goblin_scimitar, goblin_bow],
             notes: vec![
                 "Skills: Stealth +6".into(),
-                "Bonus Action — Nimble Escape: the goblin takes the Disengage or Hide action.".into(),
+                "Bonus Action — Nimble Escape: the goblin takes the Disengage or Hide action."
+                    .into(),
                 "Reaction — Redirect Attack (not yet automated).".into(),
             ],
             source: "srd-5.2.1".into(),
@@ -125,10 +166,26 @@ pub fn srd_bestiary() -> Vec<MonsterTemplate> {
             xp: 50,
             proficiency_bonus: 2,
             attacks: vec![
-                melee("Shortsword", 5, DiceExpr::dice(1, 6).with_modifier(3), DamageType::Piercing, 3),
-                ranged("Shortbow", 5, (80, 320), DiceExpr::dice(1, 6).with_modifier(3), DamageType::Piercing, 3),
+                melee(
+                    "Shortsword",
+                    5,
+                    DiceExpr::dice(1, 6).with_modifier(3),
+                    DamageType::Piercing,
+                    3,
+                ),
+                ranged(
+                    "Shortbow",
+                    5,
+                    (80, 320),
+                    DiceExpr::dice(1, 6).with_modifier(3),
+                    DamageType::Piercing,
+                    3,
+                ),
             ],
-            notes: vec!["Immune to Exhaustion".into(), "Languages: understands Common plus one other language but can't speak".into()],
+            notes: vec![
+                "Immune to Exhaustion".into(),
+                "Languages: understands Common plus one other language but can't speak".into(),
+            ],
             source: "srd-5.2.1".into(),
         },
     ]
@@ -142,11 +199,27 @@ mod tests {
     fn stat_blocks_are_internally_consistent() {
         for m in srd_bestiary() {
             // Average of hit dice (rounded down) equals printed HP in 2024 stat blocks.
-            assert_eq!(m.hit_dice.average().floor() as i32, m.hit_points, "{}", m.name);
-            assert_eq!(m.initiative_bonus, m.scores.modifier(crate::Ability::Dexterity), "{}", m.name);
+            assert_eq!(
+                m.hit_dice.average().floor() as i32,
+                m.hit_points,
+                "{}",
+                m.name
+            );
+            assert_eq!(
+                m.initiative_bonus,
+                m.scores.modifier(crate::Ability::Dexterity),
+                "{}",
+                m.name
+            );
             for a in &m.attacks {
                 // Printed attack bonus = ability mod + PB.
-                assert_eq!(a.to_hit, a.ability_mod + m.proficiency_bonus, "{} {}", m.name, a.name);
+                assert_eq!(
+                    a.to_hit,
+                    a.ability_mod + m.proficiency_bonus,
+                    "{} {}",
+                    m.name,
+                    a.name
+                );
             }
         }
     }
