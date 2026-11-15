@@ -8,19 +8,7 @@ use dnd_session::Session;
 use std::path::PathBuf;
 
 pub fn data_dir() -> PathBuf {
-    if let Ok(p) = std::env::var("DND55_DATA_DIR") {
-        return PathBuf::from(p);
-    }
-    #[cfg(windows)]
-    if let Ok(appdata) = std::env::var("APPDATA") {
-        return PathBuf::from(appdata).join("dnd55");
-    }
-    if let Ok(x) = std::env::var("XDG_DATA_HOME") {
-        return PathBuf::from(x).join("dnd55");
-    }
-    std::env::var("HOME")
-        .map(|h| PathBuf::from(h).join(".local/share/dnd55"))
-        .unwrap_or_else(|_| PathBuf::from("dnd55-data"))
+    crate::platform::data_dir()
 }
 
 pub fn open_store() -> Result<Store, String> {

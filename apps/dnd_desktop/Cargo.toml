@@ -1,12 +1,13 @@
 [package]
 name = "dnd_desktop"
-description = "D&D 5.5 desktop RPG client and DM host (Bevy + egui)."
+description = "DND55 desktop RPG client and DM host (Bevy + egui)."
+build = "build.rs"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "dnd55"
+name = "DND55"
 path = "src/main.rs"
 
 [dependencies]
@@ -22,3 +23,15 @@ image.workspace = true
 bevy = { version = "0.20.1", default-features = false, features = ["2d", "audio", "wav", "png"] }
 bevy_egui = "0.43.1"
 rfd = "0.15"
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+
+[build-dependencies]
+winresource = "0.1.34"
+
+[package.metadata.winresource]
+ProductName = "DND55"
+FileDescription = "DND55 - fantasy tabletop RPG (5e 2024 compatible)"
+LegalCopyright = "MIT OR Apache-2.0; includes SRD 5.2.1 material (CC-BY-4.0)"

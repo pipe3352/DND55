@@ -2,8 +2,8 @@
 
 use crate::character_ui::{CharacterDraft, creator_ui};
 use crate::hosting::{self, open_store};
-use crate::i18n::{I18n, Lang};
-use crate::state::{AudioSettings, HostRuntime, MenuPage, Net, UiState};
+use crate::i18n::I18n;
+use crate::state::{HostRuntime, MenuPage, Net, UiState};
 use crate::theme;
 use bevy::app::AppExit;
 use bevy::prelude::*;
@@ -40,7 +40,7 @@ pub struct MenuParams<'w> {
     pub cache: ResMut<'w, MenuCache>,
     pub draft: ResMut<'w, CharacterDraft>,
     pub i18n: ResMut<'w, I18n>,
-    pub audio: ResMut<'w, AudioSettings>,
+    pub settings: ResMut<'w, crate::settings::GameSettings>,
 }
 
 pub fn menu_ui(
@@ -358,19 +358,5 @@ fn characters_page(ui: &mut egui::Ui, p: &mut MenuParams) {
 
 fn settings_page(ui: &mut egui::Ui, p: &mut MenuParams) {
     theme::heading(ui, p.i18n.t("menu.settings"));
-    ui.horizontal(|ui| {
-        ui.label(p.i18n.t("settings.language"));
-        ui.selectable_value(&mut p.i18n.lang, Lang::En, "English");
-        ui.selectable_value(&mut p.i18n.lang, Lang::It, "Italiano");
-    });
-    ui.add(egui::Slider::new(&mut p.ui.ui_scale, 0.75..=1.75).text(p.i18n.t("settings.ui_scale")));
-    ui.add(egui::Slider::new(&mut p.audio.master, 0.0..=1.0).text(p.i18n.t("settings.master")));
-    ui.add(egui::Slider::new(&mut p.audio.effects, 0.0..=1.0).text(p.i18n.t("settings.effects")));
-    ui.add(egui::Slider::new(&mut p.audio.music, 0.0..=1.0).text(p.i18n.t("settings.music")));
-    ui.add(egui::Slider::new(&mut p.audio.ambience, 0.0..=1.0).text(p.i18n.t("settings.ambience")));
-    ui.label(format!(
-        "{}: {}",
-        p.i18n.t("settings.data_dir"),
-        hosting::data_dir().display()
-    ));
+    crate::settings::settings_ui(ui, &mut p.settings, &p.i18n);
 }

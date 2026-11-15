@@ -1,4 +1,4 @@
-//! D&D 5.5 — desktop RPG client and DM host.
+//! DND55 — desktop fantasy RPG client and DM host (5e 2024 / SRD 5.2.1 rules).
 //!
 //! The DM's copy runs the authoritative host in-process (see `dnd_net`) and connects to it like any
 //! player; all game rules live in `dnd_rules`/`dnd_session`. This crate only renders and collects input.
@@ -18,6 +18,8 @@ mod input;
 mod map_render;
 mod menu;
 mod net_sync;
+mod platform;
+mod settings;
 mod state;
 mod textures;
 mod theme;
@@ -30,15 +32,32 @@ use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use state::*;
 
 fn main() {
+    platform::install_crash_handler();
+    let game_settings = settings::GameSettings::load();
+    if let Some(backend) = game_settings.backend.env_value() {
+        if std::env::var("WGPU_BACKEND").is_err() {
+            // SAFETY: called before any other thread exists.
+            unsafe { std::env::set_var("WGPU_BACKEND", backend) };
+        }
+    }
+    let (w, h) = game_settings.resolution;
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "D&D 5.5 — Tabletop RPG".into(),
-                resolution: WindowResolution::new(1600, 900),
-                ..default()
-            }),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "DND55 — Fantasy Tabletop RPG".into(),
+                        resolution: WindowResolution::new(w, h),
+                        mode: game_settings.window_mode(),
+                        present_mode: game_settings.present_mode(),
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(bevy::log::LogPlugin { custom_layer: platform::file_log_layer, ..default() }),
+        )
+        .insert_resource(game_settings)
+        .add_systems(Update, (settings::apply_settings, platform::set_window_icon))
         .add_plugins(EguiPlugin::default())
         .insert_resource(ClearColor(Color::srgb(0.07, 0.055, 0.045)))
         .init_state::<AppState>()
