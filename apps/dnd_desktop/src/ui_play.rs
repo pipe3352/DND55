@@ -411,7 +411,7 @@ pub fn sheet_extras(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
                     ui.label(
                         RichText::new(format!(
                             "{lvl}: {}{}",
-                            "●".repeat(left as usize),
+                            "•".repeat(left as usize),
                             "○".repeat((total - left) as usize)
                         ))
                         .color(theme::GOLD),
@@ -786,7 +786,7 @@ pub fn reaction_prompts(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) 
             .resizable(false)
             .show(ctx, |ui| {
                 ui.label(format!(
-                    "{attacker} → {target}: {} {}",
+                    "{attacker} ▶ {target}: {} {}",
                     g.i18n.t("reaction.hit_roll"),
                     p.result.d20.total
                 ));
@@ -982,7 +982,7 @@ fn cast_tab(
                             let label = if *l == s.level {
                                 format!("{} ({l})", g.i18n.t("spell.cast"))
                             } else {
-                                format!("↑{l}")
+                                format!("⬆{l}")
                             };
                             if ui
                                 .button(label)
@@ -1144,7 +1144,7 @@ pub fn levelup_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
     };
     let new_level = sheet.level + 1;
     let mut open = true;
-    egui::Window::new(format!("⬆ {} {} → {}", sheet.name, sheet.level, new_level))
+    egui::Window::new(format!("⬆ {} {} ▶ {}", sheet.name, sheet.level, new_level))
         .open(&mut open)
         .default_width(460.0)
         .show(ctx, |ui| {
@@ -1465,7 +1465,7 @@ pub fn inventory_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) 
                             }
                             for (n_id, n) in &near {
                                 if ui
-                                    .small_button(format!("→ {n}"))
+                                    .small_button(format!("▶ {n}"))
                                     .on_hover_text(g.i18n.t("inv.administer"))
                                     .clicked()
                                 {

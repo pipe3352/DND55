@@ -84,7 +84,7 @@ pub fn explain(panic_text: &str) -> &'static str {
     {
         "DND55 could not start the graphics system.\n\n\
          • Update your graphics driver (NVIDIA / AMD / Intel website).\n\
-         • Open Settings → Graphics backend and try another option (DirectX 12 / Vulkan / OpenGL),\n\
+         • Open Settings ▶ Graphics backend and try another option (DirectX 12 / Vulkan / OpenGL),\n\
            or start DND55 with the environment variable WGPU_BACKEND=dx12 (or vulkan, gl).\n\
          • Remote desktop and some virtual machines have no 3D acceleration."
     } else if t.contains("address") && t.contains("use") {
@@ -116,7 +116,7 @@ pub fn audio_available() -> bool {
 }
 
 /// After a graphics-initialization failure, relaunch DND55 with the next backend
-/// (automatic → Vulkan → OpenGL). Returns false when there is nothing left to try.
+/// (automatic ▶ Vulkan ▶ OpenGL). Returns false when there is nothing left to try.
 fn relaunch_with_next_backend() -> bool {
     let next = match std::env::var("WGPU_BACKEND").ok().as_deref() {
         None | Some("") | Some("dx12") => "vulkan",

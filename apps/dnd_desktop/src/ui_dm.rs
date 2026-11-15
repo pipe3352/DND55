@@ -80,7 +80,7 @@ pub fn selection_panel(ui: &mut Ui, g: &mut GameUi, room: RoomId) {
         }
     });
     ui.horizontal(|ui| {
-        for (label, dx, dy) in [("←", -1, 0), ("→", 1, 0), ("↑", 0, -1), ("↓", 0, 1)] {
+        for (label, dx, dy) in [("◀", -1, 0), ("▶", 1, 0), ("⬆", 0, -1), ("⬇", 0, 1)] {
             if ui.add_enabled(n > 0, egui::Button::new(label)).clicked() {
                 let objects = g.ui.sel_objects.clone();
                 g.net.cmd(Command::Dm(DmCommand::MoveObjects {
@@ -312,7 +312,7 @@ pub fn layer_panel(ui: &mut Ui, g: &mut GameUi, room: RoomId) {
                 }));
             }
             if ui
-                .add_enabled(i > 0, egui::Button::new("▲").small())
+                .add_enabled(i > 0, egui::Button::new("⏶").small())
                 .on_hover_text(g.i18n.t("layer.up"))
                 .clicked()
             {
@@ -323,7 +323,7 @@ pub fn layer_panel(ui: &mut Ui, g: &mut GameUi, room: RoomId) {
                 }));
             }
             if ui
-                .add_enabled(i + 1 < n, egui::Button::new("▼").small())
+                .add_enabled(i + 1 < n, egui::Button::new("⏷").small())
                 .on_hover_text(g.i18n.t("layer.down"))
                 .clicked()
             {
@@ -948,7 +948,7 @@ pub fn graph_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
                         .map(|n| n.name.clone())
                         .unwrap_or_default();
                     ui.label(
-                        RichText::new(format!("{} {name} → …", g.i18n.t("graph.linking")))
+                        RichText::new(format!("{} {name} ▶ …", g.i18n.t("graph.linking")))
                             .color(theme::GOLD),
                     );
                     ui.checkbox(&mut g.ui.connect_one_way, g.i18n.t("world.one_way"));
@@ -1234,7 +1234,7 @@ pub fn events_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
                 }));
             }
             if ui
-                .small_button("✎")
+                .small_button("✏")
                 .on_hover_text(g.i18n.t("events.edit"))
                 .clicked()
             {

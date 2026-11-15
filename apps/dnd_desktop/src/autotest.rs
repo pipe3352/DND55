@@ -3,6 +3,10 @@
 //! * `DND55_AUTO=host` — host the demo campaign, run a short scripted DM sequence.
 //! * `DND55_AUTO=join` — join `DND55_AUTO_ADDR` with code `DND55_SESSION_CODE` as `DND55_AUTO_NAME`,
 //!   bringing a ready-made level-1 fighter with a generated portrait.
+//! * `DND55_AUTO_SCENARIO=calm` — like the default host script but without starting combat.
+//! * `DND55_AUTO_CLASS=wizard` — the auto-joining player brings a level-1 Wizard instead.
+//! * `DND55_AUTO_OPEN=bestiary,graph,events,invite,settings,spellbook,prepare,inventory,select,draw,cast`
+//!   — open those windows/tools shortly before the screenshot (GUI smoke tests).
 //! * `DND55_SCREENSHOT=<path>` + `DND55_SCREENSHOT_AFTER=<secs>` — save a screenshot, then exit.
 
 use crate::hosting;
@@ -36,9 +40,11 @@ pub fn auto_start(mut commands: Commands, mut net: ResMut<Net>) {
             commands.insert_resource::<HostRuntime>(host);
         }
         Some("join") => {
-            let sheet = CharacterSheet::example_fighter(
-                &env("DND55_AUTO_NAME").unwrap_or_else(|| "Brunhild".into()),
-            );
+            let name = env("DND55_AUTO_NAME").unwrap_or_else(|| "Brunhild".into());
+            let sheet = match env("DND55_AUTO_CLASS").as_deref() {
+                Some("wizard") => CharacterSheet::example_wizard(&name),
+                _ => CharacterSheet::example_fighter(&name),
+            };
             net.pending_character = Some((sheet, Some(portrait_png())));
             hosting::join(
                 &mut net,
@@ -81,6 +87,7 @@ pub fn auto_script(
     gv: Res<GameView>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
+    mut ui: ResMut<crate::state::UiState>,
 ) {
     let t = time.elapsed_secs();
     let mut once = |name: &'static str, at: f32| -> bool {
@@ -116,7 +123,7 @@ pub fn auto_script(
                     hidden: false,
                 }));
             }
-            if once("combat", 8.0) {
+            if once("combat", 8.0) && env("DND55_AUTO_SCENARIO").as_deref() != Some("calm") {
                 net.cmd(Command::Dm(DmCommand::StartCombat { surprised: vec![] }));
             }
             if once("hurt", 10.0)
@@ -164,17 +171,105 @@ pub fn auto_script(
             to: (6, 7),
         });
     }
+    let after: f32 = env("DND55_SCREENSHOT_AFTER")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10.5);
+    if let Some(list) = env("DND55_AUTO_OPEN")
+        && once(
+            "open",
+            env("DND55_AUTO_OPEN_AT")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(after - 1.5),
+        )
+    {
+        open_windows(&list, &mut ui, &gv);
+    }
     if let Some(path) = env("DND55_SCREENSHOT") {
-        let after: f32 = env("DND55_SCREENSHOT_AFTER")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(10.5);
         if once("shot", after) {
             commands
                 .spawn(Screenshot::primary_window())
                 .observe(save_to_disk(path));
         }
         if once("exit", after + 2.0) {
+            // GUI tests assert on the adventure log the host sent us.
+            if let Some(v) = &gv.view {
+                for line in &v.log {
+                    println!("GAMELOG: {line}");
+                }
+                println!(
+                    "GAMELOG-CREATURES: {}",
+                    v.creatures
+                        .iter()
+                        .map(|c| c.name.clone())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
             exit.write(AppExit::Success);
+        }
+    }
+}
+
+fn open_windows(list: &str, ui: &mut crate::state::UiState, gv: &GameView) {
+    use crate::state::{DmTab, Tool};
+    let view = gv.view.as_ref();
+    for w in list.split(',').map(str::trim) {
+        match w {
+            "bestiary" => {
+                ui.show_bestiary = true;
+                ui.bestiary_preview = Some("goblin_warrior".into());
+            }
+            "graph" => ui.show_graph = true,
+            "events" => {
+                ui.dm_tab = DmTab::Events;
+                let room = view
+                    .and_then(|v| v.room.as_ref())
+                    .map(|r| r.id)
+                    .unwrap_or(dnd_world::RoomId(0));
+                ui.script_draft = Some(dnd_session::scripts::ScriptedEvent {
+                    id: 0,
+                    name: "Pressure plate".into(),
+                    enabled: true,
+                    once: true,
+                    fired: false,
+                    trigger: dnd_session::scripts::Trigger::EnterArea {
+                        room,
+                        a: (5, 5),
+                        b: (6, 6),
+                    },
+                    actions: vec![dnd_session::scripts::ScriptAction::Trap {
+                        dice: "2d6".into(),
+                        damage_type: dnd_rules::damage::DamageType::Piercing,
+                        save: Some(dnd_rules::Ability::Dexterity),
+                        dc: 13,
+                        half_on_success: true,
+                    }],
+                });
+            }
+            "invite" => ui.show_invite = true,
+            "settings" => ui.show_settings = true,
+            "spellbook" => ui.show_spellbook = true,
+            "prepare" => {
+                ui.show_spellbook = true;
+                ui.spellbook_prepare = true;
+            }
+            "inventory" => ui.show_inventory = true,
+            "select" => {
+                ui.tool = Tool::Select;
+                ui.dm_tab = DmTab::Editor;
+                if let Some(o) = gv.map.as_ref().and_then(|m| m.objects.first()) {
+                    ui.sel_objects = vec![o.id];
+                }
+            }
+            "draw" => ui.tool = Tool::Draw,
+            "cast" => {
+                if let Some((id, sheet)) = view.and_then(|v| v.my_characters.first().cloned())
+                    && let Some(sp) = dnd_rules::spells::spell("burning_hands")
+                {
+                    ui.casting = crate::ui_play::cast_intent(sp, id, Some(1), sheet.level);
+                }
+            }
+            _ => {}
         }
     }
 }

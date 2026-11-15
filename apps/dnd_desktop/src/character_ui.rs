@@ -327,7 +327,7 @@ fn step_abilities(ui: &mut egui::Ui, d: &mut CharacterDraft, i18n: &I18n) {
                     }
                 }
                 let f = finals.get(a);
-                ui.label(format!("→ {f}"));
+                ui.label(format!("▶ {f}"));
                 ui.label(RichText::new(format!("{:+}", dnd_rules::ability_modifier(f))).strong());
                 ui.end_row();
             }
@@ -681,7 +681,7 @@ pub fn sheet_ui(
                 .show(ui, |ui| {
                     for s in Skill::ALL {
                         let prof = if sheet.skill_proficient(s) {
-                            "●"
+                            "•"
                         } else {
                             "○"
                         };

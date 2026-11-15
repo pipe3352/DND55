@@ -733,6 +733,35 @@ impl CharacterSheet {
         }
     }
 
+    /// A ready-made level-1 Wizard (used by the GUI smoke tests and as a quick-start).
+    pub fn example_wizard(name: &str) -> Self {
+        CharacterSheet {
+            name: name.into(),
+            species: SpeciesId::Elf,
+            class: ClassId::Wizard,
+            background: BackgroundId::Sage,
+            base_scores: AbilityScores::new(8, 14, 13, 15, 12, 10),
+            background_bonus: BackgroundBonus::PlusTwoPlusOne {
+                plus_two: Ability::Intelligence,
+                plus_one: Ability::Constitution,
+            },
+            class_skills: vec![Skill::Investigation, Skill::Medicine],
+            species_skill: None,
+            body_armor: None,
+            shield: false,
+            weapons: vec!["dagger".into(), "quarterstaff".into()],
+            weapon_masteries: vec![],
+            cantrips: vec!["fire_bolt".into(), "light".into(), "ray_of_frost".into()],
+            prepared_spells: vec![
+                "magic_missile".into(),
+                "shield".into(),
+                "sleep".into(),
+                "burning_hands".into(),
+            ],
+            ..Self::example_fighter(name)
+        }
+    }
+
     /// Level-dependent choices: subclass, ASI, fighting style, expertise, spells.
     fn validate_progression(&self, issues: &mut Vec<Issue>) {
         use crate::classes;
@@ -881,6 +910,18 @@ impl CharacterSheet {
 mod tests {
     use super::*;
     use crate::equipment::Mastery;
+
+    #[test]
+    fn example_wizard_is_valid() {
+        let w = CharacterSheet::example_wizard("Wren");
+        let errors: Vec<_> = w
+            .validate()
+            .into_iter()
+            .filter(|i| i.severity == Severity::Error)
+            .collect();
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(w.spell_save_dc(), Some(13));
+    }
 
     #[test]
     fn example_fighter_derived_stats() {

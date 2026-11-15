@@ -97,3 +97,12 @@ pub fn bar(ui: &mut egui::Ui, label: &str, cur: i32, max: i32, color: Color32) {
             .desired_height(10.0),
     );
 }
+
+/// Replaces characters the bundled UI fonts can't draw (they would show as empty boxes).
+pub fn glyph_safe(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.contains('→') {
+        std::borrow::Cow::Owned(text.replace('→', "»"))
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
+}

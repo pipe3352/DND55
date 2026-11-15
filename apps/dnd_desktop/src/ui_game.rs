@@ -149,10 +149,10 @@ pub fn game_ui(
                             } else {
                                 theme::BLOOD
                             };
-                            ui.label(RichText::new(format!("● {ms} ms")).color(c).small());
+                            ui.label(RichText::new(format!("• {ms} ms")).color(c).small());
                         }
                         (Some(_), None) => {
-                            ui.label(RichText::new("●").color(theme::GOLD).small());
+                            ui.label(RichText::new("•").color(theme::GOLD).small());
                         }
                         (None, _) => {
                             ui.label(RichText::new(&g.net.status).color(theme::BLOOD).small());
@@ -326,7 +326,7 @@ fn log_panel(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
         .max_height(ui.available_height() - 34.0)
         .show(ui, |ui| {
             for l in view.log.iter().rev().take(80).rev() {
-                ui.label(RichText::new(l).small());
+                ui.label(RichText::new(theme::glyph_safe(l)).small());
             }
             for (from, text) in g.pres.chat.iter().rev().take(20).rev() {
                 ui.label(
@@ -584,7 +584,7 @@ fn world_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
                 ui.label(format!(
                     "{} {name}",
                     if e.one_way {
-                        if e.from == v { "→" } else { "←" }
+                        if e.from == v { "▶" } else { "◀" }
                     } else {
                         "↔"
                     }
@@ -715,7 +715,7 @@ fn monsters_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
             }
             let mut hidden = c.hidden;
             if ui
-                .checkbox(&mut hidden, "👁‍🗨")
+                .checkbox(&mut hidden, "👁")
                 .on_hover_text(g.i18n.t("monsters.hidden_toggle"))
                 .changed()
             {
@@ -737,7 +737,7 @@ fn session_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
     for p in &view.players {
         ui.label(format!(
             "{} {} — {}{}",
-            if p.connected { "🟢" } else { "⚪" },
+            if p.connected { "⚫" } else { "⚪" },
             p.name,
             p.character
                 .clone()
@@ -1031,8 +1031,10 @@ fn overlays(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
                     .show(ui, |ui| {
                         ui.set_max_width(520.0);
                         ui.add(
-                            egui::Label::new(RichText::new(t).color(theme::PARCHMENT))
-                                .wrap_mode(egui::TextWrapMode::Extend),
+                            egui::Label::new(
+                                RichText::new(theme::glyph_safe(t)).color(theme::PARCHMENT),
+                            )
+                            .wrap_mode(egui::TextWrapMode::Extend),
                         );
                     });
             }
