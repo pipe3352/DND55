@@ -1,0 +1,15 @@
+[package]
+name = "dnd_rules"
+description = "D&D 2024 (SRD 5.2.1) rules engine: pure, deterministic, renderer-independent."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+rand_chacha.workspace = true
+getrandom.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

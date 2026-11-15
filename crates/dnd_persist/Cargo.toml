@@ -1,0 +1,20 @@
+[package]
+name = "dnd_persist"
+description = "Campaign persistence: SQLite saves with checksums, migrations, autosave rotation, backups and export/import."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dnd_session.workspace = true
+dnd_rules.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+image.workspace = true
+dnd_world.workspace = true

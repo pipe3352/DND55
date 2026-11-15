@@ -1,0 +1,23 @@
+[package]
+name = "dnd_net"
+description = "Multiplayer networking: authoritative host and client over framed TCP."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dnd_session.workspace = true
+dnd_world.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+getrandom.workspace = true
+hex.workspace = true
+bytes = "1"
+
+[dev-dependencies]
+dnd_rules.workspace = true
+image.workspace = true

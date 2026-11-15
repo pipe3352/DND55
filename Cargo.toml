@@ -1,0 +1,34 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.90"
+
+[workspace.dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+rand_chacha = "0.10.0"
+getrandom = "0.3"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "sync", "macros", "time", "io-util"] }
+tokio-util = { version = "0.7.20", features = ["codec"] }
+futures = "0.3.34"
+rusqlite = { version = "0.43.0", features = ["bundled"] }
+sha2 = "0.11.1"
+hex = "0.4.3"
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+dnd_rules = { path = "crates/dnd_rules" }
+dnd_world = { path = "crates/dnd_world" }
+dnd_session = { path = "crates/dnd_session" }
+dnd_persist = { path = "crates/dnd_persist" }
+dnd_net = { path = "crates/dnd_net" }
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
