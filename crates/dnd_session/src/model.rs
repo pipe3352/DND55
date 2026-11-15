@@ -182,7 +182,8 @@ impl Creature {
     }
     pub fn effective_speed(&self) -> i32 {
         let penalty = self.status.speed_penalty.map(|(_, p)| p).unwrap_or(0);
-        self.conditions.effective_speed((self.speed_ft - penalty).max(0))
+        self.conditions
+            .effective_speed((self.speed_ft - penalty).max(0))
     }
     pub fn save_bonus(&self, a: dnd_rules::Ability) -> i32 {
         self.saves[a.index()]
@@ -207,7 +208,13 @@ impl Creature {
             .max(5)
     }
 
-    pub fn from_sheet(id: EntityId, sheet: CharacterSheet, room: RoomId, pos: Cell, player: PlayerId) -> Self {
+    pub fn from_sheet(
+        id: EntityId,
+        sheet: CharacterSheet,
+        room: RoomId,
+        pos: Cell,
+        player: PlayerId,
+    ) -> Self {
         let mut c = Creature {
             id,
             name: sheet.name.trim().to_string(),
@@ -237,7 +244,9 @@ impl Creature {
             attacks_per_action: 1,
             save_actions: vec![],
             status: CombatStatus::default(),
-            kind: CreatureKind::Pc { sheet: Box::new(sheet) },
+            kind: CreatureKind::Pc {
+                sheet: Box::new(sheet),
+            },
         };
         c.refresh_from_sheet();
         c
@@ -245,7 +254,9 @@ impl Creature {
 
     /// Recomputes derived statistics after the sheet changed (level up, equipment, ASI).
     pub fn refresh_from_sheet(&mut self) {
-        let Some(sheet) = self.sheet().cloned() else { return };
+        let Some(sheet) = self.sheet().cloned() else {
+            return;
+        };
         let scores = sheet.scores();
         self.name = sheet.name.trim().to_string();
         let new_max = sheet.max_hp();
@@ -258,7 +269,10 @@ impl Creature {
         }
         self.armor_class = sheet.armor_class();
         self.speed_ft = sheet.speed_ft();
-        self.senses = Senses { darkvision_ft: sheet.darkvision_ft(), ..Default::default() };
+        self.senses = Senses {
+            darkvision_ft: sheet.darkvision_ft(),
+            ..Default::default()
+        };
         self.attacks = sheet.attacks();
         self.initiative_bonus = sheet.initiative_bonus();
         self.dex_score = scores.get(dnd_rules::Ability::Dexterity);
@@ -270,11 +284,19 @@ impl Creature {
         self.defenses = Defenses::default();
         if sheet.species == dnd_rules::content::SpeciesId::Dwarf {
             // Dwarven Resilience: Resistance to Poison damage.
-            self.defenses.resistances.insert(dnd_rules::DamageType::Poison);
+            self.defenses
+                .resistances
+                .insert(dnd_rules::DamageType::Poison);
         }
     }
 
-    pub fn from_template(id: EntityId, t: &MonsterTemplate, name: String, room: RoomId, pos: Cell) -> Self {
+    pub fn from_template(
+        id: EntityId,
+        t: &MonsterTemplate,
+        name: String,
+        room: RoomId,
+        pos: Cell,
+    ) -> Self {
         let mut mods = [0; 6];
         for a in dnd_rules::Ability::ALL {
             mods[a.index()] = t.scores.modifier(a);
@@ -284,7 +306,9 @@ impl Creature {
             name,
             room,
             pos,
-            kind: CreatureKind::Monster { template_id: t.id.clone() },
+            kind: CreatureKind::Monster {
+                template_id: t.id.clone(),
+            },
             controller: Controller::Dm,
             faction: Faction::Hostile,
             size: t.size,
@@ -292,7 +316,11 @@ impl Creature {
             conditions: ConditionSet::default(),
             armor_class: t.armor_class,
             speed_ft: t.speed_ft,
-            senses: Senses { darkvision_ft: t.darkvision_ft.max(t.truesight_ft), blindsight_ft: t.blindsight_ft, ..Default::default() },
+            senses: Senses {
+                darkvision_ft: t.darkvision_ft.max(t.truesight_ft),
+                blindsight_ft: t.blindsight_ft,
+                ..Default::default()
+            },
             defenses: t.defenses.clone(),
             attacks: t.attacks.clone(),
             initiative_bonus: t.initiative_bonus,

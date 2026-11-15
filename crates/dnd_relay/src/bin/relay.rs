@@ -8,7 +8,10 @@ fn main() {
         }
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("dnd55-relay [--bind ADDRESS:PORT]   (default 0.0.0.0:{})", dnd_relay::DEFAULT_PORT);
+        println!(
+            "dnd55-relay [--bind ADDRESS:PORT]   (default 0.0.0.0:{})",
+            dnd_relay::DEFAULT_PORT
+        );
         return;
     }
     let addr = match bind.parse() {

@@ -6,9 +6,9 @@ use dnd_session::Session;
 use dnd_session::model::{PlayerId, Principal};
 use dnd_world::RoomId;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -68,7 +68,13 @@ struct Spawner {
 impl Spawner {
     fn spawn(&self, stream: tokio::net::TcpStream) {
         let conn = self.next.fetch_add(1, Ordering::Relaxed);
-        tokio::spawn(connection(conn, stream, self.in_tx.clone(), self.rate, self.shutdown.clone()));
+        tokio::spawn(connection(
+            conn,
+            stream,
+            self.in_tx.clone(),
+            self.rate,
+            self.shutdown.clone(),
+        ));
     }
 }
 
@@ -77,7 +83,10 @@ pub enum RelayStatus {
     Off,
     Connecting,
     /// Registered: players join with this relay invite code.
-    Online { relay: String, invite: String },
+    Online {
+        relay: String,
+        invite: String,
+    },
     Failed(String),
 }
 
@@ -105,7 +114,8 @@ impl HostHandle {
                     Ok(()) => "relay connection closed".to_string(),
                     Err(e) => e.to_string(),
                 };
-                *status.lock().expect("relay status") = RelayStatus::Failed(format!("{reason} — retrying in {backoff}s"));
+                *status.lock().expect("relay status") =
+                    RelayStatus::Failed(format!("{reason} — retrying in {backoff}s"));
                 tokio::select! {
                     _ = shutdown.changed() => return,
                     _ = tokio::time::sleep(std::time::Duration::from_secs(backoff)) => {}
@@ -117,25 +127,58 @@ impl HostHandle {
     }
 }
 
-async fn relay_session(relay_addr: &str, spawner: &Spawner, status: &Arc<std::sync::Mutex<RelayStatus>>) -> std::io::Result<()> {
+async fn relay_session(
+    relay_addr: &str,
+    spawner: &Spawner,
+    status: &Arc<std::sync::Mutex<RelayStatus>>,
+) -> std::io::Result<()> {
     use dnd_relay::{RELAY_PROTOCOL, RelayHello, RelayMsg};
-    let mut control = tokio::time::timeout(Duration::from_secs(8), tokio::net::TcpStream::connect(relay_addr))
-        .await
-        .map_err(|_| std::io::Error::other(format!("timed out connecting to relay {relay_addr}")))??;
-    let (invite, key) = match dnd_relay::handshake(&mut control, &RelayHello::Host { protocol: RELAY_PROTOCOL }).await? {
+    let mut control = tokio::time::timeout(
+        Duration::from_secs(8),
+        tokio::net::TcpStream::connect(relay_addr),
+    )
+    .await
+    .map_err(|_| std::io::Error::other(format!("timed out connecting to relay {relay_addr}")))??;
+    let (invite, key) = match dnd_relay::handshake(
+        &mut control,
+        &RelayHello::Host {
+            protocol: RELAY_PROTOCOL,
+        },
+    )
+    .await?
+    {
         RelayMsg::Registered { invite, host_key } => (invite, host_key),
         RelayMsg::Error { reason } => return Err(std::io::Error::other(reason)),
-        other => return Err(std::io::Error::other(format!("unexpected relay reply {other:?}"))),
+        other => {
+            return Err(std::io::Error::other(format!(
+                "unexpected relay reply {other:?}"
+            )));
+        }
     };
-    *status.lock().expect("relay status") = RelayStatus::Online { relay: relay_addr.to_string(), invite: invite.clone() };
+    *status.lock().expect("relay status") = RelayStatus::Online {
+        relay: relay_addr.to_string(),
+        invite: invite.clone(),
+    };
     loop {
         match dnd_relay::read_msg(&mut control).await? {
             RelayMsg::Open { stream } => {
-                let (relay_addr, invite, key, spawner) = (relay_addr.to_string(), invite.clone(), key.clone(), spawner.clone());
+                let (relay_addr, invite, key, spawner) = (
+                    relay_addr.to_string(),
+                    invite.clone(),
+                    key.clone(),
+                    spawner.clone(),
+                );
                 tokio::spawn(async move {
-                    let Ok(mut s) = tokio::net::TcpStream::connect(&relay_addr).await else { return };
+                    let Ok(mut s) = tokio::net::TcpStream::connect(&relay_addr).await else {
+                        return;
+                    };
                     let _ = s.set_nodelay(true);
-                    let hello = RelayHello::Accept { protocol: RELAY_PROTOCOL, invite, stream, host_key: key };
+                    let hello = RelayHello::Accept {
+                        protocol: RELAY_PROTOCOL,
+                        invite,
+                        stream,
+                        host_key: key,
+                    };
                     if let Ok(RelayMsg::Paired) = dnd_relay::handshake(&mut s, &hello).await {
                         spawner.spawn(s);
                     }
@@ -189,7 +232,12 @@ pub async fn start(
         in_rx,
         shutdown_rx.clone(),
     ));
-    let spawner = Spawner { in_tx, next: Arc::new(AtomicU64::new(1)), rate: config.rate_limit, shutdown: shutdown_rx.clone() };
+    let spawner = Spawner {
+        in_tx,
+        next: Arc::new(AtomicU64::new(1)),
+        rate: config.rate_limit,
+        shutdown: shutdown_rx.clone(),
+    };
     tokio::spawn(accept_loop(listener, spawner.clone(), shutdown_rx));
 
     Ok(HostHandle {
@@ -476,7 +524,9 @@ impl Game {
 
     /// Removes a connection. Returns true if a player thereby became disconnected (views must update).
     fn drop_conn(&mut self, conn: ConnId) -> bool {
-        let Some(c) = self.conns.remove(&conn) else { return false };
+        let Some(c) = self.conns.remove(&conn) else {
+            return false;
+        };
         if let Principal::Player(p) = c.principal
             && !self.conns.values().any(|o| o.principal == c.principal)
         {

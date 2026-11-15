@@ -13,7 +13,10 @@ pub enum ItemKind {
     /// Drinkable healing potion: dice from the SRD "Potions of Healing" table.
     HealingPotion(String),
     /// Light source while carried (e.g. Torch: Bright 20 ft, Dim +20 ft).
-    LightSource { bright_ft: u32, dim_ft: u32 },
+    LightSource {
+        bright_ft: u32,
+        dim_ft: u32,
+    },
     Gear,
     Treasure,
 }
@@ -41,7 +44,11 @@ pub struct Currency {
 impl Currency {
     /// Total value in copper pieces (1 pp = 10 gp = 20 ep = 100 sp = 1000 cp).
     pub fn total_cp(&self) -> u64 {
-        self.cp as u64 + self.sp as u64 * 10 + self.ep as u64 * 50 + self.gp as u64 * 100 + self.pp as u64 * 1000
+        self.cp as u64
+            + self.sp as u64 * 10
+            + self.ep as u64 * 50
+            + self.gp as u64 * 100
+            + self.pp as u64 * 1000
     }
 }
 
@@ -61,7 +68,9 @@ fn potion(id: &str, name: &str, dice: &str, gp: u32) -> ItemStack {
         kind: ItemKind::HealingPotion(dice.into()),
         quantity: 1,
         value_cp: gp * 100,
-        description: format!("Bonus Action: drink it or administer it to a creature within 5 feet; it regains {dice} Hit Points."),
+        description: format!(
+            "Bonus Action: drink it or administer it to a creature within 5 feet; it regains {dice} Hit Points."
+        ),
     }
 }
 
@@ -87,10 +96,24 @@ pub fn catalog() -> Vec<ItemStack> {
         ItemStack { id: "golden_idol".into(), name: "Golden Idol".into(), kind: ItemKind::Treasure, quantity: 1, value_cp: 25_000, description: String::new() },
     ];
     for w in equipment::WEAPONS {
-        v.push(ItemStack { id: w.id.into(), name: w.name.into(), kind: ItemKind::Weapon(w.id.into()), quantity: 1, value_cp: 0, description: String::new() });
+        v.push(ItemStack {
+            id: w.id.into(),
+            name: w.name.into(),
+            kind: ItemKind::Weapon(w.id.into()),
+            quantity: 1,
+            value_cp: 0,
+            description: String::new(),
+        });
     }
     for a in equipment::ARMOR {
-        v.push(ItemStack { id: a.id.into(), name: a.name.into(), kind: ItemKind::Armor(a.id.into()), quantity: 1, value_cp: 0, description: String::new() });
+        v.push(ItemStack {
+            id: a.id.into(),
+            name: a.name.into(),
+            kind: ItemKind::Armor(a.id.into()),
+            quantity: 1,
+            value_cp: 0,
+            description: String::new(),
+        });
     }
     v
 }
@@ -101,7 +124,10 @@ pub fn catalog_item(id: &str) -> Option<ItemStack> {
 
 /// Adds items to an inventory, merging identical stacks.
 pub fn add_to(inv: &mut Vec<ItemStack>, item: ItemStack) {
-    match inv.iter_mut().find(|i| i.id == item.id && i.kind == item.kind && i.name == item.name) {
+    match inv
+        .iter_mut()
+        .find(|i| i.id == item.id && i.kind == item.kind && i.name == item.name)
+    {
         Some(s) => s.quantity += item.quantity,
         None => inv.push(item),
     }
@@ -125,8 +151,22 @@ mod tests {
 
     #[test]
     fn potions_match_srd_table() {
-        assert_eq!(catalog_item("potion_of_healing").unwrap().healing_dice().unwrap().to_string(), "2d4+2");
-        assert_eq!(catalog_item("potion_of_healing_supreme").unwrap().healing_dice().unwrap().to_string(), "10d4+20");
+        assert_eq!(
+            catalog_item("potion_of_healing")
+                .unwrap()
+                .healing_dice()
+                .unwrap()
+                .to_string(),
+            "2d4+2"
+        );
+        assert_eq!(
+            catalog_item("potion_of_healing_supreme")
+                .unwrap()
+                .healing_dice()
+                .unwrap()
+                .to_string(),
+            "10d4+20"
+        );
     }
 
     #[test]
@@ -136,8 +176,21 @@ mod tests {
         add_to(&mut inv, catalog_item("potion_of_healing").unwrap());
         assert_eq!(inv[0].quantity, 2);
         assert!(take_from(&mut inv, "potion_of_healing", 3).is_none());
-        assert_eq!(take_from(&mut inv, "potion_of_healing", 2).unwrap().quantity, 2);
+        assert_eq!(
+            take_from(&mut inv, "potion_of_healing", 2)
+                .unwrap()
+                .quantity,
+            2
+        );
         assert!(inv.is_empty());
-        assert_eq!(Currency { gp: 1, sp: 2, ..Default::default() }.total_cp(), 120);
+        assert_eq!(
+            Currency {
+                gp: 1,
+                sp: 2,
+                ..Default::default()
+            }
+            .total_cp(),
+            120
+        );
     }
 }

@@ -45,7 +45,8 @@ pub fn auto_start(mut commands: Commands, mut net: ResMut<Net>) {
                 &env("DND55_AUTO_ADDR").unwrap_or_else(|| "127.0.0.1:7878".into()),
                 &env("DND55_SESSION_CODE").unwrap_or_default(),
                 &env("DND55_AUTO_NAME").unwrap_or_else(|| "Brunhild".into()),
-            );
+            )
+            .expect("valid auto-join address");
         }
         _ => {}
     }

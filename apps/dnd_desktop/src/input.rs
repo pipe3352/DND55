@@ -90,6 +90,9 @@ pub fn map_click(
     if buttons.just_pressed(MouseButton::Right) && !keys.pressed(KeyCode::Space) {
         ui.targeting = None;
         ui.rect_start = None;
+        if ui.casting.take().is_some() || ui.feature_target.take().is_some() {
+            return;
+        }
         if ui.tool != Tool::Play {
             ui.tool = Tool::Play;
         } else {
@@ -100,13 +103,29 @@ pub fn map_click(
     if egui.wants_any_pointer_input() {
         return;
     }
-    let Some(cell) = hover.cell else { return };
     let Some(view) = &gv.view else { return };
     let Some(room) = &view.room else { return };
     let room_id = room.id;
+    // Drawing works with fractional positions and may end outside the map.
+    if ui.tool == Tool::Draw {
+        draw_input(&buttons, &hover, &mut ui, &mut net, room_id);
+        return;
+    }
+    let Some(cell) = hover.cell else { return };
+    if net.is_dm()
+        && buttons.just_pressed(MouseButton::Left)
+        && let Some(map) = &gv.map
+        && crate::ui_dm::script_pick_click(&mut ui, map, cell)
+    {
+        return;
+    }
     let layer = ui.layer;
     let asset = ui.asset.clone();
     match ui.tool {
+        Tool::Select => {
+            select_input(&buttons, &keys, cell, &mut ui, &mut net, &gv, room_id);
+        }
+        Tool::Draw => {}
         Tool::Pencil | Tool::Eraser => {
             if buttons.just_pressed(MouseButton::Left) {
                 hover.stroke.clear();
@@ -204,6 +223,11 @@ pub fn map_click(
                         dnd_session::view::HpView::Status(dnd_session::view::HealthStatus::Dead)
                     )
             });
+            if (ui.casting.is_some() || ui.feature_target.is_some())
+                && crate::ui_play::targeting_click(&mut ui, &mut net, cell, clicked.map(|c| c.id))
+            {
+                return;
+            }
             if let (Some(attack), Some(target), Some(me)) = (ui.targeting, clicked, ui.selected)
                 && target.id != me
             {
@@ -246,6 +270,312 @@ pub fn map_click(
                 }
             }
         }
+    }
+}
+
+fn objects_at(map: &dnd_world::map::GridMap, cell: (i32, i32)) -> Option<dnd_world::ObjectId> {
+    map.objects
+        .iter()
+        .rev()
+        .find(|o| o.covers(cell))
+        .map(|o| o.id)
+}
+
+fn select_input(
+    buttons: &ButtonInput<MouseButton>,
+    keys: &ButtonInput<KeyCode>,
+    cell: (i32, i32),
+    ui: &mut UiState,
+    net: &mut Net,
+    gv: &GameView,
+    room: dnd_world::RoomId,
+) {
+    let Some(map) = &gv.map else { return };
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    if buttons.just_pressed(MouseButton::Left) {
+        match objects_at(map, cell) {
+            Some(id) => {
+                if shift {
+                    if ui.sel_objects.contains(&id) {
+                        ui.sel_objects.retain(|x| *x != id);
+                    } else {
+                        ui.sel_objects.push(id);
+                    }
+                } else if !ui.sel_objects.contains(&id) {
+                    ui.sel_objects = vec![id];
+                }
+                ui.drag = Some((cell, ui.sel_objects.contains(&id)));
+            }
+            None => {
+                if !shift {
+                    ui.sel_objects.clear();
+                }
+                ui.drag = Some((cell, false));
+            }
+        }
+    }
+    if buttons.just_released(MouseButton::Left)
+        && let Some((start, moving)) = ui.drag.take()
+    {
+        if moving {
+            let (dx, dy) = (cell.0 - start.0, cell.1 - start.1);
+            if (dx, dy) != (0, 0) && !ui.sel_objects.is_empty() {
+                net.cmd(Command::Dm(DmCommand::MoveObjects {
+                    room,
+                    objects: ui.sel_objects.clone(),
+                    dx,
+                    dy,
+                }));
+            }
+        } else if start != cell {
+            let (x0, x1) = (start.0.min(cell.0), start.0.max(cell.0));
+            let (y0, y1) = (start.1.min(cell.1), start.1.max(cell.1));
+            for o in &map.objects {
+                if o.footprint()
+                    .any(|(x, y)| x >= x0 && x <= x1 && y >= y0 && y <= y1)
+                    && !ui.sel_objects.contains(&o.id)
+                {
+                    ui.sel_objects.push(o.id);
+                }
+            }
+        }
+    }
+}
+
+fn to_cells(p: Vec2) -> (f32, f32) {
+    (p.x / CELL, -p.y / CELL)
+}
+
+fn draw_input(
+    buttons: &ButtonInput<MouseButton>,
+    hover: &Hover,
+    ui: &mut UiState,
+    net: &mut Net,
+    room: dnd_world::RoomId,
+) {
+    use crate::state::DrawKind;
+    use dnd_session::model::DrawShape;
+    let p = to_cells(hover.world);
+    if buttons.just_pressed(MouseButton::Left) {
+        ui.draw_points = vec![p];
+        if ui.draw_kind == DrawKind::Text {
+            let text = ui.draw_text.trim().to_string();
+            if !text.is_empty() {
+                send_drawing(ui, net, room, DrawShape::Text(p, text));
+            }
+            ui.draw_points.clear();
+        }
+        return;
+    }
+    if ui.draw_points.is_empty() {
+        return;
+    }
+    if buttons.pressed(MouseButton::Left) {
+        if ui.draw_kind == DrawKind::Stroke {
+            let last = *ui.draw_points.last().expect("non-empty");
+            if (last.0 - p.0).hypot(last.1 - p.1) > 0.15 && ui.draw_points.len() < 2000 {
+                ui.draw_points.push(p);
+            }
+        } else {
+            ui.draw_points.truncate(1);
+            ui.draw_points.push(p);
+        }
+    }
+    if buttons.just_released(MouseButton::Left) {
+        let pts = std::mem::take(&mut ui.draw_points);
+        let a = pts[0];
+        let shape = match ui.draw_kind {
+            DrawKind::Stroke if pts.len() > 1 => DrawShape::Stroke(pts),
+            DrawKind::Line => DrawShape::Line(a, p),
+            DrawKind::Arrow => DrawShape::Arrow(a, p),
+            DrawKind::Circle => DrawShape::Circle(a, (a.0 - p.0).hypot(a.1 - p.1).max(0.25)),
+            _ => return,
+        };
+        send_drawing(ui, net, room, shape);
+    }
+}
+
+fn send_drawing(
+    ui: &UiState,
+    net: &mut Net,
+    room: dnd_world::RoomId,
+    shape: dnd_session::model::DrawShape,
+) {
+    use dnd_session::model::{DrawVisibility, Drawing};
+    let drawing = Drawing {
+        id: 0,
+        shape,
+        color: ui.draw_color,
+        width: ui.draw_width,
+        visibility: if ui.draw_dm_only && net.is_dm() {
+            DrawVisibility::DmOnly
+        } else {
+            DrawVisibility::All
+        },
+        temporary: ui.draw_temporary,
+        author: String::new(),
+    };
+    net.cmd(Command::AddDrawing {
+        room,
+        drawing: Box::new(drawing),
+    });
+}
+
+/// Editor keyboard shortcuts (DM only): Ctrl+C/V/D, Delete, R, Esc, Ctrl+Z/Y.
+pub fn editor_keys(
+    keys: Res<ButtonInput<KeyCode>>,
+    egui: Res<EguiWantsInput>,
+    hover: Res<Hover>,
+    mut ui: ResMut<UiState>,
+    mut net: ResMut<Net>,
+    mut gv: ResMut<GameView>,
+) {
+    if !net.is_dm() || egui.wants_any_keyboard_input() {
+        return;
+    }
+    let Some(room) = gv.view.as_ref().and_then(|v| v.room.as_ref()).map(|r| r.id) else {
+        return;
+    };
+    let ctrl = keys.pressed(KeyCode::ControlLeft)
+        || keys.pressed(KeyCode::ControlRight)
+        || keys.pressed(KeyCode::SuperLeft);
+    if ctrl && keys.just_pressed(KeyCode::KeyZ) {
+        net.cmd(Command::Dm(DmCommand::Undo { room }));
+        return;
+    }
+    if ctrl && keys.just_pressed(KeyCode::KeyY) {
+        net.cmd(Command::Dm(DmCommand::Redo { room }));
+        return;
+    }
+    if ui.tool != Tool::Select {
+        return;
+    }
+    let Some(map) = gv.map.clone() else { return };
+    let selected: Vec<_> = ui
+        .sel_objects
+        .iter()
+        .filter_map(|id| map.object(*id).cloned())
+        .collect();
+    if ctrl && keys.just_pressed(KeyCode::KeyC) && !selected.is_empty() {
+        let n = selected.len();
+        ui.clipboard = selected;
+        gv.toast(format!("Copied {n}"));
+    } else if ctrl && keys.just_pressed(KeyCode::KeyV) && !ui.clipboard.is_empty() {
+        let at = hover.cell.unwrap_or((1, 1));
+        let min_x = ui.clipboard.iter().map(|o| o.x).min().unwrap_or(0);
+        let min_y = ui.clipboard.iter().map(|o| o.y).min().unwrap_or(0);
+        let objects = ui
+            .clipboard
+            .iter()
+            .cloned()
+            .map(|mut o| {
+                o.x = o.x - min_x + at.0;
+                o.y = o.y - min_y + at.1;
+                o
+            })
+            .collect();
+        net.cmd(Command::Dm(DmCommand::AddObjects { room, objects }));
+    } else if ctrl && keys.just_pressed(KeyCode::KeyD) && !selected.is_empty() {
+        let objects = selected
+            .into_iter()
+            .map(|mut o| {
+                o.x += 1;
+                o.y += 1;
+                o
+            })
+            .collect();
+        net.cmd(Command::Dm(DmCommand::AddObjects { room, objects }));
+    } else if (keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace))
+        && !selected.is_empty()
+    {
+        let objects = std::mem::take(&mut ui.sel_objects);
+        net.cmd(Command::Dm(DmCommand::RemoveObjects { room, objects }));
+    } else if keys.just_pressed(KeyCode::KeyR) && !ctrl {
+        for mut o in selected {
+            o.rotation = (o.rotation + 1) % 4;
+            std::mem::swap(&mut o.w, &mut o.h);
+            net.cmd(Command::Dm(DmCommand::UpdateObject {
+                room,
+                object: Box::new(o),
+            }));
+        }
+    } else if keys.just_pressed(KeyCode::Escape) {
+        ui.sel_objects.clear();
+    }
+}
+
+fn shape_color(c: [u8; 4]) -> Color {
+    Color::srgba_u8(c[0], c[1], c[2], c[3])
+}
+
+fn cells_to_world(p: (f32, f32)) -> Vec2 {
+    Vec2::new(p.0 * CELL, -p.1 * CELL)
+}
+
+fn draw_shape(gizmos: &mut Gizmos, shape: &dnd_session::model::DrawShape, color: Color) {
+    use dnd_session::model::DrawShape;
+    match shape {
+        DrawShape::Stroke(pts) => {
+            gizmos.linestrip_2d(pts.iter().map(|p| cells_to_world(*p)), color);
+        }
+        DrawShape::Line(a, b) => gizmos.line_2d(cells_to_world(*a), cells_to_world(*b), color),
+        DrawShape::Arrow(a, b) => {
+            gizmos
+                .arrow_2d(cells_to_world(*a), cells_to_world(*b), color)
+                .with_tip_length(CELL * 0.4);
+        }
+        DrawShape::Circle(c, r) => {
+            gizmos.circle_2d(cells_to_world(*c), r * CELL, color);
+        }
+        DrawShape::Text(..) => {}
+    }
+}
+
+/// Text annotations need real text entities (gizmos can't draw text).
+#[derive(Component)]
+pub struct DrawingLabel(pub u64);
+
+pub fn sync_drawing_labels(
+    mut commands: Commands,
+    gv: Res<GameView>,
+    labels: Query<(Entity, &DrawingLabel)>,
+) {
+    let wanted: Vec<(u64, (f32, f32), String, [u8; 4])> = gv
+        .view
+        .as_ref()
+        .and_then(|v| v.room.as_ref())
+        .map(|r| {
+            r.drawings
+                .iter()
+                .filter_map(|d| match &d.shape {
+                    dnd_session::model::DrawShape::Text(p, t) => {
+                        Some((d.id, *p, t.clone(), d.color))
+                    }
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    for (e, l) in &labels {
+        if !wanted.iter().any(|w| w.0 == l.0) {
+            commands.entity(e).despawn();
+        }
+    }
+    for (id, p, text, color) in wanted {
+        if labels.iter().any(|(_, l)| l.0 == id) {
+            continue;
+        }
+        let w = cells_to_world(p);
+        commands.spawn((
+            DrawingLabel(id),
+            Text2d::new(text),
+            TextFont {
+                font_size: bevy::text::FontSize::Px(20.0),
+                ..default()
+            },
+            TextColor(shape_color(color)),
+            Transform::from_xyz(w.x, w.y, 12.0),
+        ));
     }
 }
 
@@ -360,8 +690,48 @@ pub fn draw_overlays(
             );
         }
     }
+    // Spell area / range preview while casting.
+    if let Some(intent) = &ui.casting
+        && let Some(caster) = view.creatures.iter().find(|c| c.id == intent.caster)
+    {
+        if intent.range_ft != u32::MAX && intent.range_ft > 0 && !intent.self_origin {
+            gizmos.circle_2d(
+                cell_to_world(caster.pos),
+                (intent.range_ft as f32 / 5.0 + 0.5) * CELL,
+                Color::srgba(0.6, 0.5, 1.0, 0.5),
+            );
+        }
+        if let (Some(area), Some(cell)) = (intent.area, hover.cell) {
+            let cells = dnd_session::spellcasting::area_cells(
+                area.shape,
+                area.size_ft,
+                caster.pos,
+                cell,
+                !intent.self_origin,
+            );
+            for c in cells {
+                gizmos.rect_2d(
+                    cell_to_world(c),
+                    Vec2::splat(CELL - 6.0),
+                    Color::srgba(1.0, 0.5, 0.2, 0.8),
+                );
+            }
+        }
+        for t in &intent.targets {
+            if let Some(tc) = view.creatures.iter().find(|c| c.id == *t) {
+                gizmos.circle_2d(
+                    cell_to_world(tc.pos),
+                    CELL * 0.4,
+                    Color::srgb(0.7, 0.5, 1.0),
+                );
+            }
+        }
+    }
     if let Some(c) = hover.cell {
         let color = match ui.tool {
+            Tool::Play if ui.casting.is_some() || ui.feature_target.is_some() => {
+                Color::srgb(0.7, 0.5, 1.0)
+            }
             Tool::Play if ui.targeting.is_some() => Color::srgb(1.0, 0.25, 0.2),
             Tool::Play => Color::srgba(1.0, 1.0, 1.0, 0.5),
             Tool::Eraser | Tool::RemoveObject => Color::srgb(1.0, 0.4, 0.3),
@@ -376,6 +746,95 @@ pub fn draw_overlays(
                 center,
                 Vec2::new((x1 - x0 + 1) as f32 * CELL, (y1 - y0 + 1) as f32 * CELL),
                 Color::srgb(1.0, 0.85, 0.3),
+            );
+        }
+    }
+    // Map annotations.
+    if let Some(r) = &view.room {
+        for d in &r.drawings {
+            draw_shape(&mut gizmos, &d.shape, shape_color(d.color));
+        }
+    }
+    // Drawing in progress.
+    if ui.tool == Tool::Draw && !ui.draw_points.is_empty() {
+        use crate::state::DrawKind;
+        use dnd_session::model::DrawShape;
+        let pts = ui.draw_points.clone();
+        let a = pts[0];
+        let b = *pts.last().expect("non-empty");
+        let shape = match ui.draw_kind {
+            DrawKind::Stroke => DrawShape::Stroke(pts),
+            DrawKind::Line => DrawShape::Line(a, b),
+            DrawKind::Arrow => DrawShape::Arrow(a, b),
+            DrawKind::Circle => DrawShape::Circle(a, (a.0 - b.0).hypot(a.1 - b.1)),
+            DrawKind::Text => DrawShape::Text(a, String::new()),
+        };
+        draw_shape(&mut gizmos, &shape, shape_color(ui.draw_color));
+    }
+    // Selected objects, drag ghost and box selection.
+    if ui.tool == Tool::Select {
+        let offset = match (ui.drag, hover.cell) {
+            (Some((start, true)), Some(c)) => (c.0 - start.0, c.1 - start.1),
+            _ => (0, 0),
+        };
+        for id in &ui.sel_objects {
+            if let Some(o) = map.object(*id) {
+                let a = cell_to_world((o.x + offset.0, o.y + offset.1));
+                let b = cell_to_world((
+                    o.x + offset.0 + o.w as i32 - 1,
+                    o.y + offset.1 + o.h as i32 - 1,
+                ));
+                gizmos.rect_2d(
+                    (a + b) / 2.0,
+                    (b - a).abs() + Vec2::splat(CELL - 4.0),
+                    Color::srgb(0.3, 0.8, 1.0),
+                );
+            }
+        }
+        if let (Some((start, false)), Some(c)) = (ui.drag, hover.cell) {
+            let (x0, x1) = (start.0.min(c.0), start.0.max(c.0));
+            let (y0, y1) = (start.1.min(c.1), start.1.max(c.1));
+            let center = (cell_to_world((x0, y0)) + cell_to_world((x1, y1))) / 2.0;
+            gizmos.rect_2d(
+                center,
+                Vec2::new((x1 - x0 + 1) as f32 * CELL, (y1 - y0 + 1) as f32 * CELL),
+                Color::srgba(0.3, 0.8, 1.0, 0.7),
+            );
+        }
+    }
+    // Event trigger areas (DM).
+    if net.is_dm()
+        && let (Some(r), Some(dm)) = (&view.room, &view.dm)
+    {
+        for s in &dm.scripts {
+            if let dnd_session::scripts::Trigger::EnterArea { room, a, b } = s.trigger
+                && room == r.id
+            {
+                let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
+                let (y0, y1) = (a.1.min(b.1), a.1.max(b.1));
+                let center = (cell_to_world((x0, y0)) + cell_to_world((x1, y1))) / 2.0;
+                gizmos.rect_2d(
+                    center,
+                    Vec2::new((x1 - x0 + 1) as f32 * CELL, (y1 - y0 + 1) as f32 * CELL),
+                    Color::srgba(1.0, 0.3, 0.8, 0.6),
+                );
+            }
+        }
+        if let Some(draft) = &ui.script_draft
+            && let dnd_session::scripts::Trigger::EnterArea { a, b, .. } = draft.trigger
+        {
+            let b = if ui.script_pick == Some(crate::state::ScriptPick::AreaEnd) {
+                hover.cell.unwrap_or(b)
+            } else {
+                b
+            };
+            let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
+            let (y0, y1) = (a.1.min(b.1), a.1.max(b.1));
+            let center = (cell_to_world((x0, y0)) + cell_to_world((x1, y1))) / 2.0;
+            gizmos.rect_2d(
+                center,
+                Vec2::new((x1 - x0 + 1) as f32 * CELL, (y1 - y0 + 1) as f32 * CELL),
+                Color::srgb(1.0, 0.3, 0.8),
             );
         }
     }

@@ -16,7 +16,11 @@ pub enum LightAnchor {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EffectKind {
-    Light { anchor: LightAnchor, bright_ft: u32, dim_ft: u32 },
+    Light {
+        anchor: LightAnchor,
+        bright_ft: u32,
+        dim_ft: u32,
+    },
     /// Bless: +1d4 to attack rolls and saving throws.
     Bless { targets: Vec<EntityId> },
     /// Mage Armor: base AC 13 + Dex while unarmored.
@@ -27,7 +31,13 @@ pub enum EffectKind {
     InnateSorcery { target: EntityId },
     /// A condition imposed by a spell or feature; with `repeat_save` the target repeats the save at the
     /// end of each of its turns.
-    Condition { target: EntityId, condition: Condition, save: Option<(Ability, i32)>, repeat_save: bool, ends_at_source_turn: bool },
+    Condition {
+        target: EntityId,
+        condition: Condition,
+        save: Option<(Ability, i32)>,
+        repeat_save: bool,
+        ends_at_source_turn: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,16 +55,23 @@ pub struct Effect {
 impl Effect {
     pub fn targets(&self) -> Vec<EntityId> {
         match &self.kind {
-            EffectKind::Light { anchor: LightAnchor::Creature(e), .. } => vec![*e],
+            EffectKind::Light {
+                anchor: LightAnchor::Creature(e),
+                ..
+            } => vec![*e],
             EffectKind::Light { .. } => vec![],
             EffectKind::Bless { targets } => targets.clone(),
-            EffectKind::MageArmor { target } | EffectKind::Shield { target } | EffectKind::InnateSorcery { target } => vec![*target],
+            EffectKind::MageArmor { target }
+            | EffectKind::Shield { target }
+            | EffectKind::InnateSorcery { target } => vec![*target],
             EffectKind::Condition { target, .. } => vec![*target],
         }
     }
 
     pub fn label(&self) -> String {
-        let name = dnd_rules::spells::spell(&self.origin).map(|s| s.name.clone()).unwrap_or_else(|| self.origin.clone());
+        let name = dnd_rules::spells::spell(&self.origin)
+            .map(|s| s.name.clone())
+            .unwrap_or_else(|| self.origin.clone());
         match self.rounds_left {
             Some(r) if r < u32::MAX / 2 => format!("{name} ({r} rounds)"),
             _ => name,

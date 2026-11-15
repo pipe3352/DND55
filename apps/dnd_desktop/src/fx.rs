@@ -36,6 +36,8 @@ pub struct Presentation {
     pub last_roll: Option<(String, String, i32, f32)>,
     pub your_turn_banner: f32,
     pub chat: Vec<(String, String)>,
+    /// Latest narrated message from a scripted event: (serial, speaker, text).
+    pub message: Option<(u64, String, String)>,
 }
 
 fn vfx_color(v: Vfx) -> Color {
@@ -52,6 +54,9 @@ fn vfx_color(v: Vfx) -> Color {
         Vfx::Thunder => Color::srgb(0.55, 0.6, 0.9),
         Vfx::Psychic => Color::srgb(0.95, 0.4, 0.8),
         Vfx::Healing => Color::srgb(0.3, 1.0, 0.45),
+        Vfx::Light => Color::srgb(1.0, 0.95, 0.75),
+        Vfx::Buff => Color::srgb(0.95, 0.85, 0.35),
+        Vfx::Arcane => Color::srgb(0.55, 0.45, 1.0),
     }
 }
 
@@ -248,6 +253,123 @@ pub fn process_events(
                 }
             }
             Event::Notice { text } => gv.toast(text),
+            Event::SpellVisual {
+                caster,
+                from,
+                targets,
+                area,
+                vfx,
+                name,
+            } => {
+                let color = vfx_color(vfx);
+                let a = pos_of(&anims, &gv, caster).unwrap_or_else(|| cell_to_world(from));
+                // Bolts/rays from the caster to each target.
+                for t in &targets {
+                    let to = cell_to_world(*t);
+                    if to.distance(a) > CELL * 0.5 && area.is_empty() {
+                        let dir = to - a;
+                        commands.spawn((
+                            Projectile {
+                                from: a,
+                                to,
+                                t: 0.0,
+                                dur: 0.3,
+                            },
+                            Sprite {
+                                color,
+                                custom_size: Some(Vec2::new(CELL * 0.6, 8.0)),
+                                ..default()
+                            },
+                            Transform::from_xyz(a.x, a.y, 9.0)
+                                .with_rotation(Quat::from_rotation_z(dir.y.atan2(dir.x))),
+                        ));
+                    }
+                    commands.spawn((
+                        Flash {
+                            life: 0.7,
+                            max: 0.7,
+                            grow: 1.2,
+                        },
+                        Sprite {
+                            color: color.with_alpha(0.7),
+                            custom_size: Some(Vec2::splat(CELL * 0.9)),
+                            ..default()
+                        },
+                        Transform::from_xyz(to.x, to.y, 9.0),
+                    ));
+                }
+                // Area: each affected cell glows briefly (explosions, cones, lines).
+                for c in &area {
+                    let p = cell_to_world(*c);
+                    let jitter = ((c.0 * 7 + c.1 * 13).rem_euclid(10)) as f32 * 0.03;
+                    commands.spawn((
+                        Flash {
+                            life: 0.8 + jitter,
+                            max: 0.8 + jitter,
+                            grow: 0.25,
+                        },
+                        Sprite {
+                            color: color.with_alpha(0.55),
+                            custom_size: Some(Vec2::splat(CELL)),
+                            ..default()
+                        },
+                        Transform::from_xyz(p.x, p.y, 8.5),
+                    ));
+                }
+                if targets.is_empty() && area.is_empty() {
+                    commands.spawn((
+                        Flash {
+                            life: 0.6,
+                            max: 0.6,
+                            grow: 1.5,
+                        },
+                        Sprite {
+                            color: color.with_alpha(0.6),
+                            custom_size: Some(Vec2::splat(CELL)),
+                            ..default()
+                        },
+                        Transform::from_xyz(a.x, a.y, 9.0),
+                    ));
+                }
+                if !name.is_empty() {
+                    commands.spawn((
+                        FloatText {
+                            vel: Vec2::new(0.0, 30.0),
+                            life: 1.4,
+                            max: 1.4,
+                        },
+                        Text2d::new(name),
+                        TextFont {
+                            font_size: bevy::text::FontSize::Px(16.0),
+                            ..default()
+                        },
+                        TextColor(color),
+                        Transform::from_xyz(a.x, a.y + CELL * 0.7, 10.0),
+                    ));
+                }
+                let s = if vfx == Vfx::Healing {
+                    Sfx::Heal
+                } else {
+                    Sfx::Spell
+                };
+                sfx.play(&mut commands, s, &audio);
+            }
+            Event::Dialogue {
+                speaker,
+                text,
+                choices,
+            } => {
+                if choices.is_empty() {
+                    let n = pres.message.as_ref().map(|m| m.0 + 1).unwrap_or(1);
+                    pres.message = Some((n, speaker, text));
+                }
+                sfx.play(&mut commands, Sfx::Click, &audio);
+            }
+            Event::Sound { id } => {
+                if let Some(s) = crate::audio::sfx_by_id(&id) {
+                    sfx.play(&mut commands, s, &audio);
+                }
+            }
             Event::CombatEnded | Event::Log { .. } => {}
         }
     }

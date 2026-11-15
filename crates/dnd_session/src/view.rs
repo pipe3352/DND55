@@ -244,13 +244,14 @@ impl Session {
                 ),
                 Principal::Player(_) => {
                     let vis = self.visibility(room_id, &self.viewers_for(who), &lights);
-                    let ls = dnd_world::vision::collect_lights(&r.map, &self.dynamic_lights(room_id))
-                        .into_iter()
-                        .filter(|l| {
-                            vis.get((l.cell.1 * r.map.width + l.cell.0) as usize)
-                                .is_some_and(|v| *v > 0)
-                        })
-                        .collect();
+                    let ls =
+                        dnd_world::vision::collect_lights(&r.map, &self.dynamic_lights(room_id))
+                            .into_iter()
+                            .filter(|l| {
+                                vis.get((l.cell.1 * r.map.width + l.cell.0) as usize)
+                                    .is_some_and(|v| *v > 0)
+                            })
+                            .collect();
                     (Some(vis), ls)
                 }
             };
@@ -279,11 +280,19 @@ impl Session {
                     (0, 0)
                 },
                 is_party_room: room_id == s.party_room,
-                drawings: r.drawings.iter().filter(|d| who == Principal::Dm || d.visibility == DrawVisibility::All).cloned().collect(),
+                drawings: r
+                    .drawings
+                    .iter()
+                    .filter(|d| who == Principal::Dm || d.visibility == DrawVisibility::All)
+                    .cloned()
+                    .collect(),
                 containers: r
                     .containers
                     .iter()
-                    .filter(|(id, _)| who == Principal::Dm || r.map.object(**id).is_some_and(|o| o.open && !o.hidden))
+                    .filter(|(id, _)| {
+                        who == Principal::Dm
+                            || r.map.object(**id).is_some_and(|o| o.open && !o.hidden)
+                    })
                     .map(|(id, items)| (*id, items.clone()))
                     .collect(),
                 music: r.music.clone(),
@@ -338,12 +347,22 @@ impl Session {
                     status: mine.then(|| c.status.clone()),
                     effective_ac: mine.then(|| self.effective_ac(c)),
                     template: match (&c.kind, who) {
-                        (CreatureKind::Monster { template_id }, Principal::Dm) => Some(template_id.clone()),
+                        (CreatureKind::Monster { template_id }, Principal::Dm) => {
+                            Some(template_id.clone())
+                        }
                         _ => None,
                     },
-                    save_actions: if who == Principal::Dm { c.save_actions.clone() } else { vec![] },
+                    save_actions: if who == Principal::Dm {
+                        c.save_actions.clone()
+                    } else {
+                        vec![]
+                    },
                     attacks_per_action: c.attacks_per_action,
-                    creature_type: if full || mine { c.creature_type.clone() } else { String::new() },
+                    creature_type: if full || mine {
+                        c.creature_type.clone()
+                    } else {
+                        String::new()
+                    },
                 }
             })
             .collect();
@@ -395,7 +414,16 @@ impl Session {
                     turn: your_turn.then(|| cb.turn.clone()),
                     your_reaction,
                     waiting_on_reaction: cb.pending.is_some() || cb.pending_hit.is_some(),
-                    your_hit_reaction: cb.pending_hit.as_ref().filter(|p| s.creatures.get(&p.target).is_some_and(|t| Self::controls(who, t) && (who != Principal::Dm || t.controller == Controller::Dm))).cloned(),
+                    your_hit_reaction: cb
+                        .pending_hit
+                        .as_ref()
+                        .filter(|p| {
+                            s.creatures.get(&p.target).is_some_and(|t| {
+                                Self::controls(who, t)
+                                    && (who != Principal::Dm || t.controller == Controller::Dm)
+                            })
+                        })
+                        .cloned(),
                 }
             });
 
@@ -462,10 +490,28 @@ impl Session {
         let effects = s
             .effects
             .iter()
-            .filter(|e| who == Principal::Dm || e.targets().iter().chain(std::iter::once(&e.source)).any(|t| visible_ids.contains(t)))
-            .map(|e| EffectView { id: e.id, source: e.source, label: e.label(), targets: e.targets(), concentration: e.concentration })
+            .filter(|e| {
+                who == Principal::Dm
+                    || e.targets()
+                        .iter()
+                        .chain(std::iter::once(&e.source))
+                        .any(|t| visible_ids.contains(t))
+            })
+            .map(|e| EffectView {
+                id: e.id,
+                source: e.source,
+                label: e.label(),
+                targets: e.targets(),
+                concentration: e.concentration,
+            })
             .collect();
-        let dialogue = s.pending_dialogue.as_ref().map(|d| (d.speaker.clone(), d.text.clone(), d.choices.iter().map(|c| c.text.clone()).collect()));
+        let dialogue = s.pending_dialogue.as_ref().map(|d| {
+            (
+                d.speaker.clone(),
+                d.text.clone(),
+                d.choices.iter().map(|c| c.text.clone()).collect(),
+            )
+        });
 
         ClientView {
             you: who,

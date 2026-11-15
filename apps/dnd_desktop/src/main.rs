@@ -24,7 +24,9 @@ mod state;
 mod textures;
 mod theme;
 mod tokens;
+mod ui_dm;
 mod ui_game;
+mod ui_play;
 
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
@@ -47,7 +49,9 @@ fn main() {
         plugins = plugins.disable::<bevy::audio::AudioPlugin>();
     }
     App::new()
-        .insert_resource(audio::AudioStatus { available: audio_ok })
+        .insert_resource(audio::AudioStatus {
+            available: audio_ok,
+        })
         .add_plugins(
             plugins
                 .set(WindowPlugin {
@@ -60,10 +64,16 @@ fn main() {
                     }),
                     ..default()
                 })
-                .set(bevy::log::LogPlugin { custom_layer: platform::file_log_layer, ..default() }),
+                .set(bevy::log::LogPlugin {
+                    custom_layer: platform::file_log_layer,
+                    ..default()
+                }),
         )
         .insert_resource(game_settings)
-        .add_systems(Update, (settings::apply_settings, platform::set_window_icon))
+        .add_systems(
+            Update,
+            (settings::apply_settings, platform::set_window_icon),
+        )
         .add_plugins(EguiPlugin::default())
         .insert_resource(ClearColor(Color::srgb(0.07, 0.055, 0.045)))
         .init_state::<AppState>()
@@ -79,6 +89,8 @@ fn main() {
         .init_resource::<menu::MenuCache>()
         .init_resource::<character_ui::CharacterDraft>()
         .init_resource::<audio::SfxBank>()
+        .init_resource::<audio::Soundscape>()
+        .add_systems(Update, audio::update_soundscape)
         .insert_resource(map_render::CatalogRes(
             dnd_world::catalog::Catalog::builtin(),
         ))
@@ -112,8 +124,14 @@ fn main() {
                     fx::animate_fx,
                     map_render::flicker_lights,
                 ),
-                (input::camera_controls, input::track_hover, input::map_click).chain(),
-                input::draw_overlays,
+                (
+                    input::camera_controls,
+                    input::track_hover,
+                    input::editor_keys,
+                    input::map_click,
+                )
+                    .chain(),
+                (input::draw_overlays, input::sync_drawing_labels),
             )
                 .chain()
                 .after(net_sync::poll_network)
@@ -137,6 +155,7 @@ fn cleanup_world(
             With<map_render::LightGlow>,
             With<tokens::Token>,
             With<fx::FloatText>,
+            With<input::DrawingLabel>,
         )>,
     >,
     mut anims: ResMut<tokens::TokenAnims>,

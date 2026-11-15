@@ -2,11 +2,11 @@
 //! weapon mastery properties that are fully automatable (Graze, Sap, Vex).
 //! (SRD 5.2.1 "Making an Attack", "Rolling 20 or 1", "Critical Hits", "Mastery Properties")
 
+#[allow(unused_imports)]
+use crate::ability::Ability;
 use crate::d20::{D20Roll, ModeSources, RollMode};
 use crate::damage::{DamageOutcome, DamageType, Defenses};
 use crate::dice::{DiceExpr, DiceRoll};
-#[allow(unused_imports)]
-use crate::ability::Ability;
 use crate::equipment::{Mastery, WeaponKind};
 use crate::rng::DiceRng;
 use serde::{Deserialize, Serialize};
@@ -79,7 +79,10 @@ pub struct AttackModifiers {
 
 impl AttackModifiers {
     pub fn new() -> Self {
-        AttackModifiers { crit_threshold: 20, ..Default::default() }
+        AttackModifiers {
+            crit_threshold: 20,
+            ..Default::default()
+        }
     }
 }
 
@@ -145,12 +148,23 @@ impl AttackResult {
             let rolls: Vec<String> = d
                 .rolls
                 .iter()
-                .map(|(label, r)| if label.is_empty() { r.breakdown() } else { format!("{label} {}", r.breakdown()) })
+                .map(|(label, r)| {
+                    if label.is_empty() {
+                        r.breakdown()
+                    } else {
+                        format!("{label} {}", r.breakdown())
+                    }
+                })
                 .collect();
             if rolls.is_empty() {
                 s.push_str(&format!("; {} {:?}", o.final_amount, o.damage_type));
             } else {
-                s.push_str(&format!("; {} → {} {:?}", rolls.join(" + "), o.final_amount, o.damage_type));
+                s.push_str(&format!(
+                    "; {} → {} {:?}",
+                    rolls.join(" + "),
+                    o.final_amount,
+                    o.damage_type
+                ));
             }
             if !flags.is_empty() {
                 s.push_str(&format!(" ({flags})"));
@@ -182,7 +196,11 @@ pub fn resolve_attack(
         bonus_rolls.push(format!("{label} {}", r.total));
     }
     // Rolling 20 or 1: natural 20 always hits (Critical Hit); natural 1 always misses.
-    let crit_on = if mods.crit_threshold == 0 { 20 } else { mods.crit_threshold };
+    let crit_on = if mods.crit_threshold == 0 {
+        20
+    } else {
+        mods.crit_threshold
+    };
     let natural_crit = d20.natural >= crit_on;
     let hit = if d20.is_natural_20() {
         true
@@ -193,7 +211,8 @@ pub fn resolve_attack(
     };
     let mut hit = hit;
     let mut on_miss_bonus_used = false;
-    if !hit && !d20.is_natural_1()
+    if !hit
+        && !d20.is_natural_1()
         && let Some((_, dice)) = &mods.on_miss_bonus
     {
         let r = dice.roll(rng, false).total;
@@ -209,19 +228,38 @@ pub fn resolve_attack(
     if hit {
         let mut parts: Vec<(&str, &DamagePart)> = profile.damage.iter().map(|p| ("", p)).collect();
         if mode == RollMode::Advantage {
-            parts.extend(profile.extra_damage_with_advantage.iter().map(|p| ("advantage", p)));
+            parts.extend(
+                profile
+                    .extra_damage_with_advantage
+                    .iter()
+                    .map(|p| ("advantage", p)),
+            );
         }
         for (label, part) in parts {
             let roll = part.dice.roll_with_min(rng, critical, mods.min_damage_die);
-            raw.push((label.to_string(), part.damage_type, Some(roll.clone()), roll.total));
+            raw.push((
+                label.to_string(),
+                part.damage_type,
+                Some(roll.clone()),
+                roll.total,
+            ));
         }
         for (label, part) in &mods.extra_damage_on_hit {
             let roll = part.dice.roll(rng, critical);
-            raw.push((label.clone(), part.damage_type, Some(roll.clone()), roll.total));
+            raw.push((
+                label.clone(),
+                part.damage_type,
+                Some(roll.clone()),
+                roll.total,
+            ));
         }
     } else if profile.mastery == Some(Mastery::Graze) && profile.ability_mod > 0 {
         // Graze: on a miss, damage equal to the ability modifier used for the attack roll, same type.
-        let dtype = profile.damage.first().map(|d| d.damage_type).unwrap_or(DamageType::Slashing);
+        let dtype = profile
+            .damage
+            .first()
+            .map(|d| d.damage_type)
+            .unwrap_or(DamageType::Slashing);
         raw.push(("graze".into(), dtype, None, profile.ability_mod));
         mastery_triggered = Some(Mastery::Graze);
     }
@@ -252,7 +290,13 @@ pub fn resolve_attack(
             Some(Mastery::Sap) => Some(Mastery::Sap),
             // Vex: "If you hit a creature with this weapon and deal damage to the creature".
             Some(Mastery::Vex) if dealt > 0 => Some(Mastery::Vex),
-            Some(m @ (Mastery::Topple | Mastery::Push | Mastery::Slow | Mastery::Cleave | Mastery::Nick)) => Some(m),
+            Some(
+                m @ (Mastery::Topple
+                | Mastery::Push
+                | Mastery::Slow
+                | Mastery::Cleave
+                | Mastery::Nick),
+            ) => Some(m),
             _ => None,
         };
     }

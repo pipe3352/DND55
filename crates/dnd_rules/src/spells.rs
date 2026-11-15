@@ -168,9 +168,16 @@ impl Spell {
             SpellRange::Touch
         } else if r.starts_with("Sight") {
             SpellRange::Sight
-        } else if let Some(n) = r.strip_suffix(" feet").and_then(|n| n.replace(',', "").parse().ok()) {
+        } else if let Some(n) = r
+            .strip_suffix(" feet")
+            .and_then(|n| n.replace(',', "").parse().ok())
+        {
             SpellRange::Feet(n)
-        } else if let Some(n) = r.strip_suffix(" miles").or(r.strip_suffix(" mile")).and_then(|n| n.replace(',', "").parse::<u32>().ok()) {
+        } else if let Some(n) = r
+            .strip_suffix(" miles")
+            .or(r.strip_suffix(" mile"))
+            .and_then(|n| n.replace(',', "").parse::<u32>().ok())
+        {
             SpellRange::Feet(n * 5280)
         } else {
             SpellRange::Unlimited
@@ -189,11 +196,18 @@ impl Spell {
 
     /// Duration in combat rounds (6 seconds each). `None` = instantaneous; `Some(u32::MAX)` = until dispelled.
     pub fn duration_rounds(&self) -> Option<u32> {
-        let d = self.duration.trim_start_matches("Concentration, up to ").to_lowercase();
+        let d = self
+            .duration
+            .trim_start_matches("Concentration, up to ")
+            .to_lowercase();
         if d.starts_with("instantaneous") {
             return None;
         }
-        let n: u32 = d.split_whitespace().next().and_then(|n| n.parse().ok()).unwrap_or(1);
+        let n: u32 = d
+            .split_whitespace()
+            .next()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(1);
         Some(if d.contains("round") {
             n
         } else if d.contains("minute") {
@@ -224,13 +238,23 @@ impl Spell {
 
     fn scaled(&self, mut base: DiceExpr, slot_level: u8, caster_level: u8) -> DiceExpr {
         if self.is_cantrip() {
-            if let Some(step) = self.auto.cantrip_scaling.as_deref().and_then(|s| DiceExpr::parse(s).ok()) {
+            if let Some(step) = self
+                .auto
+                .cantrip_scaling
+                .as_deref()
+                .and_then(|s| DiceExpr::parse(s).ok())
+            {
                 let tiers = cantrip_tier(caster_level) - 1;
                 for _ in 0..tiers {
                     add_dice(&mut base, &step);
                 }
             }
-        } else if let Some(step) = self.auto.upcast_dice.as_deref().and_then(|s| DiceExpr::parse(s).ok()) {
+        } else if let Some(step) = self
+            .auto
+            .upcast_dice
+            .as_deref()
+            .and_then(|s| DiceExpr::parse(s).ok())
+        {
             for _ in self.level..slot_level {
                 add_dice(&mut base, &step);
             }
@@ -247,7 +271,12 @@ impl Spell {
             return r + slot_level.saturating_sub(self.level);
         }
         if let Some(b) = &self.auto.beams_by_level {
-            return b.iter().filter(|(lvl, _)| caster_level >= *lvl).map(|(_, n)| *n).max().unwrap_or(1);
+            return b
+                .iter()
+                .filter(|(lvl, _)| caster_level >= *lvl)
+                .map(|(_, n)| *n)
+                .max()
+                .unwrap_or(1);
         }
         1
     }
@@ -271,7 +300,11 @@ pub fn cantrip_tier(level: u8) -> u8 {
 
 fn add_dice(base: &mut DiceExpr, step: &DiceExpr) {
     for t in &step.terms {
-        if let Some(existing) = base.terms.iter_mut().find(|b| b.sides == t.sides && b.negative == t.negative) {
+        if let Some(existing) = base
+            .terms
+            .iter_mut()
+            .find(|b| b.sides == t.sides && b.negative == t.negative)
+        {
             existing.count += t.count;
         } else {
             base.terms.push(*t);
@@ -283,7 +316,10 @@ static SPELLS: OnceLock<Vec<Spell>> = OnceLock::new();
 
 /// All SRD 5.2.1 spells.
 pub fn all() -> &'static [Spell] {
-    SPELLS.get_or_init(|| serde_json::from_str(include_str!("../../../content/srd_spells.json")).expect("valid spell data"))
+    SPELLS.get_or_init(|| {
+        serde_json::from_str(include_str!("../../../content/srd_spells.json"))
+            .expect("valid spell data")
+    })
 }
 
 pub fn spell(id: &str) -> Option<&'static Spell> {
@@ -292,7 +328,9 @@ pub fn spell(id: &str) -> Option<&'static Spell> {
 
 /// Spells on a class's list (e.g. "Wizard").
 pub fn class_list(class: &str) -> impl Iterator<Item = &'static Spell> + '_ {
-    all().iter().filter(move |s| s.classes.iter().any(|c| c == class))
+    all()
+        .iter()
+        .filter(move |s| s.classes.iter().any(|c| c == class))
 }
 
 #[cfg(test)]
@@ -312,10 +350,19 @@ mod tests {
         // "Each creature in a 20-foot-radius Sphere ... Dexterity saving throw, taking 8d6 Fire damage on a
         //  failed save or half as much damage on a successful one ... increases by 1d6 for each slot level above 3."
         let f = spell("fireball").unwrap();
-        assert_eq!((f.level, f.range_ft(), f.casting_kind()), (3, 150, CastingKind::Action));
+        assert_eq!(
+            (f.level, f.range_ft(), f.casting_kind()),
+            (3, 150, CastingKind::Action)
+        );
         assert_eq!(f.auto.save, Some(Ability::Dexterity));
         assert!(f.auto.half_on_success);
-        assert_eq!(f.auto.area, Some(Area { size_ft: 20, shape: AreaShape::Sphere }));
+        assert_eq!(
+            f.auto.area,
+            Some(Area {
+                size_ft: 20,
+                shape: AreaShape::Sphere
+            })
+        );
         assert_eq!(f.damage_dice(3, 5).unwrap().to_string(), "8d6");
         assert_eq!(f.damage_dice(5, 9).unwrap().to_string(), "10d6");
         assert_eq!(f.auto.level, AutoLevel::Full);
@@ -329,8 +376,19 @@ mod tests {
         assert_eq!(fb.damage_dice(0, 11).unwrap().to_string(), "3d10");
         assert_eq!(fb.damage_dice(0, 17).unwrap().to_string(), "4d10");
         let eb = spell("eldritch_blast").unwrap();
-        assert_eq!((eb.projectiles(0, 4), eb.projectiles(0, 5), eb.projectiles(0, 17)), (1, 2, 4));
-        assert_eq!(eb.damage_dice(0, 17).unwrap().to_string(), "1d10", "Eldritch Blast scales by beams, not dice");
+        assert_eq!(
+            (
+                eb.projectiles(0, 4),
+                eb.projectiles(0, 5),
+                eb.projectiles(0, 17)
+            ),
+            (1, 2, 4)
+        );
+        assert_eq!(
+            eb.damage_dice(0, 17).unwrap().to_string(),
+            "1d10",
+            "Eldritch Blast scales by beams, not dice"
+        );
     }
 
     #[test]
@@ -353,7 +411,13 @@ mod tests {
     fn light_spell_matches_srd() {
         // "sheds Bright Light in a 20-foot radius and Dim Light for an additional 20 feet", 1 hour.
         let l = spell("light").unwrap();
-        assert_eq!(l.auto.light, Some(LightSpec { bright_ft: 20, dim_ft: 20 }));
+        assert_eq!(
+            l.auto.light,
+            Some(LightSpec {
+                bright_ft: 20,
+                dim_ft: 20
+            })
+        );
         assert_eq!(l.range(), SpellRange::Touch);
         assert_eq!(l.duration_rounds(), Some(600));
         assert!(!l.concentration);
@@ -370,7 +434,10 @@ mod tests {
         assert_eq!(ps.auto.attack, Some(SpellAttackKind::Ranged));
         assert_eq!(ps.auto.damage.as_ref().unwrap().dice, "1d12");
         // 2024 Divine Smite is a Bonus Action spell.
-        assert_eq!(spell("divine_smite").unwrap().casting_kind(), CastingKind::BonusAction);
+        assert_eq!(
+            spell("divine_smite").unwrap().casting_kind(),
+            CastingKind::BonusAction
+        );
     }
 
     #[test]

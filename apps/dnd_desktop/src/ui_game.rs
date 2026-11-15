@@ -28,6 +28,9 @@ pub struct GameUi<'w> {
     pub draft: ResMut<'w, CharacterDraft>,
     pub catalog: Res<'w, CatalogRes>,
     pub next: ResMut<'w, NextState<AppState>>,
+    pub hover: Res<'w, crate::input::Hover>,
+    pub settings: ResMut<'w, crate::settings::GameSettings>,
+    pub audio: Option<Res<'w, crate::audio::AudioStatus>>,
 }
 
 pub fn game_ui(
@@ -97,6 +100,13 @@ pub fn game_ui(
                         *g.gv = GameView::default();
                         g.next.set(AppState::MainMenu);
                     }
+                    if ui
+                        .button("⚙")
+                        .on_hover_text(g.i18n.t("menu.settings"))
+                        .clicked()
+                    {
+                        g.ui.show_settings = !g.ui.show_settings;
+                    }
                     if g.net.client.is_none() && ui.button(g.i18n.t("game.reconnect")).clicked() {
                         crate::hosting::reconnect(&mut g.net);
                     }
@@ -114,15 +124,38 @@ pub fn game_ui(
                         if let Some(h) = &g.host {
                             ui.label(
                                 RichText::new(format!(
-                                    "{} {} · {} {}",
+                                    "{} {}",
                                     g.i18n.t("game.code"),
-                                    h.handle.session_code,
-                                    g.i18n.t("game.port"),
-                                    h.handle.local_addr.port()
+                                    h.handle.session_code
                                 ))
                                 .strong()
                                 .color(theme::BLOOD),
                             );
+                            if ui
+                                .button(format!("✉ {}", g.i18n.t("invite.button")))
+                                .clicked()
+                            {
+                                g.ui.show_invite = !g.ui.show_invite;
+                            }
+                        }
+                    }
+                    // Connection status: ping, or the reconnect countdown.
+                    match (&g.net.client, g.net.rtt_ms) {
+                        (Some(_), Some(ms)) => {
+                            let c = if ms < 120 {
+                                theme::HEALTH
+                            } else if ms < 400 {
+                                theme::GOLD
+                            } else {
+                                theme::BLOOD
+                            };
+                            ui.label(RichText::new(format!("● {ms} ms")).color(c).small());
+                        }
+                        (Some(_), None) => {
+                            ui.label(RichText::new("●").color(theme::GOLD).small());
+                        }
+                        (None, _) => {
+                            ui.label(RichText::new(&g.net.status).color(theme::BLOOD).small());
                         }
                     }
                     ui.checkbox(&mut g.ui.show_grid, g.i18n.t("game.grid"));
@@ -154,6 +187,7 @@ pub fn game_ui(
                         (DmTab::Editor, "dm.editor"),
                         (DmTab::World, "dm.world"),
                         (DmTab::Monsters, "dm.monsters"),
+                        (DmTab::Events, "dm.events"),
                         (DmTab::Session, "dm.session"),
                     ] {
                         ui.selectable_value(&mut g.ui.dm_tab, tab, g.i18n.t(key));
@@ -164,6 +198,7 @@ pub fn game_ui(
                     DmTab::Editor => editor_tab(ui, &mut g, &view),
                     DmTab::World => world_tab(ui, &mut g, &view),
                     DmTab::Monsters => monsters_tab(ui, &mut g, &view),
+                    DmTab::Events => crate::ui_dm::events_tab(ui, &mut g, &view),
                     DmTab::Session => session_tab(ui, &mut g, &view),
                 });
             });
@@ -179,6 +214,23 @@ pub fn game_ui(
         });
 
     overlays(&ctx, &mut g, &view);
+    if g.ui.show_invite {
+        invite_window(&ctx, &mut g);
+    }
+    if g.ui.show_settings {
+        let mut open = true;
+        egui::Window::new(format!("⚙ {}", g.i18n.t("menu.settings")))
+            .open(&mut open)
+            .show(&ctx, |ui| {
+                if g.audio.as_ref().is_some_and(|a| !a.available) {
+                    ui.label(
+                        RichText::new(g.i18n.t("settings.no_audio_device")).color(theme::BLOOD),
+                    );
+                }
+                crate::settings::settings_ui(ui, &mut g.settings, &g.i18n);
+            });
+        g.ui.show_settings &= open;
+    }
     Ok(())
 }
 
@@ -315,6 +367,8 @@ fn editor_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
     theme::heading(ui, g.i18n.t("editor.tools"));
     ui.horizontal_wrapped(|ui| {
         tool_button(ui, g, Tool::Play, "tool.play");
+        tool_button(ui, g, Tool::Select, "tool.select");
+        tool_button(ui, g, Tool::Draw, "tool.draw");
         tool_button(ui, g, Tool::Pencil, "tool.pencil");
         tool_button(ui, g, Tool::Eraser, "tool.eraser");
         tool_button(ui, g, Tool::Rect, "tool.rect");
@@ -333,23 +387,8 @@ fn editor_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
         }
     });
     theme::heading(ui, g.i18n.t("editor.layers"));
+    crate::ui_dm::layer_panel(ui, g, room_id);
     if let Some(map) = g.gv.map.clone() {
-        for l in &map.layers {
-            ui.horizontal(|ui| {
-                ui.radio_value(&mut g.ui.layer, l.kind, format!("{:?}", l.kind));
-                let (mut vis, mut lock) = (l.visible, l.locked);
-                let a = ui.checkbox(&mut vis, "👁").changed();
-                let b = ui.checkbox(&mut lock, "🔒").changed();
-                if a || b {
-                    g.net.cmd(Command::Dm(DmCommand::SetLayer {
-                        room: room_id,
-                        layer: l.kind,
-                        visible: vis,
-                        locked: lock,
-                    }));
-                }
-            });
-        }
         ui.horizontal(|ui| {
             ui.label(g.i18n.t("editor.ambient"));
             for (amb, key) in [
@@ -387,6 +426,12 @@ fn editor_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
     }
     if g.ui.tool == Tool::Object {
         ui.checkbox(&mut g.ui.object_hidden, g.i18n.t("editor.hidden_object"));
+    }
+    if g.ui.tool == Tool::Select {
+        crate::ui_dm::selection_panel(ui, g, room_id);
+    }
+    if g.ui.tool == Tool::Draw {
+        crate::ui_dm::draw_options(ui, g, room_id, true);
     }
     theme::heading(ui, g.i18n.t("editor.assets"));
     ui.add(egui::TextEdit::singleline(&mut g.ui.asset_search).hint_text(g.i18n.t("editor.search")));
@@ -449,7 +494,14 @@ fn select_asset(g: &mut GameUi, id: String, is_object: bool) {
         g.ui.tool = Tool::Object;
     } else if matches!(
         g.ui.tool,
-        Tool::Play | Tool::Object | Tool::RemoveObject | Tool::Spawn | Tool::Entry | Tool::Light
+        Tool::Play
+            | Tool::Object
+            | Tool::RemoveObject
+            | Tool::Spawn
+            | Tool::Entry
+            | Tool::Light
+            | Tool::Select
+            | Tool::Draw
     ) {
         g.ui.tool = Tool::Pencil;
     }
@@ -461,6 +513,12 @@ fn select_asset(g: &mut GameUi, id: String, is_object: bool) {
 fn world_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
     let party_room = view.dm.as_ref().map(|d| d.party_room);
     let viewing = view.room.as_ref().map(|r| r.id);
+    if ui
+        .button(RichText::new(format!("🗺 {}", g.i18n.t("graph.open"))).strong())
+        .clicked()
+    {
+        g.ui.show_graph = !g.ui.show_graph;
+    }
     theme::heading(ui, g.i18n.t("world.rooms"));
     for (id, node) in &view.graph.nodes {
         ui.horizontal(|ui| {
@@ -614,6 +672,12 @@ fn world_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
 
 fn monsters_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
     theme::heading(ui, g.i18n.t("monsters.bestiary"));
+    if ui
+        .button(RichText::new(format!("🐉 {}", g.i18n.t("bestiary.open"))).strong())
+        .clicked()
+    {
+        g.ui.show_bestiary = !g.ui.show_bestiary;
+    }
     ui.checkbox(&mut g.ui.spawn_hidden, g.i18n.t("monsters.spawn_hidden"));
     if let Some(dm) = &view.dm {
         for m in &dm.bestiary {
@@ -771,6 +835,7 @@ fn session_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
         });
         ui.label(RichText::new(g.i18n.t("session.teleport_help")).small());
     }
+    crate::ui_dm::session_tools(ui, g, view);
     if let Some(r) = &view.room {
         ui.horizontal(|ui| {
             if ui.button(g.i18n.t("session.reveal")).clicked() {
@@ -840,6 +905,7 @@ fn right_panel(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
                 theme::heading(ui, g.i18n.t("sheet.title"));
                 sheet_ui(ui, &sheet, me, &mut g.net, &mut g.ui, &g.i18n);
             }
+            crate::ui_play::sheet_extras(ui, g, view);
         } else {
             ui.label(g.i18n.t("game.no_character"));
             if ui.button(g.i18n.t("game.create_character")).clicked() {
@@ -856,87 +922,22 @@ fn right_panel(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
 }
 
 fn overlays(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
-    // Combat action bar for your active creature.
+    crate::ui_play::action_bar(ctx, g, view);
+    crate::ui_play::reaction_prompts(ctx, g, view);
+    crate::ui_play::targeting_window(ctx, g, view);
+    crate::ui_play::spellbook_window(ctx, g, view);
+    crate::ui_play::levelup_window(ctx, g, view);
+    crate::ui_play::inventory_window(ctx, g, view);
+    crate::ui_play::loot_window(ctx, g, view);
+    crate::ui_play::dialogue_window(ctx, g, view);
+    if g.net.is_dm() {
+        crate::ui_dm::bestiary_window(ctx, g, view);
+        crate::ui_dm::graph_window(ctx, g, view);
+        crate::ui_dm::script_editor_window(ctx, g, view);
+    } else if view.players_can_draw || g.ui.tool == Tool::Draw {
+        player_draw_toggle(ctx, g, view);
+    }
     if let Some(c) = &view.combat {
-        if let (Some(turn), Some(active)) = (&c.turn, c.active) {
-            let me = view.creatures.iter().find(|x| x.id == active).cloned();
-            egui::Window::new(g.i18n.t("combat.your_turn"))
-                .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -190.0))
-                .collapsible(false)
-                .resizable(false)
-                .title_bar(true)
-                .show(ctx, |ui| {
-                    if let Some(me) = &me {
-                        ui.label(RichText::new(&me.name).strong());
-                        ui.label(format!(
-                            "{}: {} ft · {}: {} · {}: {}",
-                            g.i18n.t("combat.movement"),
-                            turn.movement_left_ft,
-                            g.i18n.t("combat.action"),
-                            if turn.action_used { "✖" } else { "✔" },
-                            g.i18n.t("combat.reaction"),
-                            "✔"
-                        ));
-                        ui.horizontal_wrapped(|ui| {
-                            for (i, a) in me.attacks.iter().enumerate() {
-                                if ui
-                                    .add_enabled(
-                                        !turn.action_used,
-                                        egui::Button::new(format!("⚔ {}", a.name)),
-                                    )
-                                    .on_hover_text(a.summary())
-                                    .clicked()
-                                {
-                                    g.ui.targeting = Some(i);
-                                    g.ui.selected = Some(me.id);
-                                    g.ui.tool = Tool::Play;
-                                }
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            if ui
-                                .add_enabled(
-                                    !turn.action_used,
-                                    egui::Button::new(g.i18n.t("action.dash")),
-                                )
-                                .clicked()
-                            {
-                                g.net.cmd(Command::Dash { entity: me.id });
-                            }
-                            if ui
-                                .add_enabled(
-                                    !turn.action_used,
-                                    egui::Button::new(g.i18n.t("action.dodge")),
-                                )
-                                .clicked()
-                            {
-                                g.net.cmd(Command::Dodge { entity: me.id });
-                            }
-                            if ui
-                                .add_enabled(
-                                    !turn.action_used,
-                                    egui::Button::new(g.i18n.t("action.disengage")),
-                                )
-                                .clicked()
-                            {
-                                g.net.cmd(Command::Disengage { entity: me.id });
-                            }
-                            if ui
-                                .button(RichText::new(g.i18n.t("action.end_turn")).strong())
-                                .clicked()
-                            {
-                                g.net.cmd(Command::EndTurn);
-                                g.ui.targeting = None;
-                            }
-                        });
-                        if g.ui.targeting.is_some() {
-                            ui.label(
-                                RichText::new(g.i18n.t("combat.choose_target")).color(theme::BLOOD),
-                            );
-                        }
-                    }
-                });
-        }
         if let Some(p) = &c.your_reaction {
             let reactor = view.creatures.iter().find(|x| x.id == p.reactor).cloned();
             let mover = view
@@ -1089,4 +1090,136 @@ fn overlays(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
                 );
             });
     }
+}
+
+/// Players can annotate the map when the DM allows it.
+fn player_draw_toggle(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
+    if !view.players_can_draw {
+        if g.ui.tool == Tool::Draw {
+            g.ui.tool = Tool::Play;
+        }
+        return;
+    }
+    egui::Window::new(g.i18n.t("draw.title"))
+        .id("player-draw".into())
+        .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 50.0))
+        .collapsible(true)
+        .default_open(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            let mut on = g.ui.tool == Tool::Draw;
+            if ui.toggle_value(&mut on, g.i18n.t("tool.draw")).changed() {
+                g.ui.tool = if on { Tool::Draw } else { Tool::Play };
+            }
+            if let Some(r) = &view.room {
+                crate::ui_dm::draw_options(ui, g, r.id, false);
+            }
+        });
+}
+
+/// How the DM shares the game: invite links, relay, UPnP and plain instructions.
+fn invite_window(ctx: &egui::Context, g: &mut GameUi) {
+    let Some(host) = g.host.as_ref() else { return };
+    let mut open = true;
+    let invites = crate::hosting::invites(host);
+    let relay = host.handle.relay.lock().expect("relay").clone();
+    let upnp = host.upnp.lock().expect("upnp").clone();
+    let port = host.handle.local_addr.port();
+    let mut go_online = None;
+    let mut try_upnp = false;
+    egui::Window::new(format!("✉ {}", g.i18n.t("invite.title")))
+        .open(&mut open)
+        .default_width(560.0)
+        .show(ctx, |ui| {
+            ui.label(g.i18n.t("invite.intro"));
+            for (key, link) in &invites {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(g.i18n.t(key)).strong());
+                    ui.add(egui::TextEdit::singleline(&mut link.clone()).desired_width(330.0));
+                    if ui.button(g.i18n.t("invite.copy")).clicked() {
+                        ui.ctx().copy_text(link.clone());
+                        g.gv.toast(g.i18n.t("invite.copied"));
+                    }
+                });
+            }
+            theme::heading(ui, g.i18n.t("invite.online_title"));
+            ui.label(RichText::new(g.i18n.t("invite.online_help")).small());
+            ui.horizontal(|ui| {
+                ui.label(g.i18n.t("invite.relay_address"));
+                ui.add(
+                    egui::TextEdit::singleline(&mut g.settings.relay_address)
+                        .hint_text("relay.example.com:7979")
+                        .desired_width(220.0),
+                );
+                let can = !g.settings.relay_address.trim().is_empty()
+                    && !matches!(
+                        relay,
+                        dnd_net::RelayStatus::Online { .. } | dnd_net::RelayStatus::Connecting
+                    );
+                if ui
+                    .add_enabled(can, egui::Button::new(g.i18n.t("invite.go_online")))
+                    .clicked()
+                {
+                    go_online = Some(g.settings.relay_address.trim().to_string());
+                }
+            });
+            let (txt, color) = match &relay {
+                dnd_net::RelayStatus::Off => {
+                    (g.i18n.t("invite.relay_off").to_string(), theme::WOOD_LIGHT)
+                }
+                dnd_net::RelayStatus::Connecting => {
+                    (g.i18n.t("invite.relay_connecting").to_string(), theme::GOLD)
+                }
+                dnd_net::RelayStatus::Online { relay, .. } => (
+                    format!("{} {relay}", g.i18n.t("invite.relay_online")),
+                    theme::HEALTH,
+                ),
+                dnd_net::RelayStatus::Failed(e) => (
+                    format!(
+                        "{} {}",
+                        g.i18n.t("invite.relay_failed"),
+                        crate::net_sync::explain_network(e)
+                    ),
+                    theme::BLOOD,
+                ),
+            };
+            ui.label(RichText::new(txt).color(color));
+            theme::heading(ui, g.i18n.t("invite.direct_title"));
+            ui.label(RichText::new(format!("{} {port}", g.i18n.t("invite.direct_help"))).small());
+            ui.horizontal(|ui| {
+                if ui
+                    .button(g.i18n.t("invite.try_upnp"))
+                    .on_hover_text(g.i18n.t("invite.upnp_help"))
+                    .clicked()
+                {
+                    try_upnp = true;
+                }
+                match &upnp {
+                    None => {}
+                    Some(Ok(a)) => {
+                        ui.label(
+                            RichText::new(format!("{} {a}", g.i18n.t("invite.upnp_ok")))
+                                .color(theme::HEALTH),
+                        );
+                    }
+                    Some(Err(e)) => {
+                        ui.label(
+                            RichText::new(format!("{} {e}", g.i18n.t("invite.upnp_failed")))
+                                .color(theme::BLOOD),
+                        );
+                    }
+                }
+            });
+            ui.label(RichText::new(g.i18n.t("invite.security")).small().italics());
+        });
+    if let Some(r) = go_online
+        && let Some(h) = g.host.as_ref()
+    {
+        crate::hosting::go_online(h, &r);
+        let _ = g.settings.save();
+    }
+    if try_upnp && let Some(h) = g.host.as_ref() {
+        crate::hosting::start_upnp(h);
+    }
+    g.ui.show_invite &= open;
 }

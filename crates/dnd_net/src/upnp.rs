@@ -14,8 +14,16 @@ pub fn map_port(port: u16) -> Result<std::net::SocketAddr, String> {
     let mut opts = igd_next::SearchOptions::default();
     opts.timeout = Some(Duration::from_secs(3));
     let gw = igd_next::search_gateway(opts).map_err(|e| format!("no UPnP router found: {e}"))?;
-    let ext = gw.get_external_ip().map_err(|e| format!("router didn't report its address: {e}"))?;
-    gw.add_port(igd_next::PortMappingProtocol::TCP, port, std::net::SocketAddr::V4(SocketAddrV4::new(local_ip, port)), 4 * 3600, "DND55")
-        .map_err(|e| format!("router refused the port mapping: {e}"))?;
+    let ext = gw
+        .get_external_ip()
+        .map_err(|e| format!("router didn't report its address: {e}"))?;
+    gw.add_port(
+        igd_next::PortMappingProtocol::TCP,
+        port,
+        std::net::SocketAddr::V4(SocketAddrV4::new(local_ip, port)),
+        4 * 3600,
+        "DND55",
+    )
+    .map_err(|e| format!("router refused the port mapping: {e}"))?;
     Ok(std::net::SocketAddr::new(ext, port))
 }

@@ -38,9 +38,19 @@ const MAX_HANDSHAKE: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RelayHello {
-    Host { protocol: u32 },
-    Join { protocol: u32, invite: String },
-    Accept { protocol: u32, invite: String, stream: u64, host_key: String },
+    Host {
+        protocol: u32,
+    },
+    Join {
+        protocol: u32,
+        invite: String,
+    },
+    Accept {
+        protocol: u32,
+        invite: String,
+        stream: u64,
+        host_key: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,7 +73,12 @@ pub struct RelayConfig {
 
 impl RelayConfig {
     pub fn new(bind: SocketAddr) -> Self {
-        RelayConfig { bind, max_hosts: 200, max_streams_per_host: 16, pair_timeout: Duration::from_secs(10) }
+        RelayConfig {
+            bind,
+            max_hosts: 200,
+            max_streams_per_host: 16,
+            pair_timeout: Duration::from_secs(10),
+        }
     }
 }
 
@@ -83,11 +98,22 @@ struct State {
 type Shared = Arc<Mutex<State>>;
 
 fn framed(s: TcpStream) -> Framed<TcpStream, LengthDelimitedCodec> {
-    Framed::new(s, LengthDelimitedCodec::builder().max_frame_length(MAX_HANDSHAKE).new_codec())
+    Framed::new(
+        s,
+        LengthDelimitedCodec::builder()
+            .max_frame_length(MAX_HANDSHAKE)
+            .new_codec(),
+    )
 }
 
-async fn send(w: &mut Framed<TcpStream, LengthDelimitedCodec>, m: &RelayMsg) -> std::io::Result<()> {
-    w.send(Bytes::from(serde_json::to_vec(m).map_err(std::io::Error::other)?)).await
+async fn send(
+    w: &mut Framed<TcpStream, LengthDelimitedCodec>,
+    m: &RelayMsg,
+) -> std::io::Result<()> {
+    w.send(Bytes::from(
+        serde_json::to_vec(m).map_err(std::io::Error::other)?,
+    ))
+    .await
 }
 
 /// Sends the first relay message on a raw stream (used by clients and hosts).
@@ -127,7 +153,10 @@ fn invite_code() -> String {
 }
 
 /// Runs a relay until the listener fails. Returns the bound address via `ready`.
-pub async fn run(cfg: RelayConfig, ready: Option<oneshot::Sender<SocketAddr>>) -> std::io::Result<()> {
+pub async fn run(
+    cfg: RelayConfig,
+    ready: Option<oneshot::Sender<SocketAddr>>,
+) -> std::io::Result<()> {
     let listener = TcpListener::bind(cfg.bind).await?;
     if let Some(r) = ready {
         let _ = r.send(listener.local_addr()?);
@@ -144,40 +173,74 @@ pub async fn run(cfg: RelayConfig, ready: Option<oneshot::Sender<SocketAddr>>) -
     }
 }
 
-async fn handle(mut stream: TcpStream, state: Shared, cfg: Arc<RelayConfig>) -> std::io::Result<()> {
+async fn handle(
+    mut stream: TcpStream,
+    state: Shared,
+    cfg: Arc<RelayConfig>,
+) -> std::io::Result<()> {
     use tokio::io::AsyncReadExt;
     // First frame: the hello (read manually so nothing beyond it is buffered).
     let mut len = [0u8; 4];
-    tokio::time::timeout(Duration::from_secs(10), stream.read_exact(&mut len)).await.map_err(|_| std::io::Error::other("timeout"))??;
+    tokio::time::timeout(Duration::from_secs(10), stream.read_exact(&mut len))
+        .await
+        .map_err(|_| std::io::Error::other("timeout"))??;
     let n = u32::from_be_bytes(len) as usize;
     if n > MAX_HANDSHAKE {
         return Ok(());
     }
     let mut buf = vec![0u8; n];
     stream.read_exact(&mut buf).await?;
-    let Ok(hello) = serde_json::from_slice::<RelayHello>(&buf) else { return Ok(()) };
+    let Ok(hello) = serde_json::from_slice::<RelayHello>(&buf) else {
+        return Ok(());
+    };
     match hello {
         RelayHello::Host { protocol } => {
             let mut w = framed(stream);
             if protocol != RELAY_PROTOCOL {
-                return send(&mut w, &RelayMsg::Error { reason: format!("relay protocol {RELAY_PROTOCOL} required") }).await;
+                return send(
+                    &mut w,
+                    &RelayMsg::Error {
+                        reason: format!("relay protocol {RELAY_PROTOCOL} required"),
+                    },
+                )
+                .await;
             }
             let (tx, mut rx) = mpsc::channel::<RelayMsg>(64);
             let (invite, key) = {
                 let mut st = state.lock().await;
                 if st.hosts.len() >= cfg.max_hosts {
                     drop(st);
-                    return send(&mut w, &RelayMsg::Error { reason: "relay is full, try again later".into() }).await;
+                    return send(
+                        &mut w,
+                        &RelayMsg::Error {
+                            reason: "relay is full, try again later".into(),
+                        },
+                    )
+                    .await;
                 }
                 let mut invite = invite_code();
                 while st.hosts.contains_key(&invite) {
                     invite = invite_code();
                 }
                 let key = random_hex(16);
-                st.hosts.insert(invite.clone(), HostEntry { key: key.clone(), control: tx, streams: 0 });
+                st.hosts.insert(
+                    invite.clone(),
+                    HostEntry {
+                        key: key.clone(),
+                        control: tx,
+                        streams: 0,
+                    },
+                );
                 (invite, key)
             };
-            send(&mut w, &RelayMsg::Registered { invite: invite.clone(), host_key: key }).await?;
+            send(
+                &mut w,
+                &RelayMsg::Registered {
+                    invite: invite.clone(),
+                    host_key: key,
+                },
+            )
+            .await?;
             let mut ping = tokio::time::interval(Duration::from_secs(20));
             loop {
                 tokio::select! {
@@ -194,7 +257,9 @@ async fn handle(mut stream: TcpStream, state: Shared, cfg: Arc<RelayConfig>) -> 
         }
         RelayHello::Join { protocol, invite } => {
             let invite = invite.trim().to_uppercase();
-            let reply_err = |reason: &str| RelayMsg::Error { reason: reason.into() };
+            let reply_err = |reason: &str| RelayMsg::Error {
+                reason: reason.into(),
+            };
             if protocol != RELAY_PROTOCOL {
                 let mut w = framed(stream);
                 return send(&mut w, &reply_err("relay protocol mismatch: update DND55")).await;
@@ -217,7 +282,11 @@ async fn handle(mut stream: TcpStream, state: Shared, cfg: Arc<RelayConfig>) -> 
                     None => {
                         drop(st);
                         let mut w = framed(stream);
-                        return send(&mut w, &reply_err("no game with that invite code is running on this relay")).await;
+                        return send(
+                            &mut w,
+                            &reply_err("no game with that invite code is running on this relay"),
+                        )
+                        .await;
                     }
                 };
                 st.pending.insert(id, tx);
@@ -244,9 +313,17 @@ async fn handle(mut stream: TcpStream, state: Shared, cfg: Arc<RelayConfig>) -> 
             }
             Ok(())
         }
-        RelayHello::Accept { invite, stream: id, host_key, .. } => {
+        RelayHello::Accept {
+            invite,
+            stream: id,
+            host_key,
+            ..
+        } => {
             let mut st = state.lock().await;
-            let valid = st.hosts.get(&invite.trim().to_uppercase()).is_some_and(|h| h.key == host_key);
+            let valid = st
+                .hosts
+                .get(&invite.trim().to_uppercase())
+                .is_some_and(|h| h.key == host_key);
             if valid && let Some(tx) = st.pending.remove(&id) {
                 let _ = tx.send(stream);
             }

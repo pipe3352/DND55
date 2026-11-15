@@ -14,10 +14,10 @@ use dnd_rules::damage::DamageType;
 use dnd_rules::dice::DiceExpr;
 use dnd_rules::equipment::WeaponKind;
 use dnd_rules::spells::{AreaShape, CastingKind, Spell, SpellAttackKind};
+use dnd_world::EntityId;
 use dnd_world::map::Cell;
 use dnd_world::path::grid_distance_ft;
 use dnd_world::vision::line_of_sight;
-use dnd_world::EntityId;
 
 type Res<T> = Result<T, CommandError>;
 
@@ -45,7 +45,13 @@ pub(crate) fn vfx_for_damage(t: DamageType) -> Vfx {
 
 /// Cells covered by an area of effect. `origin` is the caster's cell; `point` the chosen point.
 /// Cones and lines start at the caster and point toward `point`.
-pub fn area_cells(shape: AreaShape, size_ft: u32, origin: Cell, point: Cell, from_point: bool) -> Vec<Cell> {
+pub fn area_cells(
+    shape: AreaShape,
+    size_ft: u32,
+    origin: Cell,
+    point: Cell,
+    from_point: bool,
+) -> Vec<Cell> {
     let n = (size_ft / 5) as i32;
     let mut out = Vec::new();
     match shape {
@@ -78,12 +84,20 @@ pub fn area_cells(shape: AreaShape, size_ft: u32, origin: Cell, point: Cell, fro
             } else {
                 // "Cube originating from you": the cube's face touches the caster, extending toward the point.
                 let (dx, dy) = (point.0 - origin.0, point.1 - origin.1);
-                let (sx, sy) = if dx.abs() >= dy.abs() { (dx.signum().max(-1).min(1), 0) } else { (0, dy.signum()) };
+                let (sx, sy) = if dx.abs() >= dy.abs() {
+                    (dx.signum().max(-1).min(1), 0)
+                } else {
+                    (0, dy.signum())
+                };
                 let (sx, sy) = if sx == 0 && sy == 0 { (1, 0) } else { (sx, sy) };
                 let half = (n - 1) / 2;
                 for i in 1..=n {
                     for j in -half..=(n - 1 - half) {
-                        let c = if sx != 0 { (origin.0 + sx * i, origin.1 + j) } else { (origin.0 + j, origin.1 + sy * i) };
+                        let c = if sx != 0 {
+                            (origin.0 + sx * i, origin.1 + j)
+                        } else {
+                            (origin.0 + j, origin.1 + sy * i)
+                        };
                         out.push(c);
                     }
                 }
@@ -133,25 +147,54 @@ pub fn area_cells(shape: AreaShape, size_ft: u32, origin: Cell, point: Cell, fro
 impl Session {
     // ------------------------------------------------------------------ effects
 
-    pub(crate) fn add_effect(&mut self, source: EntityId, origin: &str, kind: EffectKind, rounds: Option<u32>, concentration: bool) -> u64 {
+    pub(crate) fn add_effect(
+        &mut self,
+        source: EntityId,
+        origin: &str,
+        kind: EffectKind,
+        rounds: Option<u32>,
+        concentration: bool,
+    ) -> u64 {
         let id = self.next_id();
-        if let EffectKind::Condition { target, condition, .. } = &kind {
+        if let EffectKind::Condition {
+            target, condition, ..
+        } = &kind
+        {
             self.creature_mut(*target).conditions.add(*condition);
         }
-        self.state.effects.push(Effect { id, source, origin: origin.into(), kind, rounds_left: rounds, concentration });
+        self.state.effects.push(Effect {
+            id,
+            source,
+            origin: origin.into(),
+            kind,
+            rounds_left: rounds,
+            concentration,
+        });
         id
     }
 
     pub(crate) fn remove_effect(&mut self, id: u64) {
-        let Some(pos) = self.state.effects.iter().position(|e| e.id == id) else { return };
+        let Some(pos) = self.state.effects.iter().position(|e| e.id == id) else {
+            return;
+        };
         let e = self.state.effects.remove(pos);
-        if let EffectKind::Condition { target, condition, .. } = e.kind {
+        if let EffectKind::Condition {
+            target, condition, ..
+        } = e.kind
+        {
             // Keep the condition if another effect still imposes it.
             let still = self.state.effects.iter().any(|o| matches!(&o.kind, EffectKind::Condition { target: t, condition: c, .. } if *t == target && *c == condition));
             if !still && let Some(c) = self.state.creatures.get_mut(&target) {
                 c.conditions.remove(condition);
                 let name = c.name.clone();
-                self.emit(Audience::All, Event::Floating { entity: target, text: format!("-{condition:?}"), kind: FloatKind::Condition });
+                self.emit(
+                    Audience::All,
+                    Event::Floating {
+                        entity: target,
+                        text: format!("-{condition:?}"),
+                        kind: FloatKind::Condition,
+                    },
+                );
                 self.log(Audience::All, format!("{name} is no longer {condition:?}."));
             }
         }
@@ -167,7 +210,13 @@ impl Session {
                     expired.push(e.id);
                 }
             }
-            if matches!(e.kind, EffectKind::Condition { ends_at_source_turn: true, .. }) {
+            if matches!(
+                e.kind,
+                EffectKind::Condition {
+                    ends_at_source_turn: true,
+                    ..
+                }
+            ) {
                 expired.push(e.id);
             }
         }
@@ -177,7 +226,12 @@ impl Session {
                 self.log(Audience::All, format!("{label} ends."));
             }
             self.remove_effect(id);
-            if !self.state.effects.iter().any(|e| e.source == source && e.concentration) {
+            if !self
+                .state
+                .effects
+                .iter()
+                .any(|e| e.source == source && e.concentration)
+            {
                 if let Some(c) = self.state.creatures.get_mut(&source) {
                     c.concentration = None;
                 }
@@ -186,23 +240,47 @@ impl Session {
     }
 
     pub(crate) fn end_concentration(&mut self, entity: EntityId, why: &str) {
-        let Some(spell) = self.state.creatures.get(&entity).and_then(|c| c.concentration.clone()) else { return };
-        let ids: Vec<u64> = self.state.effects.iter().filter(|e| e.source == entity && e.concentration).map(|e| e.id).collect();
+        let Some(spell) = self
+            .state
+            .creatures
+            .get(&entity)
+            .and_then(|c| c.concentration.clone())
+        else {
+            return;
+        };
+        let ids: Vec<u64> = self
+            .state
+            .effects
+            .iter()
+            .filter(|e| e.source == entity && e.concentration)
+            .map(|e| e.id)
+            .collect();
         for id in ids {
             self.remove_effect(id);
         }
         let name = self.state.creatures[&entity].name.clone();
         self.creature_mut(entity).concentration = None;
-        let spell_name = dnd_rules::spells::spell(&spell).map(|s| s.name.clone()).unwrap_or(spell);
-        self.log(Audience::All, format!("{name} loses Concentration on {spell_name} ({why})."));
+        let spell_name = dnd_rules::spells::spell(&spell)
+            .map(|s| s.name.clone())
+            .unwrap_or(spell);
+        self.log(
+            Audience::All,
+            format!("{name} loses Concentration on {spell_name} ({why})."),
+        );
     }
 
     pub(crate) fn has_bless(&self, id: EntityId) -> bool {
-        self.state.effects.iter().any(|e| matches!(&e.kind, EffectKind::Bless { targets } if targets.contains(&id)))
+        self.state
+            .effects
+            .iter()
+            .any(|e| matches!(&e.kind, EffectKind::Bless { targets } if targets.contains(&id)))
     }
 
     fn has_effect(&self, id: EntityId, f: impl Fn(&EffectKind) -> bool) -> bool {
-        self.state.effects.iter().any(|e| e.targets().contains(&id) && f(&e.kind))
+        self.state
+            .effects
+            .iter()
+            .any(|e| e.targets().contains(&id) && f(&e.kind))
     }
 
     /// AC including Mage Armor and Shield.
@@ -210,7 +288,11 @@ impl Session {
         let mut ac = c.armor_class;
         let unarmored = c.sheet().is_none_or(|s| s.body_armor.is_none());
         if unarmored && self.has_effect(c.id, |k| matches!(k, EffectKind::MageArmor { .. })) {
-            let shield = if c.sheet().is_some_and(|s| s.shield) { 2 } else { 0 };
+            let shield = if c.sheet().is_some_and(|s| s.shield) {
+                2
+            } else {
+                0
+            };
             ac = ac.max(13 + c.mods[Ability::Dexterity.index()] + shield);
         }
         if self.has_effect(c.id, |k| matches!(k, EffectKind::Shield { .. })) {
@@ -223,7 +305,11 @@ impl Session {
     pub fn defenses_of(&self, c: &Creature) -> dnd_rules::Defenses {
         let mut d = c.defenses.clone();
         if c.status.raging {
-            d.resistances.extend([DamageType::Bludgeoning, DamageType::Piercing, DamageType::Slashing]);
+            d.resistances.extend([
+                DamageType::Bludgeoning,
+                DamageType::Piercing,
+                DamageType::Slashing,
+            ]);
         }
         if c.conditions.has(Condition::Petrified) {
             d.resist_all = true;
@@ -232,15 +318,30 @@ impl Session {
     }
 
     /// Rolls a saving throw for a creature. Returns (success, total).
-    pub(crate) fn saving_throw(&mut self, target: EntityId, ability: Ability, dc: i32, label: &str) -> (bool, i32) {
+    pub(crate) fn saving_throw(
+        &mut self,
+        target: EntityId,
+        ability: Ability,
+        dc: i32,
+        label: &str,
+    ) -> (bool, i32) {
         let c = self.state.creatures[&target].clone();
         if c.conditions.auto_fails_save(ability) {
-            self.log(Audience::All, format!("{} automatically fails the {ability:?} save ({label}).", c.name));
+            self.log(
+                Audience::All,
+                format!(
+                    "{} automatically fails the {ability:?} save ({label}).",
+                    c.name
+                ),
+            );
             return (false, 0);
         }
         let mut sources = ModeSources::default();
         if ability == Ability::Dexterity {
-            if c.effects.dodging && !c.conditions.has(Condition::Incapacitated) && c.effective_speed() > 0 {
+            if c.effects.dodging
+                && !c.conditions.has(Condition::Incapacitated)
+                && c.effective_speed() > 0
+            {
                 sources.adv("Dodge");
             }
             if c.conditions.has(Condition::Restrained) {
@@ -256,12 +357,30 @@ impl Session {
         let mut bonus = c.save_bonus(ability);
         let mut detail = String::new();
         // Aura of Protection (Paladin 6): +Cha mod (min 1) for the paladin and allies within 10 ft.
-        if let Some(p) = self.state.creatures.values().filter(|p| p.room == c.room && p.is_alive() && p.faction == c.faction && p.has_feature("Aura of Protection") && grid_distance_ft(p.pos, c.pos) <= 10 && !p.conditions.has(Condition::Incapacitated)).max_by_key(|p| p.mods[Ability::Charisma.index()]) {
+        if let Some(p) = self
+            .state
+            .creatures
+            .values()
+            .filter(|p| {
+                p.room == c.room
+                    && p.is_alive()
+                    && p.faction == c.faction
+                    && p.has_feature("Aura of Protection")
+                    && grid_distance_ft(p.pos, c.pos) <= 10
+                    && !p.conditions.has(Condition::Incapacitated)
+            })
+            .max_by_key(|p| p.mods[Ability::Charisma.index()])
+        {
             let b = p.mods[Ability::Charisma.index()].max(1);
             bonus += b;
             detail.push_str(&format!(" +{b} aura"));
         }
-        let mut roll = D20Roll::roll(self.rng.as_mut(), sources.mode(), bonus, c.conditions.exhaustion);
+        let mut roll = D20Roll::roll(
+            self.rng.as_mut(),
+            sources.mode(),
+            bonus,
+            c.conditions.exhaustion,
+        );
         if self.has_bless(target) {
             let b = DiceExpr::dice(1, 4).roll(self.rng.as_mut(), false).total;
             roll.total += b;
@@ -281,7 +400,12 @@ impl Session {
         let ok = roll.total >= dc;
         self.log(
             Audience::All,
-            format!("{} {ability:?} save vs DC {dc} ({label}): {}{detail} → {}", c.name, roll.breakdown(), if ok { "success" } else { "failure" }),
+            format!(
+                "{} {ability:?} save vs DC {dc} ({label}): {}{detail} → {}",
+                c.name,
+                roll.breakdown(),
+                if ok { "success" } else { "failure" }
+            ),
         );
         (ok, roll.total)
     }
@@ -296,7 +420,8 @@ impl Session {
             return (level >= min_level && c.resources.pact_used < count).then_some(level);
         }
         let slots = sheet.spell_slots();
-        (min_level.max(1)..=9).find(|l| slots[*l as usize - 1] > c.resources.slots_used[*l as usize - 1])
+        (min_level.max(1)..=9)
+            .find(|l| slots[*l as usize - 1] > c.resources.slots_used[*l as usize - 1])
     }
 
     pub(crate) fn slot_available(&self, c: &Creature, level: u8) -> bool {
@@ -305,7 +430,8 @@ impl Session {
             let (count, pact) = dnd_rules::classes::pact_slots(sheet.level);
             return level == pact && c.resources.pact_used < count;
         }
-        (1..=9).contains(&level) && sheet.spell_slots()[level as usize - 1] > c.resources.slots_used[level as usize - 1]
+        (1..=9).contains(&level)
+            && sheet.spell_slots()[level as usize - 1] > c.resources.slots_used[level as usize - 1]
     }
 
     pub(crate) fn spend_slot(&mut self, id: EntityId, level: u8) {
@@ -320,8 +446,17 @@ impl Session {
 
     // ------------------------------------------------------------------ casting
 
-    pub(crate) fn cmd_cast_spell(&mut self, who: Principal, caster: EntityId, spell_id: &str, slot: Option<u8>, targets: Vec<EntityId>, point: Option<Cell>) -> Res<()> {
-        let spell = dnd_rules::spells::spell(spell_id).ok_or_else(|| CommandError::NotFound(format!("spell {spell_id}")))?;
+    pub(crate) fn cmd_cast_spell(
+        &mut self,
+        who: Principal,
+        caster: EntityId,
+        spell_id: &str,
+        slot: Option<u8>,
+        targets: Vec<EntityId>,
+        point: Option<Cell>,
+    ) -> Res<()> {
+        let spell = dnd_rules::spells::spell(spell_id)
+            .ok_or_else(|| CommandError::NotFound(format!("spell {spell_id}")))?;
         let c = self.creature(caster)?.clone();
         if !Self::controls(who, &c) {
             return Err(CommandError::NotAuthorized);
@@ -343,19 +478,32 @@ impl Session {
         } else {
             let s = slot.unwrap_or(spell.level);
             if s < spell.level || s > 9 {
-                return rules(format!("{} needs a level {}+ spell slot", spell.name, spell.level));
+                return rules(format!(
+                    "{} needs a level {}+ spell slot",
+                    spell.name, spell.level
+                ));
             }
             s
         };
-        let free_smite = spell.id == "divine_smite" && c.has_feature("Paladin’s Smite") && !c.resources.free_smite_used && slot.is_none();
+        let free_smite = spell.id == "divine_smite"
+            && c.has_feature("Paladin’s Smite")
+            && !c.resources.free_smite_used
+            && slot.is_none();
         if is_pc && slot_level > 0 && !free_smite && !self.slot_available(&c, slot_level) {
             return rules(format!("no level {slot_level} spell slot available"));
         }
         // Action economy.
         let kind = spell.casting_kind();
-        let in_combat = self.state.combat.as_ref().is_some_and(|cb| cb.room == c.room);
+        let in_combat = self
+            .state
+            .combat
+            .as_ref()
+            .is_some_and(|cb| cb.room == c.room);
         if kind == CastingKind::Reaction {
-            return rules(format!("{} is cast as a Reaction when its trigger happens", spell.name));
+            return rules(format!(
+                "{} is cast as a Reaction when its trigger happens",
+                spell.name
+            ));
         }
         if in_combat {
             let cb = self.state.combat.as_ref().expect("checked");
@@ -366,10 +514,21 @@ impl Session {
                 return rules("it isn't this creature's turn");
             }
             match kind {
-                CastingKind::Long => return rules(format!("{} takes {} to cast: not in combat", spell.name, spell.casting_time)),
+                CastingKind::Long => {
+                    return rules(format!(
+                        "{} takes {} to cast: not in combat",
+                        spell.name, spell.casting_time
+                    ));
+                }
                 // The Magic action can't be the extra action from Action Surge.
-                CastingKind::Action if cb.turn.action_used => return rules("action already used (Action Surge's extra action can't be the Magic action)"),
-                CastingKind::BonusAction if cb.turn.bonus_action_used => return rules("bonus action already used"),
+                CastingKind::Action if cb.turn.action_used => {
+                    return rules(
+                        "action already used (Action Surge's extra action can't be the Magic action)",
+                    );
+                }
+                CastingKind::BonusAction if cb.turn.bonus_action_used => {
+                    return rules("bonus action already used");
+                }
                 _ => {}
             }
             if slot_level > 0 && !free_smite && cb.turn.spell_slot_used {
@@ -378,10 +537,18 @@ impl Session {
         }
         // Divine Smite: immediately after hitting with a melee weapon or Unarmed Strike.
         let smite_target = if spell.auto.smite {
-            let hit = self.state.combat.as_ref().and_then(|cb| cb.turn.last_melee_hit);
+            let hit = self
+                .state
+                .combat
+                .as_ref()
+                .and_then(|cb| cb.turn.last_melee_hit);
             match hit {
                 Some(h) => Some(h),
-                None => return rules("cast Divine Smite right after hitting a target with a melee weapon or Unarmed Strike"),
+                None => {
+                    return rules(
+                        "cast Divine Smite right after hitting a target with a melee weapon or Unarmed Strike",
+                    );
+                }
             }
         } else {
             None
@@ -392,10 +559,18 @@ impl Session {
         let range = spell.range_ft();
         let caster_level = c.level().max(1);
         let a = &spell.auto;
-        let point_needed = a.area.is_some() && !matches!(spell.range(), dnd_rules::spells::SpellRange::SelfOnly) || a.light.is_some() && targets.is_empty() && point.is_some();
+        let point_needed = a.area.is_some()
+            && !matches!(spell.range(), dnd_rules::spells::SpellRange::SelfOnly)
+            || a.light.is_some() && targets.is_empty() && point.is_some();
         if let Some(p) = point {
-            if range != u32::MAX && grid_distance_ft(c.pos, p) > range as i32 && !matches!(spell.range(), dnd_rules::spells::SpellRange::SelfOnly) {
-                return rules(format!("that point is beyond {}'s range ({} ft)", spell.name, range));
+            if range != u32::MAX
+                && grid_distance_ft(c.pos, p) > range as i32
+                && !matches!(spell.range(), dnd_rules::spells::SpellRange::SelfOnly)
+            {
+                return rules(format!(
+                    "that point is beyond {}'s range ({} ft)",
+                    spell.name, range
+                ));
             }
             if !line_of_sight(&map_ok, c.pos, p) {
                 return rules("no line of sight to that point");
@@ -403,7 +578,9 @@ impl Session {
         } else if point_needed && a.area.is_some() {
             return rules(format!("choose a point for {}", spell.name));
         }
-        let max_targets = spell.max_targets(slot_level).max(spell.projectiles(slot_level, caster_level)) as usize;
+        let max_targets = spell
+            .max_targets(slot_level)
+            .max(spell.projectiles(slot_level, caster_level)) as usize;
         if targets.len() > max_targets.max(1) {
             return rules(format!("{} can target at most {max_targets}", spell.name));
         }
@@ -414,7 +591,10 @@ impl Session {
             }
             let d = grid_distance_ft(c.pos, tc.pos);
             if range != u32::MAX && d > range.max(5) as i32 && *t != caster {
-                return rules(format!("{} is {d} ft away; {} has a range of {}", tc.name, spell.name, spell.range));
+                return rules(format!(
+                    "{} is {d} ft away; {} has a range of {}",
+                    tc.name, spell.name, spell.range
+                ));
             }
             if *t != caster && !line_of_sight(&map_ok, c.pos, tc.pos) {
                 return rules(format!("no line of sight to {}", tc.name));
@@ -423,7 +603,16 @@ impl Session {
                 return rules(format!("{} only affects Humanoids", spell.name));
             }
         }
-        let needs_target = a.area.is_none() && a.light.is_none() && !spell.auto.smite && spell.range() != dnd_rules::spells::SpellRange::SelfOnly && a.buff.is_none() && (a.attack.is_some() || a.save.is_some() || a.healing.is_some() || a.auto_hit || a.condition.is_some());
+        let needs_target = a.area.is_none()
+            && a.light.is_none()
+            && !spell.auto.smite
+            && spell.range() != dnd_rules::spells::SpellRange::SelfOnly
+            && a.buff.is_none()
+            && (a.attack.is_some()
+                || a.save.is_some()
+                || a.healing.is_some()
+                || a.auto_hit
+                || a.condition.is_some());
         if needs_target && targets.is_empty() {
             return rules(format!("choose a target for {}", spell.name));
         }
@@ -456,45 +645,119 @@ impl Session {
             let cm = self.creature_mut(caster);
             cm.hidden = false;
         }
-        let slot_txt = if slot_level > 0 { format!(" (level {slot_level} slot)") } else { String::new() };
-        self.log(Audience::All, format!("{} casts {}{slot_txt}.", c.name, spell.name));
-        self.resolve_spell(&c, spell, slot_level, caster_level, targets, point, smite_target);
+        let slot_txt = if slot_level > 0 {
+            format!(" (level {slot_level} slot)")
+        } else {
+            String::new()
+        };
+        self.log(
+            Audience::All,
+            format!("{} casts {}{slot_txt}.", c.name, spell.name),
+        );
+        self.resolve_spell(
+            &c,
+            spell,
+            slot_level,
+            caster_level,
+            targets,
+            point,
+            smite_target,
+        );
         Ok(())
     }
 
     fn spell_dc(&self, c: &Creature, spell: &Spell) -> i32 {
-        let base = c.sheet().and_then(|s| s.spell_save_dc()).unwrap_or(8 + c.mods.iter().copied().max().unwrap_or(0) + 2);
-        let innate = spell.classes.iter().any(|k| k == "Sorcerer") && self.has_effect(c.id, |k| matches!(k, EffectKind::InnateSorcery { .. }));
+        let base = c
+            .sheet()
+            .and_then(|s| s.spell_save_dc())
+            .unwrap_or(8 + c.mods.iter().copied().max().unwrap_or(0) + 2);
+        let innate = spell.classes.iter().any(|k| k == "Sorcerer")
+            && self.has_effect(c.id, |k| matches!(k, EffectKind::InnateSorcery { .. }));
         base + if innate { 1 } else { 0 }
     }
 
     fn spell_attack_bonus(&self, c: &Creature) -> i32 {
-        c.sheet().and_then(|s| s.spell_attack_bonus()).unwrap_or(c.mods.iter().copied().max().unwrap_or(0) + 2)
+        c.sheet()
+            .and_then(|s| s.spell_attack_bonus())
+            .unwrap_or(c.mods.iter().copied().max().unwrap_or(0) + 2)
     }
 
     fn spell_mod(&self, c: &Creature) -> i32 {
-        c.sheet().and_then(|s| s.spellcasting_ability().map(|a| s.modifier(a))).unwrap_or(0)
+        c.sheet()
+            .and_then(|s| s.spellcasting_ability().map(|a| s.modifier(a)))
+            .unwrap_or(0)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn resolve_spell(&mut self, c: &Creature, spell: &Spell, slot: u8, caster_level: u8, targets: Vec<EntityId>, point: Option<Cell>, smite: Option<(EntityId, bool)>) {
+    fn resolve_spell(
+        &mut self,
+        c: &Creature,
+        spell: &Spell,
+        slot: u8,
+        caster_level: u8,
+        targets: Vec<EntityId>,
+        point: Option<Cell>,
+        smite: Option<(EntityId, bool)>,
+    ) {
         let a = &spell.auto;
         let caster = c.id;
         let rounds = spell.duration_rounds();
-        let vfx = a.damage.as_ref().map(|d| vfx_for_damage(d.damage_type)).unwrap_or(if a.healing.is_some() { Vfx::Healing } else if a.light.is_some() { Vfx::Light } else { Vfx::Arcane });
+        let vfx = a
+            .damage
+            .as_ref()
+            .map(|d| vfx_for_damage(d.damage_type))
+            .unwrap_or(if a.healing.is_some() {
+                Vfx::Healing
+            } else if a.light.is_some() {
+                Vfx::Light
+            } else {
+                Vfx::Arcane
+            });
 
         // Divine Smite: extra Radiant damage to the creature just hit (doubled on a Critical Hit).
         if let Some((target, crit)) = smite {
-            let mut dice = spell.damage_dice(slot.max(1), caster_level).unwrap_or_else(|| DiceExpr::dice(2, 8));
+            let mut dice = spell
+                .damage_dice(slot.max(1), caster_level)
+                .unwrap_or_else(|| DiceExpr::dice(2, 8));
             let t = self.state.creatures[&target].clone();
-            if a.extra_vs.iter().any(|k| t.creature_type.contains(k.as_str())) {
+            if a.extra_vs
+                .iter()
+                .any(|k| t.creature_type.contains(k.as_str()))
+            {
                 dice.terms[0].count += 1;
             }
             let roll = dice.roll(self.rng.as_mut(), crit);
-            let o = self.defenses_of(&t).apply(DamageType::Radiant, roll.total, 0);
-            self.log(Audience::All, format!("Divine Smite on {}: {} → {} Radiant", t.name, roll.breakdown(), o.final_amount));
-            self.emit(Audience::All, Event::SpellVisual { caster, name: spell.name.clone(), vfx: Vfx::Radiant, from: c.pos, targets: vec![t.pos], area: vec![] });
-            self.emit(Audience::All, Event::Floating { entity: target, text: format!("-{}", o.final_amount), kind: FloatKind::Damage });
+            let o = self
+                .defenses_of(&t)
+                .apply(DamageType::Radiant, roll.total, 0);
+            self.log(
+                Audience::All,
+                format!(
+                    "Divine Smite on {}: {} → {} Radiant",
+                    t.name,
+                    roll.breakdown(),
+                    o.final_amount
+                ),
+            );
+            self.emit(
+                Audience::All,
+                Event::SpellVisual {
+                    caster,
+                    name: spell.name.clone(),
+                    vfx: Vfx::Radiant,
+                    from: c.pos,
+                    targets: vec![t.pos],
+                    area: vec![],
+                },
+            );
+            self.emit(
+                Audience::All,
+                Event::Floating {
+                    entity: target,
+                    text: format!("-{}", o.final_amount),
+                    kind: FloatKind::Damage,
+                },
+            );
             self.apply_damage_from(target, o.final_amount, false, Some(caster));
             return;
         }
@@ -508,7 +771,13 @@ impl Session {
             };
             if spell.id == "light" {
                 // "The spell ends if you cast it again."
-                let old: Vec<u64> = self.state.effects.iter().filter(|e| e.source == caster && e.origin == "light").map(|e| e.id).collect();
+                let old: Vec<u64> = self
+                    .state
+                    .effects
+                    .iter()
+                    .filter(|e| e.source == caster && e.origin == "light")
+                    .map(|e| e.id)
+                    .collect();
                 for id in old {
                     self.remove_effect(id);
                 }
@@ -517,24 +786,80 @@ impl Session {
                 LightAnchor::Creature(id) => self.state.creatures[id].pos,
                 LightAnchor::Cell(_, p) => *p,
             };
-            self.add_effect(caster, &spell.id, EffectKind::Light { anchor, bright_ft: light.bright_ft, dim_ft: light.dim_ft }, rounds, spell.concentration);
-            self.emit(Audience::All, Event::SpellVisual { caster, name: spell.name.clone(), vfx: Vfx::Light, from: c.pos, targets: vec![at], area: vec![] });
+            self.add_effect(
+                caster,
+                &spell.id,
+                EffectKind::Light {
+                    anchor,
+                    bright_ft: light.bright_ft,
+                    dim_ft: light.dim_ft,
+                },
+                rounds,
+                spell.concentration,
+            );
+            self.emit(
+                Audience::All,
+                Event::SpellVisual {
+                    caster,
+                    name: spell.name.clone(),
+                    vfx: Vfx::Light,
+                    from: c.pos,
+                    targets: vec![at],
+                    area: vec![],
+                },
+            );
             return;
         }
 
         match a.buff.as_deref() {
             Some("bless") => {
-                let t: Vec<EntityId> = targets.iter().copied().take(spell.max_targets(slot) as usize).collect();
+                let t: Vec<EntityId> = targets
+                    .iter()
+                    .copied()
+                    .take(spell.max_targets(slot) as usize)
+                    .collect();
                 let cells: Vec<Cell> = t.iter().map(|id| self.state.creatures[id].pos).collect();
-                self.add_effect(caster, &spell.id, EffectKind::Bless { targets: t }, rounds, spell.concentration);
-                self.emit(Audience::All, Event::SpellVisual { caster, name: spell.name.clone(), vfx: Vfx::Buff, from: c.pos, targets: cells, area: vec![] });
+                self.add_effect(
+                    caster,
+                    &spell.id,
+                    EffectKind::Bless { targets: t },
+                    rounds,
+                    spell.concentration,
+                );
+                self.emit(
+                    Audience::All,
+                    Event::SpellVisual {
+                        caster,
+                        name: spell.name.clone(),
+                        vfx: Vfx::Buff,
+                        from: c.pos,
+                        targets: cells,
+                        area: vec![],
+                    },
+                );
                 return;
             }
             Some("mage_armor") => {
                 let t = targets.first().copied().unwrap_or(caster);
-                self.add_effect(caster, &spell.id, EffectKind::MageArmor { target: t }, rounds, false);
+                self.add_effect(
+                    caster,
+                    &spell.id,
+                    EffectKind::MageArmor { target: t },
+                    rounds,
+                    false,
+                );
                 let pos = self.state.creatures[&t].pos;
-                self.emit(Audience::All, Event::SpellVisual { caster, name: spell.name.clone(), vfx: Vfx::Force, from: c.pos, targets: vec![pos], area: vec![] });
+                self.emit(
+                    Audience::All,
+                    Event::SpellVisual {
+                        caster,
+                        name: spell.name.clone(),
+                        vfx: Vfx::Force,
+                        from: c.pos,
+                        targets: vec![pos],
+                        area: vec![],
+                    },
+                );
                 return;
             }
             _ => {}
@@ -542,51 +867,126 @@ impl Session {
 
         // Healing.
         if a.healing.is_some() {
-            let dice = spell.healing_dice(slot.max(spell.level), caster_level).unwrap_or_default();
-            let add = if a.healing.as_ref().is_some_and(|h| h.add_mod) { self.spell_mod(c) } else { 0 };
+            let dice = spell
+                .healing_dice(slot.max(spell.level), caster_level)
+                .unwrap_or_default();
+            let add = if a.healing.as_ref().is_some_and(|h| h.add_mod) {
+                self.spell_mod(c)
+            } else {
+                0
+            };
             // Disciple of Life (Life Domain 3): +2 + slot level when a spell slot restores HP.
-            let disciple = if slot > 0 && c.has_feature("Disciple of Life") { 2 + slot as i32 } else { 0 };
+            let disciple = if slot > 0 && c.has_feature("Disciple of Life") {
+                2 + slot as i32
+            } else {
+                0
+            };
             let mut cells = Vec::new();
             for t in targets.iter().take(spell.max_targets(slot) as usize) {
                 let roll = dice.roll(self.rng.as_mut(), false);
                 let amount = (roll.total + add + disciple).max(0);
                 let name = self.state.creatures[t].name.clone();
-                self.log(Audience::All, format!("{name} regains {amount} HP ({} {add:+}{}).", roll.breakdown(), if disciple > 0 { format!(" +{disciple} Disciple of Life") } else { String::new() }));
+                self.log(
+                    Audience::All,
+                    format!(
+                        "{name} regains {amount} HP ({} {add:+}{}).",
+                        roll.breakdown(),
+                        if disciple > 0 {
+                            format!(" +{disciple} Disciple of Life")
+                        } else {
+                            String::new()
+                        }
+                    ),
+                );
                 cells.push(self.state.creatures[t].pos);
                 self.heal(*t, amount);
             }
-            self.emit(Audience::All, Event::SpellVisual { caster, name: spell.name.clone(), vfx: Vfx::Healing, from: c.pos, targets: cells, area: vec![] });
+            self.emit(
+                Audience::All,
+                Event::SpellVisual {
+                    caster,
+                    name: spell.name.clone(),
+                    vfx: Vfx::Healing,
+                    from: c.pos,
+                    targets: cells,
+                    area: vec![],
+                },
+            );
             return;
         }
 
         // Magic Missile: darts hit automatically.
         if a.auto_hit {
             let darts = spell.projectiles(slot.max(1), caster_level) as usize;
-            let dice = DiceExpr::parse(&a.damage.as_ref().map(|d| d.dice.clone()).unwrap_or_default()).unwrap_or_default();
+            let dice = DiceExpr::parse(
+                &a.damage
+                    .as_ref()
+                    .map(|d| d.dice.clone())
+                    .unwrap_or_default(),
+            )
+            .unwrap_or_default();
             let mut cells = Vec::new();
             for i in 0..darts {
-                let Some(t) = targets.get(i % targets.len().max(1)).copied() else { break };
+                let Some(t) = targets.get(i % targets.len().max(1)).copied() else {
+                    break;
+                };
                 let tc = self.state.creatures[&t].clone();
                 let roll = dice.roll(self.rng.as_mut(), false);
-                let o = self.defenses_of(&tc).apply(DamageType::Force, roll.total, 0);
+                let o = self
+                    .defenses_of(&tc)
+                    .apply(DamageType::Force, roll.total, 0);
                 cells.push(tc.pos);
-                self.emit(Audience::All, Event::Floating { entity: t, text: format!("-{}", o.final_amount), kind: FloatKind::Damage });
-                self.log(Audience::All, format!("Dart {} hits {}: {} → {}", i + 1, tc.name, roll.breakdown(), o.final_amount));
+                self.emit(
+                    Audience::All,
+                    Event::Floating {
+                        entity: t,
+                        text: format!("-{}", o.final_amount),
+                        kind: FloatKind::Damage,
+                    },
+                );
+                self.log(
+                    Audience::All,
+                    format!(
+                        "Dart {} hits {}: {} → {}",
+                        i + 1,
+                        tc.name,
+                        roll.breakdown(),
+                        o.final_amount
+                    ),
+                );
                 self.apply_damage_from(t, o.final_amount, false, Some(caster));
             }
-            self.emit(Audience::All, Event::SpellVisual { caster, name: spell.name.clone(), vfx: Vfx::Force, from: c.pos, targets: cells, area: vec![] });
+            self.emit(
+                Audience::All,
+                Event::SpellVisual {
+                    caster,
+                    name: spell.name.clone(),
+                    vfx: Vfx::Force,
+                    from: c.pos,
+                    targets: cells,
+                    area: vec![],
+                },
+            );
             return;
         }
 
         // Spell attacks (one roll per projectile).
         if let Some(kind) = a.attack {
-            let dmg = a.damage.as_ref().map(|d| d.damage_type).unwrap_or(DamageType::Force);
-            let dice = spell.damage_dice(slot.max(spell.level), caster_level).unwrap_or_default();
+            let dmg = a
+                .damage
+                .as_ref()
+                .map(|d| d.damage_type)
+                .unwrap_or(DamageType::Force);
+            let dice = spell
+                .damage_dice(slot.max(spell.level), caster_level)
+                .unwrap_or_default();
             let n = spell.projectiles(slot.max(spell.level), caster_level) as usize;
             let lights = self.light_levels(c.room);
             let mut cells = Vec::new();
             for i in 0..n {
-                let Some(t) = targets.get(i % targets.len().max(1)).copied() else { break };
+                let Some(t) = targets.get(i % targets.len().max(1)).copied() else {
+                    break;
+                };
                 let tc = self.state.creatures[&t].clone();
                 if !tc.is_alive() {
                     continue;
@@ -609,14 +1009,23 @@ impl Session {
                 if tc.status.exposed.is_some() {
                     sources.adv("target exposed");
                 }
-                if spell.classes.iter().any(|k| k == "Sorcerer") && self.has_effect(caster, |k| matches!(k, EffectKind::InnateSorcery { .. })) {
+                if spell.classes.iter().any(|k| k == "Sorcerer")
+                    && self.has_effect(caster, |k| matches!(k, EffectKind::InnateSorcery { .. }))
+                {
                     sources.adv("Innate Sorcery");
                 }
                 let profile = AttackProfile {
                     name: spell.name.clone(),
-                    kind: if kind == SpellAttackKind::Melee { WeaponKind::Melee } else { WeaponKind::Ranged },
+                    kind: if kind == SpellAttackKind::Melee {
+                        WeaponKind::Melee
+                    } else {
+                        WeaponKind::Ranged
+                    },
                     to_hit: self.spell_attack_bonus(c),
-                    damage: vec![DamagePart { dice: dice.clone(), damage_type: dmg }],
+                    damage: vec![DamagePart {
+                        dice: dice.clone(),
+                        damage_type: dmg,
+                    }],
                     reach_ft: 5,
                     ..Default::default()
                 };
@@ -624,7 +1033,8 @@ impl Session {
                 mods.sources = sources;
                 mods.exhaustion_level = c.conditions.exhaustion;
                 if self.has_bless(caster) {
-                    mods.to_hit_dice.push(("Bless".into(), DiceExpr::dice(1, 4)));
+                    mods.to_hit_dice
+                        .push(("Bless".into(), DiceExpr::dice(1, 4)));
                 }
                 let (ac, defenses) = (self.effective_ac(&tc), self.defenses_of(&tc));
                 let result = resolve_attack(self.rng.as_mut(), &profile, ac, &defenses, &mods);
@@ -649,35 +1059,109 @@ impl Session {
                     let options = self.hit_reaction_options(c, &tc, &result);
                     if options.contains(&HitReaction::Shield) {
                         // Shield against a spell attack.
-                        self.state.combat.as_mut().expect("in combat").pending_hit = Some(PendingHit { attacker: caster, target: t, result, ranged: true, melee_weapon_hit: false, options: vec![HitReaction::Shield], vfx: vfx_for_damage(dmg) });
-                        self.emit(Audience::All, Event::SpellVisual { caster, name: spell.name.clone(), vfx: vfx_for_damage(dmg), from: c.pos, targets: cells.clone(), area: vec![] });
-                        self.emit(Audience::All, Event::ReactionPrompt { reactor: t, mover: caster });
+                        self.state.combat.as_mut().expect("in combat").pending_hit =
+                            Some(PendingHit {
+                                attacker: caster,
+                                target: t,
+                                result,
+                                ranged: true,
+                                melee_weapon_hit: false,
+                                options: vec![HitReaction::Shield],
+                                vfx: vfx_for_damage(dmg),
+                            });
+                        self.emit(
+                            Audience::All,
+                            Event::SpellVisual {
+                                caster,
+                                name: spell.name.clone(),
+                                vfx: vfx_for_damage(dmg),
+                                from: c.pos,
+                                targets: cells.clone(),
+                                area: vec![],
+                            },
+                        );
+                        self.emit(
+                            Audience::All,
+                            Event::ReactionPrompt {
+                                reactor: t,
+                                mover: caster,
+                            },
+                        );
                         return;
                     }
-                    self.emit(Audience::All, Event::Floating { entity: t, text: if result.critical { format!("-{} CRIT!", result.total_damage) } else { format!("-{}", result.total_damage) }, kind: if result.critical { FloatKind::CriticalDamage } else { FloatKind::Damage } });
+                    self.emit(
+                        Audience::All,
+                        Event::Floating {
+                            entity: t,
+                            text: if result.critical {
+                                format!("-{} CRIT!", result.total_damage)
+                            } else {
+                                format!("-{}", result.total_damage)
+                            },
+                            kind: if result.critical {
+                                FloatKind::CriticalDamage
+                            } else {
+                                FloatKind::Damage
+                            },
+                        },
+                    );
                     self.apply_damage_from(t, result.total_damage, result.critical, Some(caster));
                 } else if spell.is_cantrip() && c.has_feature("Potent Cantrip") {
                     // Potent Cantrip (Evoker 3): half damage on a miss, no other effect.
                     let half = dice.roll(self.rng.as_mut(), false).total / 2;
                     let o = self.defenses_of(&tc).apply(dmg, half, 0);
-                    self.log(Audience::All, format!("Potent Cantrip: {} takes {} anyway.", tc.name, o.final_amount));
+                    self.log(
+                        Audience::All,
+                        format!(
+                            "Potent Cantrip: {} takes {} anyway.",
+                            tc.name, o.final_amount
+                        ),
+                    );
                     self.apply_damage_from(t, o.final_amount, false, Some(caster));
                 } else {
-                    self.emit(Audience::All, Event::Floating { entity: t, text: "Miss".into(), kind: FloatKind::Miss });
+                    self.emit(
+                        Audience::All,
+                        Event::Floating {
+                            entity: t,
+                            text: "Miss".into(),
+                            kind: FloatKind::Miss,
+                        },
+                    );
                 }
                 // Ice Knife: the shard explodes, hit or miss.
                 if let Some(sec) = &a.secondary {
-                    let burst = area_cells(AreaShape::Sphere, sec.area.size_ft, c.pos, tc.pos, true);
+                    let burst =
+                        area_cells(AreaShape::Sphere, sec.area.size_ft, c.pos, tc.pos, true);
                     let sdice = DiceExpr::parse(&sec.damage.dice).unwrap_or_default();
                     let extra = slot.saturating_sub(spell.level) as u32;
                     let mut sdice = sdice;
                     if let Some(t0) = sdice.terms.first_mut() {
                         t0.count += extra;
                     }
-                    self.area_save_damage(c, spell, sec.save, &sdice, sec.damage.damage_type, false, &burst, None, false);
+                    self.area_save_damage(
+                        c,
+                        spell,
+                        sec.save,
+                        &sdice,
+                        sec.damage.damage_type,
+                        false,
+                        &burst,
+                        None,
+                        false,
+                    );
                 }
             }
-            self.emit(Audience::All, Event::SpellVisual { caster, name: spell.name.clone(), vfx: vfx_for_damage(dmg), from: c.pos, targets: cells, area: vec![] });
+            self.emit(
+                Audience::All,
+                Event::SpellVisual {
+                    caster,
+                    name: spell.name.clone(),
+                    vfx: vfx_for_damage(dmg),
+                    from: c.pos,
+                    targets: cells,
+                    area: vec![],
+                },
+            );
             return;
         }
 
@@ -687,30 +1171,94 @@ impl Session {
             let dice = spell.damage_dice(slot.max(spell.level), caster_level);
             let area: Vec<Cell> = match a.area {
                 Some(ar) => {
-                    let self_origin = matches!(spell.range(), dnd_rules::spells::SpellRange::SelfOnly);
+                    let self_origin =
+                        matches!(spell.range(), dnd_rules::spells::SpellRange::SelfOnly);
                     let p = point.unwrap_or(c.pos);
                     area_cells(ar.shape, ar.size_ft, c.pos, p, !self_origin)
                 }
                 None => vec![],
             };
-            let affected_targets = if area.is_empty() { Some(targets.clone()) } else { None };
-            let cells = if area.is_empty() { targets.iter().map(|t| self.state.creatures[t].pos).collect() } else { vec![point.unwrap_or(c.pos)] };
-            self.emit(Audience::All, Event::SpellVisual { caster, name: spell.name.clone(), vfx: dmg_type.map(vfx_for_damage).unwrap_or(Vfx::Arcane), from: c.pos, targets: cells, area: area.clone() });
+            let affected_targets = if area.is_empty() {
+                Some(targets.clone())
+            } else {
+                None
+            };
+            let cells = if area.is_empty() {
+                targets
+                    .iter()
+                    .map(|t| self.state.creatures[t].pos)
+                    .collect()
+            } else {
+                vec![point.unwrap_or(c.pos)]
+            };
+            self.emit(
+                Audience::All,
+                Event::SpellVisual {
+                    caster,
+                    name: spell.name.clone(),
+                    vfx: dmg_type.map(vfx_for_damage).unwrap_or(Vfx::Arcane),
+                    from: c.pos,
+                    targets: cells,
+                    area: area.clone(),
+                },
+            );
             let dice = dice.unwrap_or_default();
-            self.area_save_damage(c, spell, save, &dice, dmg_type.unwrap_or(DamageType::Force), a.half_on_success, &area, affected_targets, true);
+            self.area_save_damage(
+                c,
+                spell,
+                save,
+                &dice,
+                dmg_type.unwrap_or(DamageType::Force),
+                a.half_on_success,
+                &area,
+                affected_targets,
+                true,
+            );
             return;
         }
 
         // Anything else: the DM adjudicates the text; the slot/action/concentration were handled.
-        let level_note = if spell.auto.level == dnd_rules::spells::AutoLevel::Manual { "effect adjudicated by the DM" } else { "partially automated" };
-        self.log(Audience::All, format!("{}: {level_note} — \"{}\"", spell.name, spell.description.chars().take(220).collect::<String>()));
-        self.emit(Audience::All, Event::SpellVisual { caster, name: spell.name.clone(), vfx, from: c.pos, targets: point.into_iter().collect(), area: vec![] });
+        let level_note = if spell.auto.level == dnd_rules::spells::AutoLevel::Manual {
+            "effect adjudicated by the DM"
+        } else {
+            "partially automated"
+        };
+        self.log(
+            Audience::All,
+            format!(
+                "{}: {level_note} — \"{}\"",
+                spell.name,
+                spell.description.chars().take(220).collect::<String>()
+            ),
+        );
+        self.emit(
+            Audience::All,
+            Event::SpellVisual {
+                caster,
+                name: spell.name.clone(),
+                vfx,
+                from: c.pos,
+                targets: point.into_iter().collect(),
+                area: vec![],
+            },
+        );
     }
 
     /// Damage/conditions for every creature in `area` (or the listed targets) that fails a save.
     /// Damage is rolled once for all targets ("Damage against Multiple Targets").
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn area_save_damage(&mut self, c: &Creature, spell: &Spell, save: Ability, dice: &DiceExpr, dtype: DamageType, half: bool, area: &[Cell], targets: Option<Vec<EntityId>>, apply_spell_extras: bool) {
+    pub(crate) fn area_save_damage(
+        &mut self,
+        c: &Creature,
+        spell: &Spell,
+        save: Ability,
+        dice: &DiceExpr,
+        dtype: DamageType,
+        half: bool,
+        area: &[Cell],
+        targets: Option<Vec<EntityId>>,
+        apply_spell_extras: bool,
+    ) {
         let dc = self.spell_dc(c, spell);
         let map = self.state.rooms[&c.room].map.clone();
         let origin = c.pos;
@@ -722,13 +1270,29 @@ impl Session {
                 .values()
                 .filter(|t| t.room == c.room && t.is_alive() && area.contains(&t.pos))
                 // Total Cover: the effect needs a clear line from its origin.
-                .filter(|t| area.iter().any(|_| line_of_sight(&map, if matches!(spell.range(), dnd_rules::spells::SpellRange::SelfOnly) { origin } else { area[area.len() / 2] }, t.pos)))
+                .filter(|t| {
+                    area.iter().any(|_| {
+                        line_of_sight(
+                            &map,
+                            if matches!(spell.range(), dnd_rules::spells::SpellRange::SelfOnly) {
+                                origin
+                            } else {
+                                area[area.len() / 2]
+                            },
+                            t.pos,
+                        )
+                    })
+                })
                 .map(|t| t.id)
                 .collect(),
         };
-        let roll = (!dice.terms.is_empty() || dice.modifier != 0).then(|| dice.roll(self.rng.as_mut(), false));
+        let roll = (!dice.terms.is_empty() || dice.modifier != 0)
+            .then(|| dice.roll(self.rng.as_mut(), false));
         if let Some(r) = &roll {
-            self.log(Audience::All, format!("{} damage: {}", spell.name, r.breakdown()));
+            self.log(
+                Audience::All,
+                format!("{} damage: {}", spell.name, r.breakdown()),
+            );
         }
         if c.status.raging {
             self.creature_mut(c.id).status.rage_extended = true;
@@ -750,20 +1314,65 @@ impl Session {
                 };
                 if base > 0 {
                     let o = self.defenses_of(&tc).apply(dtype, base, 0);
-                    self.emit(Audience::All, Event::Floating { entity: t, text: if o.immune { "Immune".into() } else { format!("-{}", o.final_amount) }, kind: if o.resisted { FloatKind::Resisted } else { FloatKind::Damage } });
+                    self.emit(
+                        Audience::All,
+                        Event::Floating {
+                            entity: t,
+                            text: if o.immune {
+                                "Immune".into()
+                            } else {
+                                format!("-{}", o.final_amount)
+                            },
+                            kind: if o.resisted {
+                                FloatKind::Resisted
+                            } else {
+                                FloatKind::Damage
+                            },
+                        },
+                    );
                     self.apply_damage_from(t, o.final_amount, false, Some(c.id));
                 } else if ok {
-                    self.emit(Audience::All, Event::Floating { entity: t, text: "Saved".into(), kind: FloatKind::Miss });
+                    self.emit(
+                        Audience::All,
+                        Event::Floating {
+                            entity: t,
+                            text: "Saved".into(),
+                            kind: FloatKind::Miss,
+                        },
+                    );
                 }
             }
             if !ok && apply_spell_extras {
                 if let Some(cond) = spell.auto.condition
                     && self.state.creatures[&t].is_alive()
-                    && !self.state.creatures.get(&t).is_some_and(|x| x.creature_type.is_empty())
+                    && !self
+                        .state
+                        .creatures
+                        .get(&t)
+                        .is_some_and(|x| x.creature_type.is_empty())
                 {
                     let rounds = spell.duration_rounds();
-                    self.add_effect(c.id, &spell.id, EffectKind::Condition { target: t, condition: cond, save: Some((save, dc)), repeat_save: spell.auto.repeat_save, ends_at_source_turn: false }, rounds, spell.concentration);
-                    self.emit(Audience::All, Event::Floating { entity: t, text: format!("{cond:?}"), kind: FloatKind::Condition });
+                    self.add_effect(
+                        c.id,
+                        &spell.id,
+                        EffectKind::Condition {
+                            target: t,
+                            condition: cond,
+                            save: Some((save, dc)),
+                            repeat_save: spell.auto.repeat_save,
+                            ends_at_source_turn: false,
+                        },
+                        rounds,
+                        spell.concentration,
+                    );
+                    self.emit(
+                        Audience::All,
+                        Event::Floating {
+                            entity: t,
+                            text: format!("{cond:?}"),
+                            kind: FloatKind::Condition,
+                        },
+                    );
                 }
                 if let Some(ft) = spell.auto.push_ft {
                     self.push_away(c.id, t, ft as i32);
@@ -773,10 +1382,21 @@ impl Session {
     }
 
     /// A monster's save-based action (breath weapon etc.). Recharge abilities must be recharged.
-    pub(crate) fn cmd_monster_action(&mut self, who: Principal, monster: EntityId, action: usize, targets: Vec<EntityId>, point: Option<Cell>) -> Res<()> {
+    pub(crate) fn cmd_monster_action(
+        &mut self,
+        who: Principal,
+        monster: EntityId,
+        action: usize,
+        targets: Vec<EntityId>,
+        point: Option<Cell>,
+    ) -> Res<()> {
         Self::require_dm(who)?;
         let m = self.creature(monster)?.clone();
-        let act = m.save_actions.get(action).cloned().ok_or_else(|| CommandError::NotFound("action".into()))?;
+        let act = m
+            .save_actions
+            .get(action)
+            .cloned()
+            .ok_or_else(|| CommandError::NotFound("action".into()))?;
         if m.resources.recharging.contains(&action) {
             return rules(format!("{} hasn't recharged yet", act.name));
         }
@@ -789,7 +1409,16 @@ impl Session {
             }
         }
         let area: Vec<Cell> = match (act.area, point) {
-            (Some(ar), Some(p)) => area_cells(ar.shape, ar.size_ft, m.pos, p, !matches!(ar.shape, AreaShape::Cone | AreaShape::Line | AreaShape::Emanation)),
+            (Some(ar), Some(p)) => area_cells(
+                ar.shape,
+                ar.size_ft,
+                m.pos,
+                p,
+                !matches!(
+                    ar.shape,
+                    AreaShape::Cone | AreaShape::Line | AreaShape::Emanation
+                ),
+            ),
             (Some(_), None) => return rules(format!("choose a point/direction for {}", act.name)),
             (None, _) if targets.is_empty() => return rules("choose targets"),
             _ => vec![],
@@ -800,7 +1429,11 @@ impl Session {
         if act.recharge.is_some() {
             self.creature_mut(monster).resources.recharging.push(action);
         }
-        let dtype = act.damage.first().map(|d| d.damage_type).unwrap_or(DamageType::Force);
+        let dtype = act
+            .damage
+            .first()
+            .map(|d| d.damage_type)
+            .unwrap_or(DamageType::Force);
         let mut dice = DiceExpr::default();
         for d in &act.damage {
             for t in &d.dice.terms {
@@ -808,9 +1441,32 @@ impl Session {
             }
             dice.modifier += d.dice.modifier;
         }
-        self.log(Audience::All, format!("{} uses {} (DC {} {:?}).", m.name, act.name, act.dc, act.ability));
-        let cells = if area.is_empty() { targets.iter().filter_map(|t| self.state.creatures.get(t).map(|c| c.pos)).collect() } else { vec![point.unwrap_or(m.pos)] };
-        self.emit(Audience::All, Event::SpellVisual { caster: monster, name: act.name.clone(), vfx: vfx_for_damage(dtype), from: m.pos, targets: cells, area: area.clone() });
+        self.log(
+            Audience::All,
+            format!(
+                "{} uses {} (DC {} {:?}).",
+                m.name, act.name, act.dc, act.ability
+            ),
+        );
+        let cells = if area.is_empty() {
+            targets
+                .iter()
+                .filter_map(|t| self.state.creatures.get(t).map(|c| c.pos))
+                .collect()
+        } else {
+            vec![point.unwrap_or(m.pos)]
+        };
+        self.emit(
+            Audience::All,
+            Event::SpellVisual {
+                caster: monster,
+                name: act.name.clone(),
+                vfx: vfx_for_damage(dtype),
+                from: m.pos,
+                targets: cells,
+                area: area.clone(),
+            },
+        );
         // Reuse the save machinery with a synthetic "spell" carrying the DC.
         let pseudo = Spell {
             id: format!("monster_{}", act.name.to_lowercase()),
@@ -828,34 +1484,87 @@ impl Session {
             somatic: false,
             material: None,
             description: act.text.clone(),
-            auto: dnd_rules::spells::SpellAuto { condition: act.conditions.first().copied(), ..Default::default() },
+            auto: dnd_rules::spells::SpellAuto {
+                condition: act.conditions.first().copied(),
+                ..Default::default()
+            },
         };
         let mc = m.clone();
         let targets_opt = if area.is_empty() { Some(targets) } else { None };
-        self.area_save_damage_dc(&mc, &pseudo, act.ability, act.dc, &dice, dtype, act.half_on_success, &area, targets_opt);
+        self.area_save_damage_dc(
+            &mc,
+            &pseudo,
+            act.ability,
+            act.dc,
+            &dice,
+            dtype,
+            act.half_on_success,
+            &area,
+            targets_opt,
+        );
         Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn area_save_damage_dc(&mut self, c: &Creature, spell: &Spell, save: Ability, dc: i32, dice: &DiceExpr, dtype: DamageType, half: bool, area: &[Cell], targets: Option<Vec<EntityId>>) {
+    fn area_save_damage_dc(
+        &mut self,
+        c: &Creature,
+        spell: &Spell,
+        save: Ability,
+        dc: i32,
+        dice: &DiceExpr,
+        dtype: DamageType,
+        half: bool,
+        area: &[Cell],
+        targets: Option<Vec<EntityId>>,
+    ) {
         let affected: Vec<EntityId> = match targets {
             Some(t) => t,
-            None => self.state.creatures.values().filter(|t| t.room == c.room && t.is_alive() && t.id != c.id && area.contains(&t.pos)).map(|t| t.id).collect(),
+            None => self
+                .state
+                .creatures
+                .values()
+                .filter(|t| {
+                    t.room == c.room && t.is_alive() && t.id != c.id && area.contains(&t.pos)
+                })
+                .map(|t| t.id)
+                .collect(),
         };
         let roll = dice.roll(self.rng.as_mut(), false);
-        self.log(Audience::All, format!("{} damage: {}", spell.name, roll.breakdown()));
+        self.log(
+            Audience::All,
+            format!("{} damage: {}", spell.name, roll.breakdown()),
+        );
         for t in affected {
             let tc = self.state.creatures[&t].clone();
             let (ok, _) = self.saving_throw(t, save, dc, &spell.name);
-            let base = if ok { if half { roll.total / 2 } else { 0 } } else { roll.total };
+            let base = if ok {
+                if half { roll.total / 2 } else { 0 }
+            } else {
+                roll.total
+            };
             if base > 0 {
                 let o = self.defenses_of(&tc).apply(dtype, base, 0);
-                self.emit(Audience::All, Event::Floating { entity: t, text: format!("-{}", o.final_amount), kind: FloatKind::Damage });
+                self.emit(
+                    Audience::All,
+                    Event::Floating {
+                        entity: t,
+                        text: format!("-{}", o.final_amount),
+                        kind: FloatKind::Damage,
+                    },
+                );
                 self.apply_damage_from(t, o.final_amount, false, Some(c.id));
             }
             if !ok && let Some(cond) = spell.auto.condition {
                 self.creature_mut(t).conditions.add(cond);
-                self.emit(Audience::All, Event::Floating { entity: t, text: format!("{cond:?}"), kind: FloatKind::Condition });
+                self.emit(
+                    Audience::All,
+                    Event::Floating {
+                        entity: t,
+                        text: format!("{cond:?}"),
+                        kind: FloatKind::Condition,
+                    },
+                );
             }
         }
     }
@@ -868,7 +1577,10 @@ mod tests {
     #[test]
     fn sphere_cone_line_cube_shapes() {
         // 20-ft-radius Sphere on a grid: 9×9 square of cells (distance counted in squares).
-        assert_eq!(area_cells(AreaShape::Sphere, 20, (0, 0), (10, 10), true).len(), 81);
+        assert_eq!(
+            area_cells(AreaShape::Sphere, 20, (0, 0), (10, 10), true).len(),
+            81
+        );
         // 15-ft Cone pointing east from (0,0): includes (1,0), (3,0), (3,1); excludes (1,1)... (width = distance).
         let cone = area_cells(AreaShape::Cone, 15, (0, 0), (5, 0), false);
         assert!(cone.contains(&(1, 0)) && cone.contains(&(3, 0)) && cone.contains(&(3, 1)));

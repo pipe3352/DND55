@@ -9,14 +9,14 @@ pub mod assets;
 pub mod command;
 pub mod demo;
 pub mod effects;
-mod features;
-mod items;
-pub mod scripts;
-mod spellcasting;
 pub mod event;
+mod features;
 pub mod hexbytes;
+mod items;
 pub mod model;
+pub mod scripts;
 pub mod session;
+pub mod spellcasting;
 pub mod view;
 
 pub use command::{Command, DmCommand};

@@ -17,7 +17,10 @@ pub fn data_dir() -> PathBuf {
             return PathBuf::from(p);
         }
     }
-    if let Some(exe_dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
+    if let Some(exe_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+    {
         if exe_dir.join("portable.txt").exists() {
             return exe_dir.join("data");
         }
@@ -28,7 +31,9 @@ pub fn data_dir() -> PathBuf {
     }
     #[cfg(target_os = "macos")]
     if let Ok(home) = std::env::var("HOME") {
-        return PathBuf::from(home).join("Library/Application Support").join(APP_DIR);
+        return PathBuf::from(home)
+            .join("Library/Application Support")
+            .join(APP_DIR);
     }
     if let Ok(x) = std::env::var("XDG_DATA_HOME") {
         return PathBuf::from(x).join(APP_DIR);
@@ -47,11 +52,20 @@ pub fn error_dialog(title: &str, message: &str) {
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
-        let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+        let wide = |s: &str| {
+            s.encode_utf16()
+                .chain(std::iter::once(0))
+                .collect::<Vec<u16>>()
+        };
         let (t, m) = (wide(title), wide(message));
         // SAFETY: both buffers are valid NUL-terminated UTF-16 strings that outlive the call.
         unsafe {
-            MessageBoxW(std::ptr::null_mut(), m.as_ptr(), t.as_ptr(), MB_OK | MB_ICONERROR);
+            MessageBoxW(
+                std::ptr::null_mut(),
+                m.as_ptr(),
+                t.as_ptr(),
+                MB_OK | MB_ICONERROR,
+            );
         }
     }
     #[cfg(not(windows))]
@@ -61,7 +75,13 @@ pub fn error_dialog(title: &str, message: &str) {
 /// Human explanation for common fatal errors (shown in the crash dialog).
 pub fn explain(panic_text: &str) -> &'static str {
     let t = panic_text.to_lowercase();
-    if t.contains("adapter") || t.contains("gpu") || t.contains("wgpu") || t.contains("surface") || t.contains("vulkan") || t.contains("dx12") {
+    if t.contains("adapter")
+        || t.contains("gpu")
+        || t.contains("wgpu")
+        || t.contains("surface")
+        || t.contains("vulkan")
+        || t.contains("dx12")
+    {
         "DND55 could not start the graphics system.\n\n\
          • Update your graphics driver (NVIDIA / AMD / Intel website).\n\
          • Open Settings → Graphics backend and try another option (DirectX 12 / Vulkan / OpenGL),\n\
@@ -83,7 +103,10 @@ pub fn audio_available() -> bool {
         .spawn(|| {
             std::panic::catch_unwind(|| {
                 use cpal::traits::{DeviceTrait, HostTrait};
-                cpal::default_host().default_output_device().map(|d| d.default_output_config().is_ok()).unwrap_or(false)
+                cpal::default_host()
+                    .default_output_device()
+                    .map(|d| d.default_output_config().is_ok())
+                    .unwrap_or(false)
             })
             .unwrap_or(false)
         })
@@ -103,8 +126,14 @@ fn relaunch_with_next_backend() -> bool {
     if std::env::var("DND55_NO_GPU_FALLBACK").is_ok() {
         return false;
     }
-    let Ok(exe) = std::env::current_exe() else { return false };
-    std::process::Command::new(exe).args(std::env::args_os().skip(1)).env("WGPU_BACKEND", next).spawn().is_ok()
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    std::process::Command::new(exe)
+        .args(std::env::args_os().skip(1))
+        .env("WGPU_BACKEND", next)
+        .spawn()
+        .is_ok()
 }
 
 /// Installs a panic hook that writes `logs\crash-<time>.txt` and shows a dialog.
@@ -120,8 +149,14 @@ pub fn install_crash_handler() {
         if std::thread::current().name() == Some("audio-probe") {
             return;
         }
-        let location = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
-        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_default();
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let dir = logs_dir();
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join(format!("crash-{secs}.txt"));
@@ -140,14 +175,21 @@ pub fn install_crash_handler() {
             return; // expected on systems without audio; handled by audio_available()
         }
         // Graphics failed: silently retry with another backend before bothering the user.
-        if std::thread::current().name() == Some("main") && explain(&msg).contains("graphics") && relaunch_with_next_backend() {
+        if std::thread::current().name() == Some("main")
+            && explain(&msg).contains("graphics")
+            && relaunch_with_next_backend()
+        {
             std::process::exit(0);
         }
         // Only the main thread shows a dialog (network threads may panic on shutdown harmlessly).
         if std::thread::current().name() == Some("main") {
             error_dialog(
                 "DND55 — error",
-                &format!("{}\n\nDetails: {msg}\n\nA crash report was saved to:\n{}", explain(&msg), path.display()),
+                &format!(
+                    "{}\n\nDetails: {msg}\n\nA crash report was saved to:\n{}",
+                    explain(&msg),
+                    path.display()
+                ),
             );
         }
         default(info);
@@ -169,14 +211,21 @@ pub fn file_log_layer(_app: &mut bevy::app::App) -> Option<bevy::log::BoxedLayer
 }
 
 /// The window/taskbar icon (the .exe icon itself is embedded by `build.rs`).
-pub fn set_window_icon(_marker: bevy::ecs::system::NonSendMarker, mut done: bevy::prelude::Local<u8>) {
+pub fn set_window_icon(
+    _marker: bevy::ecs::system::NonSendMarker,
+    mut done: bevy::prelude::Local<u8>,
+) {
     if *done > 3 {
         return;
     }
-    let Ok(img) = image::load_from_memory(include_bytes!("../assets/icon-64.png")) else { return };
+    let Ok(img) = image::load_from_memory(include_bytes!("../assets/icon-64.png")) else {
+        return;
+    };
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();
-    let Ok(icon) = winit::window::Icon::from_rgba(rgba.into_raw(), w, h) else { return };
+    let Ok(icon) = winit::window::Icon::from_rgba(rgba.into_raw(), w, h) else {
+        return;
+    };
     bevy::winit::WINIT_WINDOWS.with_borrow(|ww| {
         for window in ww.windows.values() {
             window.set_window_icon(Some(icon.clone()));
@@ -191,7 +240,10 @@ mod tests {
 
     #[test]
     fn gpu_errors_get_a_helpful_explanation() {
-        assert!(explain("Unable to find a GPU! Make sure you have installed required drivers!").contains("graphics"));
+        assert!(
+            explain("Unable to find a GPU! Make sure you have installed required drivers!")
+                .contains("graphics")
+        );
         assert!(explain("something else").contains("unexpected"));
     }
 

@@ -141,7 +141,10 @@ impl MonsterTemplate {
                 name: "Claw".into(),
                 kind: WeaponKind::Melee,
                 to_hit: 4,
-                damage: vec![DamagePart { dice: DiceExpr::dice(1, 6).with_modifier(2), damage_type: DamageType::Slashing }],
+                damage: vec![DamagePart {
+                    dice: DiceExpr::dice(1, 6).with_modifier(2),
+                    damage_type: DamageType::Slashing,
+                }],
                 extra_damage_with_advantage: vec![],
                 reach_ft: 5,
                 range_ft: None,
@@ -181,8 +184,15 @@ impl MonsterTemplate {
         if self.scores.0.iter().any(|s| !(1..=30).contains(s)) {
             return Err("ability scores must be 1–30".into());
         }
-        if self.attacks.len() > 8 || self.attacks.iter().any(|a| a.damage.is_empty() || a.to_hit.abs() > 30) {
-            return Err("up to 8 attacks, each with damage and a to-hit between -30 and +30".into());
+        if self.attacks.len() > 8
+            || self
+                .attacks
+                .iter()
+                .any(|a| a.damage.is_empty() || a.to_hit.abs() > 30)
+        {
+            return Err(
+                "up to 8 attacks, each with damage and a to-hit between -30 and +30".into(),
+            );
         }
         Ok(())
     }
@@ -273,11 +283,21 @@ fn parse_dice(s: &str) -> DiceExpr {
 }
 
 fn parts(v: &[RawDamage]) -> Vec<DamagePart> {
-    v.iter().map(|d| DamagePart { dice: parse_dice(&d.dice), damage_type: d.damage_type }).collect()
+    v.iter()
+        .map(|d| DamagePart {
+            dice: parse_dice(&d.dice),
+            damage_type: d.damage_type,
+        })
+        .collect()
 }
 
 fn convert(r: RawMonster) -> MonsterTemplate {
-    let ab = |k: &str| r.abilities.get(k).map(|a| (a.score, a.save)).unwrap_or((10, 0));
+    let ab = |k: &str| {
+        r.abilities
+            .get(k)
+            .map(|a| (a.score, a.save))
+            .unwrap_or((10, 0))
+    };
     let keys = ["str", "dex", "con", "int", "wis", "cha"];
     let scores = AbilityScores(keys.map(|k| ab(k).0));
     let saves = keys.map(|k| ab(k).1);
@@ -294,7 +314,11 @@ fn convert(r: RawMonster) -> MonsterTemplate {
         let ranged = a.kind == "ranged";
         let profile = AttackProfile {
             name: a.name.clone(),
-            kind: if ranged { WeaponKind::Ranged } else { WeaponKind::Melee },
+            kind: if ranged {
+                WeaponKind::Ranged
+            } else {
+                WeaponKind::Melee
+            },
             to_hit: a.to_hit,
             damage: parts(&a.damage),
             extra_damage_with_advantage: parts(&a.extra_with_advantage),
@@ -327,8 +351,19 @@ fn convert(r: RawMonster) -> MonsterTemplate {
             half_on_success: s.half_on_success,
             area: s.area,
             conditions: s.conditions.clone(),
-            recharge: s.name.find("Recharge ").and_then(|i| s.name[i + 9..].chars().next()).and_then(|c| c.to_digit(10)).map(|d| d as u8),
-            text: r.actions.iter().chain(&r.bonus_actions).find(|e| e.name == s.name).map(|e| e.text.clone()).unwrap_or_default(),
+            recharge: s
+                .name
+                .find("Recharge ")
+                .and_then(|i| s.name[i + 9..].chars().next())
+                .and_then(|c| c.to_digit(10))
+                .map(|d| d as u8),
+            text: r
+                .actions
+                .iter()
+                .chain(&r.bonus_actions)
+                .find(|e| e.name == s.name)
+                .map(|e| e.text.clone())
+                .unwrap_or_default(),
         })
         .collect();
     MonsterTemplate {
@@ -386,7 +421,9 @@ pub fn srd_bestiary() -> Vec<MonsterTemplate> {
 
 pub fn srd_bestiary_ref() -> &'static [MonsterTemplate] {
     BESTIARY.get_or_init(|| {
-        let raw: Vec<RawMonster> = serde_json::from_str(include_str!("../../../content/srd_monsters.json")).expect("valid monster data");
+        let raw: Vec<RawMonster> =
+            serde_json::from_str(include_str!("../../../content/srd_monsters.json"))
+                .expect("valid monster data");
         raw.into_iter().map(convert).collect()
     })
 }
@@ -409,7 +446,12 @@ mod tests {
         let b = srd_bestiary_ref();
         assert_eq!(b.len(), 328);
         for m in b {
-            assert_eq!(m.hit_dice.average().floor() as i32, m.hit_points, "{}", m.name);
+            assert_eq!(
+                m.hit_dice.average().floor() as i32,
+                m.hit_points,
+                "{}",
+                m.name
+            );
             assert!(m.armor_class >= 5 && m.armor_class <= 25, "{}", m.name);
         }
         let ids: std::collections::HashSet<_> = b.iter().map(|m| &m.id).collect();
@@ -419,12 +461,32 @@ mod tests {
     #[test]
     fn goblin_and_skeleton_match_srd() {
         let g = srd_monster("goblin_warrior").unwrap();
-        assert_eq!((g.armor_class, g.hit_points, g.initiative_bonus, g.challenge.as_str(), g.xp), (15, 10, 2, "1/4", 50));
+        assert_eq!(
+            (
+                g.armor_class,
+                g.hit_points,
+                g.initiative_bonus,
+                g.challenge.as_str(),
+                g.xp
+            ),
+            (15, 10, 2, "1/4", 50)
+        );
         let scim = &g.attacks[0];
-        assert_eq!((scim.name.as_str(), scim.to_hit, scim.damage[0].dice.to_string()), ("Scimitar", 4, "1d6+2".into()));
+        assert_eq!(
+            (
+                scim.name.as_str(),
+                scim.to_hit,
+                scim.damage[0].dice.to_string()
+            ),
+            ("Scimitar", 4, "1d6+2".into())
+        );
         assert_eq!(scim.extra_damage_with_advantage[0].dice.to_string(), "1d4");
         let s = srd_monster("skeleton").unwrap();
-        assert!(s.defenses.vulnerabilities.contains(&DamageType::Bludgeoning));
+        assert!(
+            s.defenses
+                .vulnerabilities
+                .contains(&DamageType::Bludgeoning)
+        );
         assert!(s.defenses.immunities.contains(&DamageType::Poison));
         assert!(s.condition_immunities.contains(&Condition::Poisoned));
         assert_eq!(s.saves[Ability::Dexterity.index()], 3);
@@ -434,9 +496,22 @@ mod tests {
     fn dragon_breath_and_multiattack() {
         let d = srd_monster("adult_red_dragon").unwrap();
         assert_eq!(d.attacks_per_action, 3);
-        let breath = d.save_actions.iter().find(|s| s.name.starts_with("Fire Breath")).unwrap();
-        assert_eq!((breath.ability, breath.dc, breath.recharge), (Ability::Dexterity, 21, Some(5)));
-        assert_eq!(breath.area, Some(Area { size_ft: 60, shape: AreaShape::Cone }));
+        let breath = d
+            .save_actions
+            .iter()
+            .find(|s| s.name.starts_with("Fire Breath"))
+            .unwrap();
+        assert_eq!(
+            (breath.ability, breath.dc, breath.recharge),
+            (Ability::Dexterity, 21, Some(5))
+        );
+        assert_eq!(
+            breath.area,
+            Some(Area {
+                size_ft: 60,
+                shape: AreaShape::Cone
+            })
+        );
         assert!(breath.half_on_success);
         assert_eq!(d.cr_value(), 17.0);
         assert_eq!(srd_monster("goblin_warrior").unwrap().cr_value(), 0.25);

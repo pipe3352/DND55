@@ -5,9 +5,9 @@
 
 use crate::assets::AssetStore;
 use crate::command::{Command, DmCommand};
+use crate::effects::EffectKind;
 use crate::event::{Event, FloatKind, Routed, Vfx};
 use crate::model::*;
-use crate::effects::EffectKind;
 use dnd_rules::attack::{AttackModifiers, DamagePart, resolve_attack};
 use dnd_rules::character::ScoreMethod;
 use dnd_rules::conditions::{
@@ -266,16 +266,36 @@ impl Session {
                 .creatures
                 .values()
                 .filter(|c| c.room == room && c.is_alive())
-                .filter_map(|c| c.carried_light.map(|(b, d)| PointLight { cell: c.pos, bright_ft: b, dim_ft: d })),
+                .filter_map(|c| {
+                    c.carried_light.map(|(b, d)| PointLight {
+                        cell: c.pos,
+                        bright_ft: b,
+                        dim_ft: d,
+                    })
+                }),
         );
         for e in &self.state.effects {
-            if let EffectKind::Light { anchor, bright_ft, dim_ft } = &e.kind {
+            if let EffectKind::Light {
+                anchor,
+                bright_ft,
+                dim_ft,
+            } = &e.kind
+            {
                 let cell = match anchor {
-                    crate::effects::LightAnchor::Creature(id) => self.state.creatures.get(id).filter(|c| c.room == room).map(|c| c.pos),
+                    crate::effects::LightAnchor::Creature(id) => self
+                        .state
+                        .creatures
+                        .get(id)
+                        .filter(|c| c.room == room)
+                        .map(|c| c.pos),
                     crate::effects::LightAnchor::Cell(r, c) => (*r == room).then_some(*c),
                 };
                 if let Some(cell) = cell {
-                    extra.push(PointLight { cell, bright_ft: *bright_ft, dim_ft: *dim_ft });
+                    extra.push(PointLight {
+                        cell,
+                        bright_ft: *bright_ft,
+                        dim_ft: *dim_ft,
+                    });
                 }
             }
         }
@@ -397,8 +417,19 @@ impl Session {
             Command::EndTurn => self.cmd_end_turn(who),
             Command::ReactionDecision { accept, attack } => self.cmd_reaction(who, accept, attack),
             Command::Interact { entity, object } => self.cmd_interact(who, entity, object),
-            Command::CastSpell { caster, spell, slot, targets, point } => self.cmd_cast_spell(who, caster, &spell, slot, targets, point),
-            Command::UseFeature { entity, feature, target, amount } => self.cmd_use_feature(who, entity, feature, target, amount),
+            Command::CastSpell {
+                caster,
+                spell,
+                slot,
+                targets,
+                point,
+            } => self.cmd_cast_spell(who, caster, &spell, slot, targets, point),
+            Command::UseFeature {
+                entity,
+                feature,
+                target,
+                amount,
+            } => self.cmd_use_feature(who, entity, feature, target, amount),
             Command::HitReaction { choice } => self.cmd_hit_reaction(who, choice),
             Command::EndConcentration { entity } => {
                 let c = self.creature(entity)?;
@@ -411,14 +442,41 @@ impl Session {
                 self.end_concentration(entity, "ended by choice");
                 Ok(())
             }
-            Command::PrepareSpells { entity, cantrips, prepared } => self.cmd_prepare_spells(who, entity, cantrips, prepared),
+            Command::PrepareSpells {
+                entity,
+                cantrips,
+                prepared,
+            } => self.cmd_prepare_spells(who, entity, cantrips, prepared),
             Command::LevelUp { entity, choices } => self.cmd_level_up(who, entity, *choices),
             Command::SpendHitDie { entity } => self.cmd_spend_hit_die(who, entity),
-            Command::UseItem { entity, item, target } => self.cmd_use_item(who, entity, &item, target),
-            Command::EquipItem { entity, item, equip } => self.cmd_equip(who, entity, &item, equip),
-            Command::GiveItem { from, to, item, quantity } => self.cmd_give(who, from, to, &item, quantity),
-            Command::TakeFromContainer { entity, object, item, quantity } => self.cmd_take_from_container(who, entity, object, &item, quantity),
-            Command::MonsterAction { monster, action, targets, point } => self.cmd_monster_action(who, monster, action, targets, point),
+            Command::UseItem {
+                entity,
+                item,
+                target,
+            } => self.cmd_use_item(who, entity, &item, target),
+            Command::EquipItem {
+                entity,
+                item,
+                equip,
+            } => self.cmd_equip(who, entity, &item, equip),
+            Command::GiveItem {
+                from,
+                to,
+                item,
+                quantity,
+            } => self.cmd_give(who, from, to, &item, quantity),
+            Command::TakeFromContainer {
+                entity,
+                object,
+                item,
+                quantity,
+            } => self.cmd_take_from_container(who, entity, object, &item, quantity),
+            Command::MonsterAction {
+                monster,
+                action,
+                targets,
+                point,
+            } => self.cmd_monster_action(who, monster, action, targets, point),
             Command::DialogueChoice { choice } => {
                 if self.state.pending_dialogue.is_none() {
                     return invalid("no dialogue is waiting");
@@ -558,7 +616,12 @@ impl Session {
     }
 
     /// Nearest cell (by ring) to `near` that is walkable and unoccupied.
-    pub(crate) fn free_cell_near(&self, room: RoomId, near: Cell, ignore: Option<EntityId>) -> Option<Cell> {
+    pub(crate) fn free_cell_near(
+        &self,
+        room: RoomId,
+        near: Cell,
+        ignore: Option<EntityId>,
+    ) -> Option<Cell> {
         let r = self.state.rooms.get(&room)?;
         let occupied = |c: Cell| {
             self.state
@@ -692,10 +755,24 @@ impl Session {
                 cb.turn.moved = true;
             }
             // Scripted area triggers fire for player characters stepping into the area.
-            if self.state.creatures[&entity].faction == Faction::Party && !self.state.scripts.is_empty() {
+            if self.state.creatures[&entity].faction == Faction::Party
+                && !self.state.scripts.is_empty()
+            {
                 let room = self.state.creatures[&entity].room;
-                self.fire_scripts_for(crate::scripts::Trigger::EnterArea { room, a: *cell, b: *cell }, Some(entity));
-                if !self.state.creatures.get(&entity).is_some_and(|c| c.is_alive() && c.hp.current > 0) {
+                self.fire_scripts_for(
+                    crate::scripts::Trigger::EnterArea {
+                        room,
+                        a: *cell,
+                        b: *cell,
+                    },
+                    Some(entity),
+                );
+                if !self
+                    .state
+                    .creatures
+                    .get(&entity)
+                    .is_some_and(|c| c.is_alive() && c.hp.current > 0)
+                {
                     break;
                 }
             }
@@ -763,7 +840,12 @@ impl Session {
         Ok(())
     }
 
-    pub(crate) fn cmd_simple_action(&mut self, who: Principal, entity: EntityId, action: &str) -> Res<()> {
+    pub(crate) fn cmd_simple_action(
+        &mut self,
+        who: Principal,
+        entity: EntityId,
+        action: &str,
+    ) -> Res<()> {
         self.active_turn_check(who, entity)?;
         let t = &self.state.combat.as_ref().expect("checked").turn;
         if t.action_used && t.extra_actions == 0 {
@@ -796,11 +878,20 @@ impl Session {
         Ok(())
     }
 
-    pub(crate) fn cmd_attack(&mut self, who: Principal, attacker: EntityId, target: EntityId, attack: usize) -> Res<()> {
+    pub(crate) fn cmd_attack(
+        &mut self,
+        who: Principal,
+        attacker: EntityId,
+        target: EntityId,
+        attack: usize,
+    ) -> Res<()> {
         self.active_turn_check(who, attacker)?;
         let a = self.creature(attacker)?;
         let per_action = a.attacks_per_action.max(1);
-        let unarmed = a.attacks.get(attack).is_some_and(|p| p.name == "Unarmed Strike");
+        let unarmed = a
+            .attacks
+            .get(attack)
+            .is_some_and(|p| p.name == "Unarmed Strike");
         let turn = &self.state.combat.as_ref().expect("checked").turn;
         // Which resource pays for this attack: the running Attack action, a new action, or a bonus attack.
         let source = if turn.attacks_left > 0 {
@@ -832,7 +923,12 @@ impl Session {
         Ok(())
     }
 
-    pub(crate) fn validate_attack(&self, attacker: EntityId, target: EntityId, attack: usize) -> Res<()> {
+    pub(crate) fn validate_attack(
+        &self,
+        attacker: EntityId,
+        target: EntityId,
+        attack: usize,
+    ) -> Res<()> {
         let a = self.creature(attacker)?;
         let t = self.creature(target)?;
         if attacker == target {
@@ -878,7 +974,11 @@ impl Session {
         let profile = a.attacks[attack].clone();
         let dist = grid_distance_ft(a.pos, t.pos);
         let round = self.state.combat.as_ref().map(|c| c.round).unwrap_or(0);
-        let own_turn = self.state.combat.as_ref().is_some_and(|c| c.turn.entity == attacker);
+        let own_turn = self
+            .state
+            .combat
+            .as_ref()
+            .is_some_and(|c| c.turn.entity == attacker);
 
         let mut sources = ModeSources::default();
         let situation = AttackSituation {
@@ -917,7 +1017,13 @@ impl Session {
         if a.status.reckless && strength_based {
             sources.adv("Reckless Attack");
         }
-        if own_turn && self.state.combat.as_ref().is_some_and(|c| c.turn.steady_aim) {
+        if own_turn
+            && self
+                .state
+                .combat
+                .as_ref()
+                .is_some_and(|c| c.turn.steady_aim)
+        {
             sources.adv("Steady Aim");
         }
         let mut mods = AttackModifiers::new();
@@ -928,37 +1034,77 @@ impl Session {
             if weapon_or_unarmed {
                 mods.crit_threshold = sheet.crit_threshold();
             }
-            if sheet.fighting_style == Some(dnd_rules::character::FightingStyle::GreatWeaponFighting) && profile.two_handed_melee {
+            if sheet.fighting_style
+                == Some(dnd_rules::character::FightingStyle::GreatWeaponFighting)
+                && profile.two_handed_melee
+            {
                 mods.min_damage_die = 3;
             }
         }
         if self.has_bless(attacker) {
-            mods.to_hit_dice.push(("Bless".into(), DiceExpr::dice(1, 4)));
+            mods.to_hit_dice
+                .push(("Bless".into(), DiceExpr::dice(1, 4)));
         }
         if let (true, Some(die)) = (a.status.inspiration_armed, a.status.inspiration) {
             mods.on_miss_bonus = Some(("Bardic Inspiration".into(), DiceExpr::dice(1, die)));
         }
-        let dtype = profile.damage.first().map(|d| d.damage_type).unwrap_or(DamageType::Bludgeoning);
-        let turn_flags = self.state.combat.as_ref().filter(|_| own_turn).map(|c| (c.turn.sneak_attack_used, c.turn.frenzy_used));
+        let dtype = profile
+            .damage
+            .first()
+            .map(|d| d.damage_type)
+            .unwrap_or(DamageType::Bludgeoning);
+        let turn_flags = self
+            .state
+            .combat
+            .as_ref()
+            .filter(|_| own_turn)
+            .map(|c| (c.turn.sneak_attack_used, c.turn.frenzy_used));
         // Rage Damage: Strength-based weapon attacks and Unarmed Strikes.
         if a.status.raging && strength_based {
             let bonus = dnd_rules::classes::rage(a.level().max(1)).1;
-            mods.extra_damage_on_hit.push(("Rage".into(), DamagePart { dice: DiceExpr::default().with_modifier(bonus), damage_type: dtype }));
+            mods.extra_damage_on_hit.push((
+                "Rage".into(),
+                DamagePart {
+                    dice: DiceExpr::default().with_modifier(bonus),
+                    damage_type: dtype,
+                },
+            ));
             // Frenzy (Berserker 3): Reckless + Rage: first target hit each turn takes (rage bonus)d6.
             if a.status.reckless && a.has_feature("Frenzy") && turn_flags.is_some_and(|f| !f.1) {
-                mods.extra_damage_on_hit.push(("Frenzy".into(), DamagePart { dice: DiceExpr::dice(bonus as u32, 6), damage_type: dtype }));
+                mods.extra_damage_on_hit.push((
+                    "Frenzy".into(),
+                    DamagePart {
+                        dice: DiceExpr::dice(bonus as u32, 6),
+                        damage_type: dtype,
+                    },
+                ));
             }
         }
         // Sneak Attack: once per turn, Finesse or Ranged weapon, Advantage — or an ally within 5 ft of the
         // target that isn't Incapacitated, as long as the attack doesn't have Disadvantage.
-        if a.is_class(dnd_rules::content::ClassId::Rogue) && profile.finesse_or_ranged && profile.weapon_id.is_some() && turn_flags.is_some_and(|f| !f.0) {
+        if a.is_class(dnd_rules::content::ClassId::Rogue)
+            && profile.finesse_or_ranged
+            && profile.weapon_id.is_some()
+            && turn_flags.is_some_and(|f| !f.0)
+        {
             let mode = sources.mode();
             let ally_adjacent = self.state.creatures.values().any(|c| {
-                c.id != attacker && c.room == room && c.is_alive() && c.faction == a.faction && grid_distance_ft(c.pos, t.pos) <= 5 && !c.conditions.has(Condition::Incapacitated)
+                c.id != attacker
+                    && c.room == room
+                    && c.is_alive()
+                    && c.faction == a.faction
+                    && grid_distance_ft(c.pos, t.pos) <= 5
+                    && !c.conditions.has(Condition::Incapacitated)
             });
             if mode == RollMode::Advantage || (ally_adjacent && mode != RollMode::Disadvantage) {
                 let dice = dnd_rules::classes::sneak_attack_dice(a.level().max(1));
-                mods.extra_damage_on_hit.push(("Sneak Attack".into(), DamagePart { dice, damage_type: dtype }));
+                mods.extra_damage_on_hit.push((
+                    "Sneak Attack".into(),
+                    DamagePart {
+                        dice,
+                        damage_type: dtype,
+                    },
+                ));
             }
         }
         mods.sources = sources;
@@ -987,7 +1133,16 @@ impl Session {
             cb.turn.steady_aim = false;
         }
         let vfx = vfx_for(profile.damage.first().map(|d| d.damage_type), profile.kind);
-        self.emit(Audience::All, Event::AttackVisual { attacker, target, vfx, ranged: profile.kind == WeaponKind::Ranged, hit: result.hit });
+        self.emit(
+            Audience::All,
+            Event::AttackVisual {
+                attacker,
+                target,
+                vfx,
+                ranged: profile.kind == WeaponKind::Ranged,
+                hit: result.hit,
+            },
+        );
         self.log(Audience::All, result.log_line(&a.name, &t.name));
         let _ = round;
 
@@ -996,31 +1151,71 @@ impl Session {
         if result.hit {
             let options = self.hit_reaction_options(&a, &t, &result);
             if !options.is_empty() && self.state.combat.is_some() {
-                self.state.combat.as_mut().expect("in combat").pending_hit = Some(PendingHit { attacker, target, result, ranged, melee_weapon_hit, options, vfx });
-                self.emit(Audience::All, Event::ReactionPrompt { reactor: target, mover: attacker });
+                self.state.combat.as_mut().expect("in combat").pending_hit = Some(PendingHit {
+                    attacker,
+                    target,
+                    result,
+                    ranged,
+                    melee_weapon_hit,
+                    options,
+                    vfx,
+                });
+                self.emit(
+                    Audience::All,
+                    Event::ReactionPrompt {
+                        reactor: target,
+                        mover: attacker,
+                    },
+                );
                 return;
             }
         }
-        self.finalize_attack(attacker, target, result, melee_weapon_hit, profile.ability_mod);
+        self.finalize_attack(
+            attacker,
+            target,
+            result,
+            melee_weapon_hit,
+            profile.ability_mod,
+        );
     }
 
     /// Reactions the target could take against a hit.
-    pub(crate) fn hit_reaction_options(&self, a: &Creature, t: &Creature, result: &dnd_rules::attack::AttackResult) -> Vec<HitReaction> {
+    pub(crate) fn hit_reaction_options(
+        &self,
+        a: &Creature,
+        t: &Creature,
+        result: &dnd_rules::attack::AttackResult,
+    ) -> Vec<HitReaction> {
         let mut v = Vec::new();
-        let Some(cb) = self.state.combat.as_ref() else { return v };
-        if cb.reactions_used.contains(&t.id) || t.status.no_reactions || !t.conditions.can_act() || t.hp.current == 0 {
+        let Some(cb) = self.state.combat.as_ref() else {
+            return v;
+        };
+        if cb.reactions_used.contains(&t.id)
+            || t.status.no_reactions
+            || !t.conditions.can_act()
+            || t.hp.current == 0
+        {
             return v;
         }
         if let Some(sheet) = t.sheet() {
             let ac = self.effective_ac(t);
-            if sheet.knows_spell("shield") && !result.d20.is_natural_20() && result.d20.total < ac + 5 && self.lowest_free_slot(t, 1).is_some() {
+            if sheet.knows_spell("shield")
+                && !result.d20.is_natural_20()
+                && result.d20.total < ac + 5
+                && self.lowest_free_slot(t, 1).is_some()
+            {
                 v.push(HitReaction::Shield);
             }
             let lights = self.light_levels(t.room);
             if t.has_feature("Uncanny Dodge") && self.can_see(t, a, &lights) {
                 v.push(HitReaction::UncannyDodge);
             }
-            let physical = result.damage.iter().any(|d| matches!(d.outcome.damage_type, DamageType::Bludgeoning | DamageType::Piercing | DamageType::Slashing));
+            let physical = result.damage.iter().any(|d| {
+                matches!(
+                    d.outcome.damage_type,
+                    DamageType::Bludgeoning | DamageType::Piercing | DamageType::Slashing
+                )
+            });
             if t.has_feature("Deflect Attacks") && physical {
                 v.push(HitReaction::DeflectAttacks);
             }
@@ -1029,10 +1224,25 @@ impl Session {
     }
 
     /// Applies an attack's results (masteries, features, damage) after any reaction.
-    pub(crate) fn finalize_attack(&mut self, attacker: EntityId, target: EntityId, result: dnd_rules::attack::AttackResult, melee_weapon_hit: bool, ability_mod: i32) {
-        let own_turn = self.state.combat.as_ref().is_some_and(|c| c.turn.entity == attacker);
+    pub(crate) fn finalize_attack(
+        &mut self,
+        attacker: EntityId,
+        target: EntityId,
+        result: dnd_rules::attack::AttackResult,
+        melee_weapon_hit: bool,
+        ability_mod: i32,
+    ) {
+        let own_turn = self
+            .state
+            .combat
+            .as_ref()
+            .is_some_and(|c| c.turn.entity == attacker);
         if result.hit {
-            let labels: Vec<&str> = result.damage.iter().flat_map(|d| d.rolls.iter().map(|(l, _)| l.as_str())).collect();
+            let labels: Vec<&str> = result
+                .damage
+                .iter()
+                .flat_map(|d| d.rolls.iter().map(|(l, _)| l.as_str()))
+                .collect();
             if let Some(cb) = self.state.combat.as_mut().filter(|_| own_turn) {
                 if labels.contains(&"Sneak Attack") {
                     cb.turn.sneak_attack_used = true;
@@ -1047,10 +1257,15 @@ impl Session {
         }
         let a = self.state.creatures[&attacker].clone();
         match result.mastery_triggered {
-            Some(dnd_rules::equipment::Mastery::Sap) => self.creature_mut(target).effects.sapped_by = Some(attacker),
+            Some(dnd_rules::equipment::Mastery::Sap) => {
+                self.creature_mut(target).effects.sapped_by = Some(attacker)
+            }
             Some(dnd_rules::equipment::Mastery::Vex) => {
                 // Until the end of the attacker's *next* turn.
-                self.creature_mut(attacker).effects.vex.push((target, if own_turn { 2 } else { 1 }));
+                self.creature_mut(attacker)
+                    .effects
+                    .vex
+                    .push((target, if own_turn { 2 } else { 1 }));
             }
             Some(dnd_rules::equipment::Mastery::Slow) if result.total_damage > 0 => {
                 // Slow: Speed −10 ft until the start of the attacker's next turn (doesn't stack beyond 10).
@@ -1061,13 +1276,24 @@ impl Session {
                 // Topple: Con save DC 8 + ability mod + PB or Prone (optional for the wielder; applied, logged).
                 let pb = a.sheet().map(|s| s.proficiency_bonus()).unwrap_or(2);
                 let dc = 8 + ability_mod + pb;
-                if !self.saving_throw(target, dnd_rules::Ability::Constitution, dc, "Topple").0 {
+                if !self
+                    .saving_throw(target, dnd_rules::Ability::Constitution, dc, "Topple")
+                    .0
+                {
                     self.creature_mut(target).conditions.add(Condition::Prone);
-                    self.emit(Audience::All, Event::Floating { entity: target, text: "Prone".into(), kind: FloatKind::Condition });
+                    self.emit(
+                        Audience::All,
+                        Event::Floating {
+                            entity: target,
+                            text: "Prone".into(),
+                            kind: FloatKind::Condition,
+                        },
+                    );
                 }
             }
             Some(dnd_rules::equipment::Mastery::Push) => {
-                if self.state.creatures[&target].size as u8 <= dnd_rules::content::Size::Large as u8 {
+                if self.state.creatures[&target].size as u8 <= dnd_rules::content::Size::Large as u8
+                {
                     self.push_away(attacker, target, 10);
                 }
             }
@@ -1077,21 +1303,57 @@ impl Session {
         if result.hit && melee_weapon_hit && a.status.stunning_strike_ready {
             self.creature_mut(attacker).status.stunning_strike_ready = false;
             self.creature_mut(attacker).resources.focus_used += 1;
-            let dc = 8 + a.mods[dnd_rules::Ability::Wisdom.index()] + a.sheet().map(|s| s.proficiency_bonus()).unwrap_or(2);
-            if self.saving_throw(target, dnd_rules::Ability::Constitution, dc, "Stunning Strike").0 {
+            let dc = 8
+                + a.mods[dnd_rules::Ability::Wisdom.index()]
+                + a.sheet().map(|s| s.proficiency_bonus()).unwrap_or(2);
+            if self
+                .saving_throw(
+                    target,
+                    dnd_rules::Ability::Constitution,
+                    dc,
+                    "Stunning Strike",
+                )
+                .0
+            {
                 let t = self.creature_mut(target);
                 t.status.speed_penalty = Some((attacker, t.speed_ft / 2));
                 t.status.exposed = Some((attacker, 0));
             } else {
-                let id = self.add_effect(attacker, "Stunning Strike", EffectKind::Condition { target, condition: Condition::Stunned, save: None, repeat_save: false, ends_at_source_turn: true }, Some(1), false);
+                let id = self.add_effect(
+                    attacker,
+                    "Stunning Strike",
+                    EffectKind::Condition {
+                        target,
+                        condition: Condition::Stunned,
+                        save: None,
+                        repeat_save: false,
+                        ends_at_source_turn: true,
+                    },
+                    Some(1),
+                    false,
+                );
                 let _ = id;
                 self.creature_mut(target).conditions.add(Condition::Stunned);
-                self.emit(Audience::All, Event::Floating { entity: target, text: "Stunned".into(), kind: FloatKind::Condition });
+                self.emit(
+                    Audience::All,
+                    Event::Floating {
+                        entity: target,
+                        text: "Stunned".into(),
+                        kind: FloatKind::Condition,
+                    },
+                );
             }
         }
 
         if !result.hit && result.total_damage == 0 {
-            self.emit(Audience::All, Event::Floating { entity: target, text: "Miss".into(), kind: FloatKind::Miss });
+            self.emit(
+                Audience::All,
+                Event::Floating {
+                    entity: target,
+                    text: "Miss".into(),
+                    kind: FloatKind::Miss,
+                },
+            );
             return;
         }
         let immune = !result.damage.is_empty() && result.damage.iter().all(|d| d.outcome.immune);
@@ -1114,14 +1376,30 @@ impl Session {
         } else {
             format!("-{}", result.total_damage)
         };
-        self.emit(Audience::All, Event::Floating { entity: target, text, kind });
+        self.emit(
+            Audience::All,
+            Event::Floating {
+                entity: target,
+                text,
+                kind,
+            },
+        );
         self.apply_damage_from(target, result.total_damage, result.critical, Some(attacker));
     }
 
     /// Answer to a pending hit: Shield (+5 AC, may turn the hit into a miss), Uncanny Dodge (halve),
     /// Deflect Attacks (reduce by 1d10 + Dex + Monk level), or take it.
-    pub(crate) fn cmd_hit_reaction(&mut self, who: Principal, choice: Option<HitReaction>) -> Res<()> {
-        let pending = self.state.combat.as_ref().and_then(|c| c.pending_hit.clone()).ok_or_else(|| CommandError::Invalid("no hit is waiting for a reaction".into()))?;
+    pub(crate) fn cmd_hit_reaction(
+        &mut self,
+        who: Principal,
+        choice: Option<HitReaction>,
+    ) -> Res<()> {
+        let pending = self
+            .state
+            .combat
+            .as_ref()
+            .and_then(|c| c.pending_hit.clone())
+            .ok_or_else(|| CommandError::Invalid("no hit is waiting for a reaction".into()))?;
         let t = self.creature(pending.target)?.clone();
         if !Self::controls(who, &t) {
             return Err(CommandError::NotAuthorized);
@@ -1141,39 +1419,100 @@ impl Session {
             Some(HitReaction::Shield) => {
                 let slot = self.lowest_free_slot(&t, 1).expect("checked when offered");
                 self.spend_slot(pending.target, slot);
-                self.add_effect(pending.target, "shield", EffectKind::Shield { target: pending.target }, Some(1), false);
+                self.add_effect(
+                    pending.target,
+                    "shield",
+                    EffectKind::Shield {
+                        target: pending.target,
+                    },
+                    Some(1),
+                    false,
+                );
                 let ac = self.effective_ac(&self.state.creatures[&pending.target].clone());
-                self.emit(Audience::All, Event::Floating { entity: pending.target, text: "Shield!".into(), kind: FloatKind::Info });
-                self.emit(Audience::All, Event::SpellVisual { caster: pending.target, name: "Shield".into(), vfx: Vfx::Force, from: t.pos, targets: vec![t.pos], area: vec![] });
+                self.emit(
+                    Audience::All,
+                    Event::Floating {
+                        entity: pending.target,
+                        text: "Shield!".into(),
+                        kind: FloatKind::Info,
+                    },
+                );
+                self.emit(
+                    Audience::All,
+                    Event::SpellVisual {
+                        caster: pending.target,
+                        name: "Shield".into(),
+                        vfx: Vfx::Force,
+                        from: t.pos,
+                        targets: vec![t.pos],
+                        area: vec![],
+                    },
+                );
                 if !result.d20.is_natural_20() && result.d20.total < ac {
                     result.hit = false;
                     result.critical = false;
                     result.total_damage = 0;
                     result.damage.clear();
-                    self.log(Audience::All, format!("{} casts Shield (AC {ac}): the attack misses!", t.name));
+                    self.log(
+                        Audience::All,
+                        format!("{} casts Shield (AC {ac}): the attack misses!", t.name),
+                    );
                 } else {
-                    self.log(Audience::All, format!("{} casts Shield (AC {ac}) but is still hit.", t.name));
+                    self.log(
+                        Audience::All,
+                        format!("{} casts Shield (AC {ac}) but is still hit.", t.name),
+                    );
                 }
             }
             Some(HitReaction::UncannyDodge) => {
                 result.total_damage /= 2;
-                self.log(Audience::All, format!("{} uses Uncanny Dodge: damage halved to {}.", t.name, result.total_damage));
+                self.log(
+                    Audience::All,
+                    format!(
+                        "{} uses Uncanny Dodge: damage halved to {}.",
+                        t.name, result.total_damage
+                    ),
+                );
             }
             Some(HitReaction::DeflectAttacks) => {
-                let r = DiceExpr::dice(1, 10).roll(self.rng.as_mut(), false).total + t.mods[dnd_rules::Ability::Dexterity.index()] + t.level() as i32;
+                let r = DiceExpr::dice(1, 10).roll(self.rng.as_mut(), false).total
+                    + t.mods[dnd_rules::Ability::Dexterity.index()]
+                    + t.level() as i32;
                 result.total_damage = (result.total_damage - r).max(0);
-                self.log(Audience::All, format!("{} uses Deflect Attacks: damage reduced by {r} to {}.", t.name, result.total_damage));
+                self.log(
+                    Audience::All,
+                    format!(
+                        "{} uses Deflect Attacks: damage reduced by {r} to {}.",
+                        t.name, result.total_damage
+                    ),
+                );
             }
             None => {}
         }
-        let ability_mod = self.state.creatures.get(&pending.attacker).map(|a| a.mods[0].max(a.mods[1])).unwrap_or(0);
-        self.finalize_attack(pending.attacker, pending.target, result, pending.melee_weapon_hit, ability_mod);
+        let ability_mod = self
+            .state
+            .creatures
+            .get(&pending.attacker)
+            .map(|a| a.mods[0].max(a.mods[1]))
+            .unwrap_or(0);
+        self.finalize_attack(
+            pending.attacker,
+            pending.target,
+            result,
+            pending.melee_weapon_hit,
+            ability_mod,
+        );
         Ok(())
     }
 
     pub(crate) fn threatened_in_melee(&self, a: &Creature, lights: &[LightLevel]) -> bool {
         self.state.creatures.values().any(|e| {
-            e.room == a.room && e.is_alive() && Self::are_hostile(e, a) && grid_distance_ft(e.pos, a.pos) <= 5 && !e.conditions.has(Condition::Incapacitated) && self.can_see(e, a, lights)
+            e.room == a.room
+                && e.is_alive()
+                && Self::are_hostile(e, a)
+                && grid_distance_ft(e.pos, a.pos) <= 5
+                && !e.conditions.has(Condition::Incapacitated)
+                && self.can_see(e, a, lights)
         })
     }
 
@@ -1191,8 +1530,16 @@ impl Session {
         let mut pos = tp;
         for _ in 0..(feet / 5) {
             let next = (pos.0 + dx, pos.1 + dy);
-            let blocked = self.state.rooms.get(&room).is_none_or(|r| !r.map.in_bounds(next) || r.map.flags(next).blocks_movement)
-                || self.state.creatures.values().any(|c| c.room == room && c.is_alive() && c.pos == next);
+            let blocked = self
+                .state
+                .rooms
+                .get(&room)
+                .is_none_or(|r| !r.map.in_bounds(next) || r.map.flags(next).blocks_movement)
+                || self
+                    .state
+                    .creatures
+                    .values()
+                    .any(|c| c.room == room && c.is_alive() && c.pos == next);
             if blocked {
                 break;
             }
@@ -1200,7 +1547,13 @@ impl Session {
         }
         if pos != tp {
             self.creature_mut(target).pos = pos;
-            self.emit(Audience::All, Event::Moved { entity: target, path: vec![tp, pos] });
+            self.emit(
+                Audience::All,
+                Event::Moved {
+                    entity: target,
+                    path: vec![tp, pos],
+                },
+            );
         }
     }
 
@@ -1210,36 +1563,84 @@ impl Session {
     }
 
     /// Applies final damage and handles 0 HP, death, Concentration, initiative cleanup and triggers.
-    pub(crate) fn apply_damage_from(&mut self, target: EntityId, amount: i32, critical: bool, source: Option<EntityId>) {
+    pub(crate) fn apply_damage_from(
+        &mut self,
+        target: EntityId,
+        amount: i32,
+        critical: bool,
+        source: Option<EntityId>,
+    ) {
         if amount <= 0 || !self.state.creatures.contains_key(&target) {
             return;
         }
         let applied = self.creature_mut(target).hp.take_damage(amount, critical);
         let name = self.state.creatures[&target].name.clone();
         let hostile_downed = (applied.died || applied.dropped_to_zero)
-            && source.is_some_and(|s| self.state.creatures.get(&s).is_some_and(|a| Self::are_hostile(a, &self.state.creatures[&target])));
+            && source.is_some_and(|s| {
+                self.state
+                    .creatures
+                    .get(&s)
+                    .is_some_and(|a| Self::are_hostile(a, &self.state.creatures[&target]))
+            });
         if applied.died {
             self.log(Audience::All, format!("{name} dies."));
-            self.emit(Audience::All, Event::Floating { entity: target, text: "Dead".into(), kind: FloatKind::Condition });
-            self.creature_mut(target).conditions.remove(Condition::Unconscious);
+            self.emit(
+                Audience::All,
+                Event::Floating {
+                    entity: target,
+                    text: "Dead".into(),
+                    kind: FloatKind::Condition,
+                },
+            );
+            self.creature_mut(target)
+                .conditions
+                .remove(Condition::Unconscious);
             self.end_concentration(target, "death");
             self.creature_mut(target).status.raging = false;
             self.remove_from_initiative(target);
-            self.fire_scripts_for(crate::scripts::Trigger::CreatureDefeated { entity: target }, source);
+            self.fire_scripts_for(
+                crate::scripts::Trigger::CreatureDefeated { entity: target },
+                source,
+            );
         } else if applied.dropped_to_zero {
-            self.creature_mut(target).conditions.add(Condition::Unconscious);
-            self.log(Audience::All, format!("{name} drops to 0 Hit Points and falls Unconscious."));
-            self.emit(Audience::All, Event::Floating { entity: target, text: "Unconscious".into(), kind: FloatKind::Condition });
+            self.creature_mut(target)
+                .conditions
+                .add(Condition::Unconscious);
+            self.log(
+                Audience::All,
+                format!("{name} drops to 0 Hit Points and falls Unconscious."),
+            );
+            self.emit(
+                Audience::All,
+                Event::Floating {
+                    entity: target,
+                    text: "Unconscious".into(),
+                    kind: FloatKind::Condition,
+                },
+            );
             // Incapacitated: Concentration and Rage end.
             self.end_concentration(target, "incapacitated");
             self.creature_mut(target).status.raging = false;
         } else if applied.death_save_failures_added > 0 {
             let f = self.state.creatures[&target].hp.death_saves.failures;
-            self.log(Audience::All, format!("{name} suffers {} Death Saving Throw failure(s) ({f}/3).", applied.death_save_failures_added));
-        } else if self.state.creatures[&target].concentration.is_some() && applied.hp_lost + applied.absorbed_by_temp > 0 {
+            self.log(
+                Audience::All,
+                format!(
+                    "{name} suffers {} Death Saving Throw failure(s) ({f}/3).",
+                    applied.death_save_failures_added
+                ),
+            );
+        } else if self.state.creatures[&target].concentration.is_some()
+            && applied.hp_lost + applied.absorbed_by_temp > 0
+        {
             // Concentration: Con save DC max(10, half the damage), up to 30.
             let dc = (amount / 2).clamp(10, 30);
-            let (ok, _) = self.saving_throw(target, dnd_rules::Ability::Constitution, dc, "Concentration");
+            let (ok, _) = self.saving_throw(
+                target,
+                dnd_rules::Ability::Constitution,
+                dc,
+                "Concentration",
+            );
             if !ok {
                 self.end_concentration(target, "failed Concentration save");
             }
@@ -1248,10 +1649,19 @@ impl Session {
         if hostile_downed && let Some(src) = source {
             let killer = self.state.creatures[&src].clone();
             if killer.has_feature("Dark One’s Blessing") {
-                let thp = (killer.mods[dnd_rules::Ability::Charisma.index()] + killer.level() as i32).max(1);
+                let thp = (killer.mods[dnd_rules::Ability::Charisma.index()]
+                    + killer.level() as i32)
+                    .max(1);
                 if thp > killer.hp.temp {
                     self.creature_mut(src).hp.offer_temp_hp(thp, true);
-                    self.emit(Audience::All, Event::Floating { entity: src, text: format!("+{thp} temp"), kind: FloatKind::TempHp });
+                    self.emit(
+                        Audience::All,
+                        Event::Floating {
+                            entity: src,
+                            text: format!("+{thp} temp"),
+                            kind: FloatKind::TempHp,
+                        },
+                    );
                 }
             }
         }
@@ -1259,9 +1669,16 @@ impl Session {
 
     pub(crate) fn heal(&mut self, target: EntityId, amount: i32) {
         // Chill Touch: "can't regain Hit Points until the end of your next turn".
-        if self.state.creatures[&target].status.no_healing_from.is_some() {
+        if self.state.creatures[&target]
+            .status
+            .no_healing_from
+            .is_some()
+        {
             let name = self.state.creatures[&target].name.clone();
-            self.log(Audience::All, format!("{name} can't regain Hit Points right now (Chill Touch)."));
+            self.log(
+                Audience::All,
+                format!("{name} can't regain Hit Points right now (Chill Touch)."),
+            );
             return;
         }
         let was_zero = self.state.creatures[&target].hp.current == 0;
@@ -1273,7 +1690,14 @@ impl Session {
                 c.conditions.remove(Condition::Unconscious);
                 c.conditions.add(Condition::Prone);
             }
-            self.emit(Audience::All, Event::Floating { entity: target, text: format!("+{gained}"), kind: FloatKind::Healing });
+            self.emit(
+                Audience::All,
+                Event::Floating {
+                    entity: target,
+                    text: format!("+{gained}"),
+                    kind: FloatKind::Healing,
+                },
+            );
         }
     }
 
@@ -1419,10 +1843,16 @@ impl Session {
         }
         // "Until the end of your next turn" windows (Guiding Bolt, Chill Touch) set in an earlier round expire.
         for c in self.state.creatures.values_mut() {
-            if c.status.exposed.is_some_and(|(src, r)| src == entity && r < round) {
+            if c.status
+                .exposed
+                .is_some_and(|(src, r)| src == entity && r < round)
+            {
                 c.status.exposed = None;
             }
-            if c.status.no_healing_from.is_some_and(|(src, r)| src == entity && r < round) {
+            if c.status
+                .no_healing_from
+                .is_some_and(|(src, r)| src == entity && r < round)
+            {
                 c.status.no_healing_from = None;
             }
         }
@@ -1432,12 +1862,20 @@ impl Session {
             .effects
             .iter()
             .filter_map(|e| match &e.kind {
-                EffectKind::Condition { target, save: Some((ab, dc)), repeat_save: true, .. } if *target == entity => Some((e.id, *ab, *dc, e.label())),
+                EffectKind::Condition {
+                    target,
+                    save: Some((ab, dc)),
+                    repeat_save: true,
+                    ..
+                } if *target == entity => Some((e.id, *ab, *dc, e.label())),
                 _ => None,
             })
             .collect();
         for (id, ability, dc, label) in repeats {
-            if self.saving_throw(entity, ability, dc, &format!("repeat save vs {label}")).0 {
+            if self
+                .saving_throw(entity, ability, dc, &format!("repeat save vs {label}"))
+                .0
+            {
                 self.remove_effect(id);
             }
         }
@@ -1456,7 +1894,11 @@ impl Session {
             if other.effects.sapped_by == Some(entity) {
                 other.effects.sapped_by = None;
             }
-            if other.status.speed_penalty.is_some_and(|(src, _)| src == entity) {
+            if other
+                .status
+                .speed_penalty
+                .is_some_and(|(src, _)| src == entity)
+            {
                 other.status.speed_penalty = None;
             }
         }
@@ -1495,13 +1937,20 @@ impl Session {
         // Monster abilities with "Recharge X–6": roll a d6 for each expended one.
         let recharging = self.state.creatures[&entity].resources.recharging.clone();
         for idx in recharging {
-            let need = self.state.creatures[&entity].save_actions.get(idx).and_then(|a| a.recharge).unwrap_or(6) as i32;
+            let need = self.state.creatures[&entity]
+                .save_actions
+                .get(idx)
+                .and_then(|a| a.recharge)
+                .unwrap_or(6) as i32;
             let r = DiceExpr::dice(1, 6).roll(self.rng.as_mut(), false).total;
             if r >= need {
                 let c = self.creature_mut(entity);
                 c.resources.recharging.retain(|i| *i != idx);
                 let action = c.save_actions[idx].name.clone();
-                self.log(Audience::DmOnly, format!("{name}: {action} recharges (d6 = {r})."));
+                self.log(
+                    Audience::DmOnly,
+                    format!("{name}: {action} recharges (d6 = {r})."),
+                );
             }
         }
         let audience = if hidden {
@@ -1550,7 +1999,12 @@ impl Session {
         }
     }
 
-    pub(crate) fn cmd_interact(&mut self, who: Principal, entity: EntityId, object: ObjectId) -> Res<()> {
+    pub(crate) fn cmd_interact(
+        &mut self,
+        who: Principal,
+        entity: EntityId,
+        object: ObjectId,
+    ) -> Res<()> {
         let c = self.creature(entity)?;
         if !Self::controls(who, c) {
             return Err(CommandError::NotAuthorized);
@@ -1604,17 +2058,32 @@ impl Session {
             format!("{name} {verb} the {}.", label.to_lowercase()),
         );
         if !closing {
-            let contents = self.state.rooms[&room].containers.get(&object).cloned().unwrap_or_default();
+            let contents = self.state.rooms[&room]
+                .containers
+                .get(&object)
+                .cloned()
+                .unwrap_or_default();
             if !contents.is_empty() {
-                let list: Vec<String> = contents.iter().map(|i| format!("{}× {}", i.quantity, i.name)).collect();
+                let list: Vec<String> = contents
+                    .iter()
+                    .map(|i| format!("{}× {}", i.quantity, i.name))
+                    .collect();
                 self.log(Audience::All, format!("Inside: {}", list.join(", ")));
             }
         }
-        self.fire_scripts_for(crate::scripts::Trigger::Interact { room, object }, Some(entity));
+        self.fire_scripts_for(
+            crate::scripts::Trigger::Interact { room, object },
+            Some(entity),
+        );
         Ok(())
     }
 
-    pub(crate) fn cmd_add_drawing(&mut self, who: Principal, room: RoomId, mut drawing: Drawing) -> Res<()> {
+    pub(crate) fn cmd_add_drawing(
+        &mut self,
+        who: Principal,
+        room: RoomId,
+        mut drawing: Drawing,
+    ) -> Res<()> {
         if who != Principal::Dm && !self.state.settings.players_can_draw {
             return Err(CommandError::NotAuthorized);
         }
@@ -2100,11 +2569,20 @@ impl Session {
             }
             UpdateObject { room, object } => {
                 let mut obj = *object;
-                let rs = self.state.rooms.get(&room).ok_or_else(|| CommandError::NotFound("room".into()))?;
+                let rs = self
+                    .state
+                    .rooms
+                    .get(&room)
+                    .ok_or_else(|| CommandError::NotFound("room".into()))?;
                 if rs.map.object(obj.id).is_none() {
                     return Err(CommandError::NotFound("object".into()));
                 }
-                if !obj.footprint().all(|c| rs.map.in_bounds(c)) || obj.w == 0 || obj.h == 0 || obj.w > 16 || obj.h > 16 {
+                if !obj.footprint().all(|c| rs.map.in_bounds(c))
+                    || obj.w == 0
+                    || obj.h == 0
+                    || obj.w > 16
+                    || obj.h > 16
+                {
                     return invalid("object must fit on the map (1–16 cells per side)");
                 }
                 obj.label = obj.label.chars().take(60).collect();
@@ -2123,26 +2601,45 @@ impl Session {
                 }
                 let map = &self.room(room)?.map;
                 for o in &objects {
-                    if self.catalog.get(&o.asset_id).is_none() || !o.footprint().all(|c| map.in_bounds(c)) {
+                    if self.catalog.get(&o.asset_id).is_none()
+                        || !o.footprint().all(|c| map.in_bounds(c))
+                    {
                         return invalid("pasted objects must fit on the map");
                     }
                 }
                 for mut o in objects {
                     o.id = dnd_world::ObjectId(self.next_id());
-                    self.state.rooms.get_mut(&room).expect("checked").map.objects.push(o);
+                    self.state
+                        .rooms
+                        .get_mut(&room)
+                        .expect("checked")
+                        .map
+                        .objects
+                        .push(o);
                 }
             }
             RemoveObjects { room, objects } => {
-                let rs = self.state.rooms.get_mut(&room).ok_or_else(|| CommandError::NotFound("room".into()))?;
+                let rs = self
+                    .state
+                    .rooms
+                    .get_mut(&room)
+                    .ok_or_else(|| CommandError::NotFound("room".into()))?;
                 rs.map.objects.retain(|o| !objects.contains(&o.id));
                 for id in &objects {
                     rs.containers.remove(id);
                 }
             }
-            MoveObjects { room, objects, dx, dy } => {
+            MoveObjects {
+                room,
+                objects,
+                dx,
+                dy,
+            } => {
                 let map = &self.room(room)?.map;
                 for id in &objects {
-                    let o = map.object(*id).ok_or_else(|| CommandError::NotFound("object".into()))?;
+                    let o = map
+                        .object(*id)
+                        .ok_or_else(|| CommandError::NotFound("object".into()))?;
                     let mut moved = o.clone();
                     moved.x += dx;
                     moved.y += dy;
@@ -2158,16 +2655,33 @@ impl Session {
                 }
             }
             MoveLayer { room, layer, up } => {
-                let rs = self.state.rooms.get_mut(&room).ok_or_else(|| CommandError::NotFound("room".into()))?;
-                let i = rs.map.layers.iter().position(|l| l.kind == layer).expect("all layers exist");
+                let rs = self
+                    .state
+                    .rooms
+                    .get_mut(&room)
+                    .ok_or_else(|| CommandError::NotFound("room".into()))?;
+                let i = rs
+                    .map
+                    .layers
+                    .iter()
+                    .position(|l| l.kind == layer)
+                    .expect("all layers exist");
                 let j = if up { i + 1 } else { i.wrapping_sub(1) };
                 if j < rs.map.layers.len() {
                     rs.map.layers.swap(i, j);
                 }
             }
             SetRoomPos { room, pos } => {
-                let n = self.state.graph.nodes.get_mut(&room).ok_or_else(|| CommandError::NotFound("room".into()))?;
-                n.editor_pos = (pos.0.clamp(-10_000.0, 10_000.0), pos.1.clamp(-10_000.0, 10_000.0));
+                let n = self
+                    .state
+                    .graph
+                    .nodes
+                    .get_mut(&room)
+                    .ok_or_else(|| CommandError::NotFound("room".into()))?;
+                n.editor_pos = (
+                    pos.0.clamp(-10_000.0, 10_000.0),
+                    pos.1.clamp(-10_000.0, 10_000.0),
+                );
             }
             DeleteRoom { room } => {
                 if room == self.state.party_room {
@@ -2178,18 +2692,38 @@ impl Session {
                 }
                 self.state.graph.remove_room(room);
                 self.state.rooms.remove(&room);
-                self.state.creatures.retain(|_, c| c.room != room || c.faction == Faction::Party);
+                self.state
+                    .creatures
+                    .retain(|_, c| c.room != room || c.faction == Faction::Party);
                 if self.state.dm_view_room == room {
                     self.state.dm_view_room = self.state.party_room;
                 }
             }
-            SetRoomAudio { room, music, ambience } => {
-                let rs = self.state.rooms.get_mut(&room).ok_or_else(|| CommandError::NotFound("room".into()))?;
+            SetRoomAudio {
+                room,
+                music,
+                ambience,
+            } => {
+                let rs = self
+                    .state
+                    .rooms
+                    .get_mut(&room)
+                    .ok_or_else(|| CommandError::NotFound("room".into()))?;
                 rs.music = music.clone();
                 rs.ambience = ambience.clone();
                 if room == self.state.party_room {
-                    self.emit(Audience::All, Event::Sound { id: format!("music:{}", music.unwrap_or_default()) });
-                    self.emit(Audience::All, Event::Sound { id: format!("ambience:{}", ambience.unwrap_or_default()) });
+                    self.emit(
+                        Audience::All,
+                        Event::Sound {
+                            id: format!("music:{}", music.unwrap_or_default()),
+                        },
+                    );
+                    self.emit(
+                        Audience::All,
+                        Event::Sound {
+                            id: format!("ambience:{}", ambience.unwrap_or_default()),
+                        },
+                    );
                 }
             }
             SaveCustomMonster { template } => {
@@ -2211,7 +2745,10 @@ impl Session {
                 let c = self.creature_mut(entity);
                 c.status.milestone_levels += 1;
                 let n = c.name.clone();
-                self.log(Audience::All, format!("{n} may advance a level (milestone)."));
+                self.log(
+                    Audience::All,
+                    format!("{n} may advance a level (milestone)."),
+                );
             }
             Rest { long } => self.rest(long)?,
             EndEffect { effect } => {
@@ -2220,15 +2757,28 @@ impl Session {
                 }
                 self.remove_effect(effect);
             }
-            SetContainer { room, object, items } => {
-                let rs = self.state.rooms.get_mut(&room).ok_or_else(|| CommandError::NotFound("room".into()))?;
+            SetContainer {
+                room,
+                object,
+                items,
+            } => {
+                let rs = self
+                    .state
+                    .rooms
+                    .get_mut(&room)
+                    .ok_or_else(|| CommandError::NotFound("room".into()))?;
                 if rs.map.object(object).is_none() || items.len() > 100 {
                     return invalid("unknown container or too many items");
                 }
                 rs.containers.insert(object, items);
             }
-            GiveItemTo { entity, item, quantity } => {
-                let mut it = dnd_rules::items::catalog_item(&item).ok_or_else(|| CommandError::NotFound(item.clone()))?;
+            GiveItemTo {
+                entity,
+                item,
+                quantity,
+            } => {
+                let mut it = dnd_rules::items::catalog_item(&item)
+                    .ok_or_else(|| CommandError::NotFound(item.clone()))?;
                 it.quantity = quantity.clamp(1, 999);
                 if self.creature(entity)?.sheet().is_none() {
                     return rules("only characters carry items");
@@ -2262,12 +2812,23 @@ impl Session {
                 }
                 self.run_script(id, actor);
             }
-            ClearDrawings { room, temporary_only } => {
-                let rs = self.state.rooms.get_mut(&room).ok_or_else(|| CommandError::NotFound("room".into()))?;
+            ClearDrawings {
+                room,
+                temporary_only,
+            } => {
+                let rs = self
+                    .state
+                    .rooms
+                    .get_mut(&room)
+                    .ok_or_else(|| CommandError::NotFound("room".into()))?;
                 rs.drawings.retain(|d| temporary_only && !d.temporary);
             }
             DeleteDrawing { room, id } => {
-                let rs = self.state.rooms.get_mut(&room).ok_or_else(|| CommandError::NotFound("room".into()))?;
+                let rs = self
+                    .state
+                    .rooms
+                    .get_mut(&room)
+                    .ok_or_else(|| CommandError::NotFound("room".into()))?;
                 rs.drawings.retain(|d| d.id != id);
             }
             SetPlayersCanDraw { allowed } => self.state.settings.players_can_draw = allowed,
@@ -2474,7 +3035,12 @@ impl Session {
         self.log(Audience::All, format!("The party travels to {name}."));
         self.emit(Audience::All, Event::RoomChanged { room: to, name });
         if let Some(m) = self.state.rooms[&to].music.clone() {
-            self.emit(Audience::All, Event::Sound { id: format!("music:{m}") });
+            self.emit(
+                Audience::All,
+                Event::Sound {
+                    id: format!("music:{m}"),
+                },
+            );
         }
         self.fire_scripts_for(crate::scripts::Trigger::EnterRoom { room: to }, None);
         Ok(())

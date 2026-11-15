@@ -184,7 +184,11 @@ impl CharacterSheet {
             .map(|_| (die / 2 + 1 + con).max(1) + bonus)
             .sum::<i32>();
         // Draconic Resilience (Sorcerer 3): +3, then +1 per further Sorcerer level.
-        let draconic = if self.has_class_feature("Draconic Resilience") { self.level as i32 } else { 0 };
+        let draconic = if self.has_class_feature("Draconic Resilience") {
+            self.level as i32
+        } else {
+            0
+        };
         first + later + draconic
     }
 
@@ -198,7 +202,10 @@ impl CharacterSheet {
     }
 
     fn wearing_armor(&self) -> bool {
-        self.body_armor.as_deref().and_then(equipment::armor).is_some()
+        self.body_armor
+            .as_deref()
+            .and_then(equipment::armor)
+            .is_some()
     }
 
     pub fn armor_class(&self) -> i32 {
@@ -240,7 +247,11 @@ impl CharacterSheet {
 
     pub fn speed_ft(&self) -> i32 {
         let mut speed = self.species_def().speed_ft;
-        let heavy = self.body_armor.as_deref().and_then(equipment::armor).is_some_and(|a| a.category == ArmorCategory::Heavy);
+        let heavy = self
+            .body_armor
+            .as_deref()
+            .and_then(equipment::armor)
+            .is_some_and(|a| a.category == ArmorCategory::Heavy);
         if self.class == ClassId::Barbarian && self.has_class_feature("Fast Movement") && !heavy {
             speed += 10;
         }
@@ -280,12 +291,14 @@ impl CharacterSheet {
 
     /// Spell save DC = 8 + spellcasting ability modifier + Proficiency Bonus.
     pub fn spell_save_dc(&self) -> Option<i32> {
-        self.spellcasting_ability().map(|a| 8 + self.modifier(a) + self.proficiency_bonus())
+        self.spellcasting_ability()
+            .map(|a| 8 + self.modifier(a) + self.proficiency_bonus())
     }
 
     /// Spell attack bonus = spellcasting ability modifier + Proficiency Bonus.
     pub fn spell_attack_bonus(&self) -> Option<i32> {
-        self.spellcasting_ability().map(|a| self.modifier(a) + self.proficiency_bonus())
+        self.spellcasting_ability()
+            .map(|a| self.modifier(a) + self.proficiency_bonus())
     }
 
     /// Prepared leveled spells including those always prepared by class/subclass features.
@@ -356,7 +369,8 @@ impl CharacterSheet {
             // Melee uses Strength, ranged uses Dexterity; Finesse lets you choose (we take the better).
             let monk_weapon = self.martial_arts_active()
                 && w.kind == WeaponKind::Melee
-                && (w.category == equipment::WeaponCategory::Simple || w.has(WeaponProperty::Light));
+                && (w.category == equipment::WeaponCategory::Simple
+                    || w.has(WeaponProperty::Light));
             let melee_mod = if w.has(WeaponProperty::Finesse) || monk_weapon {
                 str_m.max(dex_m)
             } else {
@@ -366,7 +380,13 @@ impl CharacterSheet {
                 WeaponKind::Melee => (melee_mod, w.reach_ft(), None),
                 WeaponKind::Ranged => (dex_m, 0, w.range),
             };
-            let archery = if w.kind == WeaponKind::Ranged && self.fighting_style == Some(FightingStyle::Archery) { 2 } else { 0 };
+            let archery = if w.kind == WeaponKind::Ranged
+                && self.fighting_style == Some(FightingStyle::Archery)
+            {
+                2
+            } else {
+                0
+            };
             let to_hit = ability_mod + if proficient { pb } else { 0 } + archery;
             let mut dice = w.damage_dice();
             if monk_weapon {
@@ -380,7 +400,11 @@ impl CharacterSheet {
                 dice: dice.with_modifier(ability_mod),
                 damage_type: w.damage_type,
             }];
-            let uses = if ability_mod == str_m && w.kind == WeaponKind::Melee { Ability::Strength } else { Ability::Dexterity };
+            let uses = if ability_mod == str_m && w.kind == WeaponKind::Melee {
+                Ability::Strength
+            } else {
+                Ability::Dexterity
+            };
             let meta = AttackProfile {
                 ability: Some(uses),
                 finesse_or_ranged: w.has(WeaponProperty::Finesse) || w.kind == WeaponKind::Ranged,
@@ -412,7 +436,11 @@ impl CharacterSheet {
                     range_ft: w.range,
                     mastery,
                     ability_mod,
-                    ..AttackProfile { finesse_or_ranged: true, two_handed_melee: false, ..meta }
+                    ..AttackProfile {
+                        finesse_or_ranged: true,
+                        two_handed_melee: false,
+                        ..meta
+                    }
                 });
             }
         }
@@ -420,15 +448,30 @@ impl CharacterSheet {
         // Monk Martial Arts: Dex may replace Str, and the Martial Arts die replaces the 1.
         let (un_mod, un_dice, un_ability) = if self.martial_arts_active() {
             let m = str_m.max(dex_m);
-            (m, DiceExpr::dice(1, crate::classes::martial_arts_die(self.level)).with_modifier(m), if dex_m > str_m { Ability::Dexterity } else { Ability::Strength })
+            (
+                m,
+                DiceExpr::dice(1, crate::classes::martial_arts_die(self.level)).with_modifier(m),
+                if dex_m > str_m {
+                    Ability::Dexterity
+                } else {
+                    Ability::Strength
+                },
+            )
         } else {
-            (str_m, DiceExpr::default().with_modifier(1 + str_m), Ability::Strength)
+            (
+                str_m,
+                DiceExpr::default().with_modifier(1 + str_m),
+                Ability::Strength,
+            )
         };
         out.push(AttackProfile {
             name: "Unarmed Strike".into(),
             kind: WeaponKind::Melee,
             to_hit: un_mod + pb,
-            damage: vec![DamagePart { dice: un_dice, damage_type: DamageType::Bludgeoning }],
+            damage: vec![DamagePart {
+                dice: un_dice,
+                damage_type: DamageType::Bludgeoning,
+            }],
             extra_damage_with_advantage: vec![],
             reach_ft: 5,
             range_ft: None,
@@ -622,7 +665,10 @@ impl CharacterSheet {
         if self.weapon_masteries.len() > mastery_count as usize {
             issues.push(err(
                 "char.mastery.count",
-                format!("{} masters {} weapon kinds at level {}", cd.name, mastery_count, self.level),
+                format!(
+                    "{} masters {} weapon kinds at level {}",
+                    cd.name, mastery_count, self.level
+                ),
             ));
         }
         for m in &self.weapon_masteries {
@@ -692,15 +738,32 @@ impl CharacterSheet {
         use crate::classes;
         let srd_sub = classes::srd_subclass(self.class);
         match (&self.subclass, self.level >= 3) {
-            (Some(s), true) if s != srd_sub => issues.push(err("char.subclass", format!("Only the SRD subclass {srd_sub} is available"))),
-            (Some(_), false) => issues.push(err("char.subclass.level", "Subclasses are chosen at level 3")),
-            (None, true) => issues.push(warn("char.subclass.missing", format!("Choose your subclass ({srd_sub})"))),
+            (Some(s), true) if s != srd_sub => issues.push(err(
+                "char.subclass",
+                format!("Only the SRD subclass {srd_sub} is available"),
+            )),
+            (Some(_), false) => issues.push(err(
+                "char.subclass.level",
+                "Subclasses are chosen at level 3",
+            )),
+            (None, true) => issues.push(warn(
+                "char.subclass.missing",
+                format!("Choose your subclass ({srd_sub})"),
+            )),
             _ => {}
         }
-        let asi_levels = (1..=self.level).filter(|l| classes::is_asi_level(self.class, *l)).count() as u32;
+        let asi_levels = (1..=self.level)
+            .filter(|l| classes::is_asi_level(self.class, *l))
+            .count() as u32;
         let asi_points: u32 = self.asi.iter().map(|(_, n)| *n as u32).sum();
         if self.asi.iter().any(|(_, n)| !(1..=2).contains(n)) || asi_points > asi_levels * 2 {
-            issues.push(err("char.asi", format!("{asi_levels} Ability Score Improvement(s) allow {} points", asi_levels * 2)));
+            issues.push(err(
+                "char.asi",
+                format!(
+                    "{asi_levels} Ability Score Improvement(s) allow {} points",
+                    asi_levels * 2
+                ),
+            ));
         }
         let style_level = match self.class {
             ClassId::Fighter => Some(1),
@@ -708,25 +771,49 @@ impl CharacterSheet {
             _ => None,
         };
         match (self.fighting_style, style_level) {
-            (Some(_), None) => issues.push(err("char.style.class", "Only Fighters, Paladins and Rangers have the Fighting Style feature")),
-            (Some(_), Some(l)) if self.level < l => issues.push(err("char.style.level", format!("Fighting Style comes at level {l}"))),
-            (None, Some(l)) if self.level >= l => issues.push(warn("char.style.missing", "Choose a Fighting Style feat")),
+            (Some(_), None) => issues.push(err(
+                "char.style.class",
+                "Only Fighters, Paladins and Rangers have the Fighting Style feature",
+            )),
+            (Some(_), Some(l)) if self.level < l => issues.push(err(
+                "char.style.level",
+                format!("Fighting Style comes at level {l}"),
+            )),
+            (None, Some(l)) if self.level >= l => {
+                issues.push(warn("char.style.missing", "Choose a Fighting Style feat"))
+            }
             _ => {}
         }
         let expertise_allowed = match self.class {
-            ClassId::Rogue => if self.level >= 6 { 4 } else { 2 },
+            ClassId::Rogue => {
+                if self.level >= 6 {
+                    4
+                } else {
+                    2
+                }
+            }
             ClassId::Bard if self.level >= 9 => 4,
             ClassId::Bard if self.level >= 2 => 2,
             ClassId::Ranger if self.level >= 9 => 2,
             _ => 0,
         };
-        if self.expertise.len() > expertise_allowed || self.expertise.iter().any(|s| !self.skill_proficient(*s)) {
-            issues.push(err("char.expertise", format!("Up to {expertise_allowed} Expertise skills, each one you're proficient in")));
+        if self.expertise.len() > expertise_allowed
+            || self.expertise.iter().any(|s| !self.skill_proficient(*s))
+        {
+            issues.push(err(
+                "char.expertise",
+                format!(
+                    "Up to {expertise_allowed} Expertise skills, each one you're proficient in"
+                ),
+            ));
         }
         // Spells.
         let Some((_, _)) = classes::spellcasting(self.class) else {
             if !self.cantrips.is_empty() || !self.prepared_spells.is_empty() {
-                issues.push(err("char.spells.noncaster", format!("{} doesn't cast spells", self.class_def().name)));
+                issues.push(err(
+                    "char.spells.noncaster",
+                    format!("{} doesn't cast spells", self.class_def().name),
+                ));
             }
             return;
         };
@@ -735,30 +822,57 @@ impl CharacterSheet {
         let max_prepared = classes::prepared_spells(self.class, self.level) as usize;
         let max_level = classes::max_spell_level(self.class, self.level);
         if self.cantrips.len() > max_cantrips {
-            issues.push(err("char.spells.cantrips", format!("{class_name} level {} knows {max_cantrips} cantrips", self.level)));
+            issues.push(err(
+                "char.spells.cantrips",
+                format!(
+                    "{class_name} level {} knows {max_cantrips} cantrips",
+                    self.level
+                ),
+            ));
         }
         if self.prepared_spells.len() > max_prepared {
-            issues.push(err("char.spells.prepared", format!("{class_name} level {} prepares {max_prepared} spells", self.level)));
+            issues.push(err(
+                "char.spells.prepared",
+                format!(
+                    "{class_name} level {} prepares {max_prepared} spells",
+                    self.level
+                ),
+            ));
         }
         for id in self.cantrips.iter().chain(&self.prepared_spells) {
             match crate::spells::spell(id) {
                 None => issues.push(err("char.spells.unknown", format!("Unknown spell {id}"))),
                 Some(sp) => {
                     if !sp.classes.iter().any(|c| c == class_name) {
-                        issues.push(err("char.spells.list", format!("{} isn't on the {class_name} spell list", sp.name)));
+                        issues.push(err(
+                            "char.spells.list",
+                            format!("{} isn't on the {class_name} spell list", sp.name),
+                        ));
                     }
                     let is_cantrip_slot = self.cantrips.contains(id);
                     if is_cantrip_slot != (sp.level == 0) {
-                        issues.push(err("char.spells.kind", format!("{} is in the wrong list (cantrip vs prepared)", sp.name)));
+                        issues.push(err(
+                            "char.spells.kind",
+                            format!("{} is in the wrong list (cantrip vs prepared)", sp.name),
+                        ));
                     }
                     if sp.level > max_level {
-                        issues.push(err("char.spells.level", format!("{} is level {}; you can cast up to level {max_level}", sp.name, sp.level)));
+                        issues.push(err(
+                            "char.spells.level",
+                            format!(
+                                "{} is level {}; you can cast up to level {max_level}",
+                                sp.name, sp.level
+                            ),
+                        ));
                     }
                 }
             }
         }
         if self.cantrips.len() < max_cantrips || self.prepared_spells.len() < max_prepared {
-            issues.push(warn("char.spells.unfilled", format!("Choose {max_cantrips} cantrips and {max_prepared} prepared spells")));
+            issues.push(warn(
+                "char.spells.unfilled",
+                format!("Choose {max_cantrips} cantrips and {max_prepared} prepared spells"),
+            ));
         }
     }
 }
@@ -871,7 +985,13 @@ mod tests {
         c.class = class;
         c.level = level;
         c.weapon_masteries.clear();
-        c.class_skills = content::class(class).skill_list.iter().copied().filter(|s| !c.background_def().skills.contains(s)).take(content::class(class).skill_choices as usize).collect();
+        c.class_skills = content::class(class)
+            .skill_list
+            .iter()
+            .copied()
+            .filter(|s| !c.background_def().skills.contains(s))
+            .take(content::class(class).skill_choices as usize)
+            .collect();
         if class == ClassId::Bard {
             c.class_skills = vec![Skill::Acrobatics, Skill::Arcana, Skill::Deception];
         }
@@ -898,37 +1018,74 @@ mod tests {
         // Dex 15 → +2, Wis 14 → +2 → AC 14; Unarmored Movement +10.
         assert_eq!(monk.armor_class(), 14);
         assert_eq!(monk.speed_ft(), 40);
-        let unarmed = monk.attacks().into_iter().find(|a| a.name == "Unarmed Strike").unwrap();
-        assert_eq!(unarmed.damage[0].dice.to_string(), "1d6+2", "Martial Arts die + Dex");
+        let unarmed = monk
+            .attacks()
+            .into_iter()
+            .find(|a| a.name == "Unarmed Strike")
+            .unwrap();
+        assert_eq!(
+            unarmed.damage[0].dice.to_string(),
+            "1d6+2",
+            "Martial Arts die + Dex"
+        );
     }
 
     #[test]
     fn champion_crits_and_extra_attack() {
-        let f = with(ClassId::Fighter, 3, |c| c.subclass = Some("Champion".into()));
+        let f = with(ClassId::Fighter, 3, |c| {
+            c.subclass = Some("Champion".into())
+        });
         assert_eq!(f.crit_threshold(), 19);
         assert_eq!(with(ClassId::Fighter, 2, |_| {}).crit_threshold(), 20);
-        assert_eq!(with(ClassId::Fighter, 15, |c| c.subclass = Some("Champion".into())).crit_threshold(), 18);
+        assert_eq!(
+            with(ClassId::Fighter, 15, |c| c.subclass =
+                Some("Champion".into()))
+            .crit_threshold(),
+            18
+        );
         assert_eq!(with(ClassId::Fighter, 11, |_| {}).attacks_per_action(), 3);
         let archer = with(ClassId::Fighter, 1, |c| {
             c.fighting_style = Some(FightingStyle::Archery);
             c.weapons = vec!["longbow".into()];
         });
-        let bow = archer.attacks().into_iter().find(|a| a.name == "Longbow").unwrap();
+        let bow = archer
+            .attacks()
+            .into_iter()
+            .find(|a| a.name == "Longbow")
+            .unwrap();
         assert_eq!(bow.to_hit, 1 + 2 + 2, "Dex +1, PB +2, Archery +2");
-        let defense = with(ClassId::Fighter, 1, |c| c.fighting_style = Some(FightingStyle::Defense));
+        let defense = with(ClassId::Fighter, 1, |c| {
+            c.fighting_style = Some(FightingStyle::Defense)
+        });
         assert_eq!(defense.armor_class(), 19);
     }
 
     #[test]
     fn ability_score_improvements_are_limited() {
-        let mut f = with(ClassId::Fighter, 4, |c| c.asi = vec![(Ability::Strength, 2)]);
+        let mut f = with(ClassId::Fighter, 4, |c| {
+            c.asi = vec![(Ability::Strength, 2)]
+        });
         assert_eq!(f.scores().get(Ability::Strength), 19);
         f.asi = vec![(Ability::Strength, 2), (Ability::Dexterity, 1)];
-        assert!(f.validate().iter().any(|i| i.key == "char.asi"), "level 4 gives only 2 points");
-        let f6 = with(ClassId::Fighter, 6, |c| c.asi = vec![(Ability::Strength, 2), (Ability::Constitution, 2)]);
-        assert!(!f6.validate().iter().any(|i| i.key == "char.asi"), "Fighter has ASIs at 4 and 6");
-        let capped = with(ClassId::Fighter, 8, |c| c.asi = vec![(Ability::Strength, 2), (Ability::Strength, 2)]);
-        assert_eq!(capped.scores().get(Ability::Strength), 20, "can't exceed 20");
+        assert!(
+            f.validate().iter().any(|i| i.key == "char.asi"),
+            "level 4 gives only 2 points"
+        );
+        let f6 = with(ClassId::Fighter, 6, |c| {
+            c.asi = vec![(Ability::Strength, 2), (Ability::Constitution, 2)]
+        });
+        assert!(
+            !f6.validate().iter().any(|i| i.key == "char.asi"),
+            "Fighter has ASIs at 4 and 6"
+        );
+        let capped = with(ClassId::Fighter, 8, |c| {
+            c.asi = vec![(Ability::Strength, 2), (Ability::Strength, 2)]
+        });
+        assert_eq!(
+            capped.scores().get(Ability::Strength),
+            20,
+            "can't exceed 20"
+        );
     }
 
     #[test]
@@ -938,7 +1095,12 @@ mod tests {
             c.body_armor = None;
             c.shield = false;
             c.cantrips = vec!["fire_bolt".into(), "light".into(), "ray_of_frost".into()];
-            c.prepared_spells = vec!["magic_missile".into(), "shield".into(), "mage_armor".into(), "burning_hands".into()];
+            c.prepared_spells = vec![
+                "magic_missile".into(),
+                "shield".into(),
+                "mage_armor".into(),
+                "burning_hands".into(),
+            ];
         });
         assert!(w.is_valid(), "{:?}", w.validate());
         // Int 8 - 1 + PB 2 = DC 9
@@ -949,7 +1111,9 @@ mod tests {
         assert!(!w.is_valid(), "level 3 spell at character level 1");
         w.prepared_spells = vec!["cure_wounds".into()];
         assert!(!w.is_valid(), "not on the Wizard list");
-        let fighter = with(ClassId::Fighter, 1, |c| c.cantrips = vec!["fire_bolt".into()]);
+        let fighter = with(ClassId::Fighter, 1, |c| {
+            c.cantrips = vec!["fire_bolt".into()]
+        });
         assert!(!fighter.is_valid());
     }
 
@@ -957,7 +1121,9 @@ mod tests {
     fn always_prepared_spells() {
         let p = with(ClassId::Paladin, 2, |_| {});
         assert!(p.knows_spell("divine_smite"));
-        let cl = with(ClassId::Cleric, 3, |c| c.subclass = Some("Life Domain".into()));
+        let cl = with(ClassId::Cleric, 3, |c| {
+            c.subclass = Some("Life Domain".into())
+        });
         assert!(cl.knows_spell("bless") && cl.knows_spell("cure_wounds"));
     }
 

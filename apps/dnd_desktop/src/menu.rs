@@ -41,6 +41,7 @@ pub struct MenuParams<'w> {
     pub draft: ResMut<'w, CharacterDraft>,
     pub i18n: ResMut<'w, I18n>,
     pub settings: ResMut<'w, crate::settings::GameSettings>,
+    pub audio: Option<Res<'w, crate::audio::AudioStatus>>,
 }
 
 pub fn menu_ui(
@@ -262,8 +263,12 @@ fn join_page(ui: &mut egui::Ui, p: &mut MenuParams) {
         ui.end_row();
     });
     ui.label(RichText::new(p.i18n.t("form.join_help")).small());
+    let is_invite = dnd_net::Invite::parse(&p.ui.form_address).is_some();
+    if is_invite {
+        ui.label(RichText::new(p.i18n.t("form.invite_ok")).color(theme::HEALTH));
+    }
     let ready = !p.ui.form_name.trim().is_empty()
-        && !p.ui.form_code.trim().is_empty()
+        && (is_invite || !p.ui.form_code.trim().is_empty())
         && !p.ui.form_address.trim().is_empty();
     if ui
         .add_enabled(ready, egui::Button::new(p.i18n.t("form.connect")))
@@ -278,7 +283,9 @@ fn join_page(ui: &mut egui::Ui, p: &mut MenuParams) {
             p.ui.form_code.clone(),
             p.ui.form_name.clone(),
         );
-        hosting::join(&mut p.net, &a, &c, &n);
+        if let Err(e) = hosting::join(&mut p.net, &a, &c, &n) {
+            p.cache.error = e;
+        }
     }
 }
 
@@ -358,5 +365,8 @@ fn characters_page(ui: &mut egui::Ui, p: &mut MenuParams) {
 
 fn settings_page(ui: &mut egui::Ui, p: &mut MenuParams) {
     theme::heading(ui, p.i18n.t("menu.settings"));
+    if p.audio.as_ref().is_some_and(|a| !a.available) {
+        ui.label(egui::RichText::new(p.i18n.t("settings.no_audio_device")).color(theme::BLOOD));
+    }
     crate::settings::settings_ui(ui, &mut p.settings, &p.i18n);
 }

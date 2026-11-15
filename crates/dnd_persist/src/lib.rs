@@ -131,7 +131,10 @@ pub fn migrate_state(mut value: serde_json::Value) -> Result<serde_json::Value> 
             obj.insert("format_version".into(), 1.into());
         }
     }
-    let v = value.get("format_version").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+    let v = value
+        .get("format_version")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
     if v < 2 {
         // Format 2 added effects, scripts, resources, drawings, containers, inventory: all default to empty.
         if let Some(obj) = value.as_object_mut() {

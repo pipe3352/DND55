@@ -11,8 +11,8 @@ use dnd_rules::conditions::Condition;
 use dnd_rules::content::ClassId;
 use dnd_rules::dice::DiceExpr;
 use dnd_rules::equipment::ArmorCategory;
-use dnd_world::path::grid_distance_ft;
 use dnd_world::EntityId;
+use dnd_world::path::grid_distance_ft;
 
 type Res<T> = Result<T, CommandError>;
 
@@ -36,7 +36,11 @@ impl Session {
         if !c.is_alive() || !c.conditions.can_act() {
             return rules(format!("{} can't use features right now", c.name));
         }
-        let in_combat = self.state.combat.as_ref().is_some_and(|cb| cb.room == c.room);
+        let in_combat = self
+            .state
+            .combat
+            .as_ref()
+            .is_some_and(|cb| cb.room == c.room);
         if in_combat {
             let cb = self.state.combat.as_ref().expect("checked");
             if cb.pending.is_some() || cb.pending_hit.is_some() {
@@ -46,8 +50,12 @@ impl Session {
                 return rules("it isn't this creature's turn");
             }
             match cost {
-                Cost::Bonus if cb.turn.bonus_action_used => return rules("bonus action already used this turn"),
-                Cost::Action if cb.turn.action_used && cb.turn.extra_actions == 0 => return rules("action already used this turn"),
+                Cost::Bonus if cb.turn.bonus_action_used => {
+                    return rules("bonus action already used this turn");
+                }
+                Cost::Action if cb.turn.action_used && cb.turn.extra_actions == 0 => {
+                    return rules("action already used this turn");
+                }
                 _ => {}
             }
         }
@@ -73,15 +81,32 @@ impl Session {
     }
 
     fn sheet_of(&self, id: EntityId) -> Res<dnd_rules::character::CharacterSheet> {
-        self.creature(id)?.sheet().cloned().ok_or_else(|| CommandError::Rules("only player characters have class features".into()))
+        self.creature(id)?
+            .sheet()
+            .cloned()
+            .ok_or_else(|| CommandError::Rules("only player characters have class features".into()))
     }
 
-    pub(crate) fn cmd_use_feature(&mut self, who: Principal, entity: EntityId, feature: Feature, target: Option<EntityId>, amount: Option<i32>) -> Res<()> {
+    pub(crate) fn cmd_use_feature(
+        &mut self,
+        who: Principal,
+        entity: EntityId,
+        feature: Feature,
+        target: Option<EntityId>,
+        amount: Option<i32>,
+    ) -> Res<()> {
         let sheet = self.sheet_of(entity)?;
         let c = self.state.creatures[&entity].clone();
         let lvl = sheet.level;
         let need = |name: &str| -> Res<()> {
-            if sheet.has_class_feature(name) { Ok(()) } else { Err(CommandError::Rules(format!("{} doesn't have {name}", c.name))) }
+            if sheet.has_class_feature(name) {
+                Ok(())
+            } else {
+                Err(CommandError::Rules(format!(
+                    "{} doesn't have {name}",
+                    c.name
+                )))
+            }
         };
         let name = c.name.clone();
         match feature {
@@ -95,13 +120,19 @@ impl Session {
                     self.log(Audience::All, format!("{name} keeps raging."));
                     return Ok(());
                 }
-                let heavy = sheet.body_armor.as_deref().and_then(dnd_rules::equipment::armor).is_some_and(|a| a.category == ArmorCategory::Heavy);
+                let heavy = sheet
+                    .body_armor
+                    .as_deref()
+                    .and_then(dnd_rules::equipment::armor)
+                    .is_some_and(|a| a.category == ArmorCategory::Heavy);
                 if heavy {
                     return rules("you can't Rage in Heavy armor");
                 }
                 let (uses, bonus) = classes::rage(lvl);
                 if c.resources.rage_used >= uses {
-                    return rules("no Rage uses left (regain one on a Short Rest, all on a Long Rest)");
+                    return rules(
+                        "no Rage uses left (regain one on a Short Rest, all on a Long Rest)",
+                    );
                 }
                 let ic = self.feature_turn_check(who, entity, Cost::Bonus)?;
                 self.pay(ic, Cost::Bonus);
@@ -116,8 +147,25 @@ impl Session {
                     cm.conditions.remove(Condition::Frightened);
                 }
                 self.log(Audience::All, format!("{name} enters a Rage! (+{bonus} damage, Resistance to Bludgeoning/Piercing/Slashing)"));
-                self.emit(Audience::All, Event::Floating { entity, text: "RAGE!".into(), kind: FloatKind::Info });
-                self.emit(Audience::All, Event::SpellVisual { caster: entity, name: "Rage".into(), vfx: Vfx::Fire, from: c.pos, targets: vec![c.pos], area: vec![] });
+                self.emit(
+                    Audience::All,
+                    Event::Floating {
+                        entity,
+                        text: "RAGE!".into(),
+                        kind: FloatKind::Info,
+                    },
+                );
+                self.emit(
+                    Audience::All,
+                    Event::SpellVisual {
+                        caster: entity,
+                        name: "Rage".into(),
+                        vfx: Vfx::Fire,
+                        from: c.pos,
+                        targets: vec![c.pos],
+                        area: vec![],
+                    },
+                );
             }
             Feature::EndRage => {
                 if !c.status.raging {
@@ -129,8 +177,16 @@ impl Session {
             Feature::RecklessAttack => {
                 need("Reckless Attack")?;
                 let ic = self.feature_turn_check(who, entity, Cost::Free)?;
-                if ic && self.state.combat.as_ref().is_some_and(|cb| cb.turn.action_used || cb.turn.attacks_left > 0) {
-                    return rules("decide on Reckless Attack before your first attack roll this turn");
+                if ic
+                    && self
+                        .state
+                        .combat
+                        .as_ref()
+                        .is_some_and(|cb| cb.turn.action_used || cb.turn.attacks_left > 0)
+                {
+                    return rules(
+                        "decide on Reckless Attack before your first attack roll this turn",
+                    );
                 }
                 self.creature_mut(entity).status.reckless = true;
                 self.log(Audience::All, format!("{name} attacks recklessly (Advantage on Strength attacks; attacks against them have Advantage)."));
@@ -143,10 +199,25 @@ impl Session {
                 let ic = self.feature_turn_check(who, entity, Cost::Bonus)?;
                 self.pay(ic, Cost::Bonus);
                 self.creature_mut(entity).resources.second_wind_used += 1;
-                let r = DiceExpr::dice(1, 10).with_modifier(lvl as i32).roll(self.rng.as_mut(), false);
-                self.log(Audience::All, format!("{name} uses Second Wind: {}", r.breakdown()));
+                let r = DiceExpr::dice(1, 10)
+                    .with_modifier(lvl as i32)
+                    .roll(self.rng.as_mut(), false);
+                self.log(
+                    Audience::All,
+                    format!("{name} uses Second Wind: {}", r.breakdown()),
+                );
                 self.heal(entity, r.total);
-                self.emit(Audience::All, Event::SpellVisual { caster: entity, name: "Second Wind".into(), vfx: Vfx::Healing, from: c.pos, targets: vec![c.pos], area: vec![] });
+                self.emit(
+                    Audience::All,
+                    Event::SpellVisual {
+                        caster: entity,
+                        name: "Second Wind".into(),
+                        vfx: Vfx::Healing,
+                        from: c.pos,
+                        targets: vec![c.pos],
+                        area: vec![],
+                    },
+                );
             }
             Feature::ActionSurge => {
                 need("Action Surge")?;
@@ -157,15 +228,32 @@ impl Session {
                 if !ic {
                     return rules("Action Surge is for your turn in combat");
                 }
-                if self.state.combat.as_ref().is_some_and(|cb| cb.turn.surge_used_this_turn) {
+                if self
+                    .state
+                    .combat
+                    .as_ref()
+                    .is_some_and(|cb| cb.turn.surge_used_this_turn)
+                {
                     return rules("only once on a turn");
                 }
                 self.creature_mut(entity).resources.action_surge_used += 1;
                 let t = &mut self.state.combat.as_mut().expect("checked").turn;
                 t.extra_actions += 1;
                 t.surge_used_this_turn = true;
-                self.log(Audience::All, format!("{name} uses Action Surge: one additional action (not the Magic action)."));
-                self.emit(Audience::All, Event::Floating { entity, text: "Action Surge".into(), kind: FloatKind::Info });
+                self.log(
+                    Audience::All,
+                    format!(
+                        "{name} uses Action Surge: one additional action (not the Magic action)."
+                    ),
+                );
+                self.emit(
+                    Audience::All,
+                    Event::Floating {
+                        entity,
+                        text: "Action Surge".into(),
+                        kind: FloatKind::Info,
+                    },
+                );
             }
             Feature::CunningDash | Feature::CunningDisengage => {
                 need("Cunning Action")?;
@@ -181,7 +269,10 @@ impl Session {
                     self.log(Audience::All, format!("{name} Dashes as a Bonus Action."));
                 } else {
                     t.disengaged = true;
-                    self.log(Audience::All, format!("{name} Disengages as a Bonus Action."));
+                    self.log(
+                        Audience::All,
+                        format!("{name} Disengages as a Bonus Action."),
+                    );
                 }
             }
             Feature::SteadyAim => {
@@ -197,7 +288,10 @@ impl Session {
                 let t = &mut self.state.combat.as_mut().expect("checked").turn;
                 t.steady_aim = true;
                 t.movement_left_ft = 0;
-                self.log(Audience::All, format!("{name} takes Steady Aim (Advantage on the next attack; Speed 0)."));
+                self.log(
+                    Audience::All,
+                    format!("{name} takes Steady Aim (Advantage on the next attack; Speed 0)."),
+                );
             }
             Feature::MartialArtsStrike | Feature::FlurryOfBlows => {
                 need("Martial Arts")?;
@@ -216,8 +310,23 @@ impl Session {
                 if flurry {
                     self.creature_mut(entity).resources.focus_used += 1;
                 }
-                self.state.combat.as_mut().expect("checked").turn.bonus_attacks += if flurry { 2 } else { 1 };
-                self.log(Audience::All, format!("{name}: {}", if flurry { "Flurry of Blows (two Unarmed Strikes)" } else { "bonus Unarmed Strike" }));
+                self.state
+                    .combat
+                    .as_mut()
+                    .expect("checked")
+                    .turn
+                    .bonus_attacks += if flurry { 2 } else { 1 };
+                self.log(
+                    Audience::All,
+                    format!(
+                        "{name}: {}",
+                        if flurry {
+                            "Flurry of Blows (two Unarmed Strikes)"
+                        } else {
+                            "bonus Unarmed Strike"
+                        }
+                    ),
+                );
             }
             Feature::PatientDefense { focus } | Feature::StepOfTheWind { focus } => {
                 need("Monk’s Focus")?;
@@ -247,7 +356,18 @@ impl Session {
                         t.movement_left_ft += speed;
                     }
                 }
-                self.log(Audience::All, format!("{name} uses {}{}.", if patient { "Patient Defense" } else { "Step of the Wind" }, if focus { " (1 Focus Point)" } else { "" }));
+                self.log(
+                    Audience::All,
+                    format!(
+                        "{name} uses {}{}.",
+                        if patient {
+                            "Patient Defense"
+                        } else {
+                            "Step of the Wind"
+                        },
+                        if focus { " (1 Focus Point)" } else { "" }
+                    ),
+                );
             }
             Feature::StunningStrike => {
                 need("Stunning Strike")?;
@@ -256,7 +376,10 @@ impl Session {
                 }
                 self.feature_turn_check(who, entity, Cost::Free)?;
                 self.creature_mut(entity).status.stunning_strike_ready = true;
-                self.log(Audience::All, format!("{name} readies a Stunning Strike for the next hit."));
+                self.log(
+                    Audience::All,
+                    format!("{name} readies a Stunning Strike for the next hit."),
+                );
             }
             Feature::LayOnHands => {
                 need("Lay On Hands")?;
@@ -273,13 +396,31 @@ impl Session {
                 let ic = self.feature_turn_check(who, entity, Cost::Bonus)?;
                 self.pay(ic, Cost::Bonus);
                 self.creature_mut(entity).resources.lay_on_hands_used += want;
-                self.log(Audience::All, format!("{name} uses Lay On Hands on {} ({want} HP; {} left in the pool).", t.name, pool - want));
+                self.log(
+                    Audience::All,
+                    format!(
+                        "{name} uses Lay On Hands on {} ({want} HP; {} left in the pool).",
+                        t.name,
+                        pool - want
+                    ),
+                );
                 self.heal(target, want);
-                self.emit(Audience::All, Event::SpellVisual { caster: entity, name: "Lay On Hands".into(), vfx: Vfx::Healing, from: c.pos, targets: vec![t.pos], area: vec![] });
+                self.emit(
+                    Audience::All,
+                    Event::SpellVisual {
+                        caster: entity,
+                        name: "Lay On Hands".into(),
+                        vfx: Vfx::Healing,
+                        from: c.pos,
+                        targets: vec![t.pos],
+                        area: vec![],
+                    },
+                );
             }
             Feature::BardicInspiration => {
                 need("Bardic Inspiration")?;
-                let target = target.ok_or_else(|| CommandError::Invalid("choose a creature to inspire".into()))?;
+                let target = target
+                    .ok_or_else(|| CommandError::Invalid("choose a creature to inspire".into()))?;
                 if target == entity {
                     return rules("you inspire another creature");
                 }
@@ -299,8 +440,21 @@ impl Session {
                 self.creature_mut(entity).resources.bardic_used += 1;
                 let die = classes::bardic_inspiration_die(lvl);
                 self.creature_mut(target).status.inspiration = Some(die);
-                self.log(Audience::All, format!("{name} inspires {} (d{die}).", t.name));
-                self.emit(Audience::All, Event::SpellVisual { caster: entity, name: "Bardic Inspiration".into(), vfx: Vfx::Buff, from: c.pos, targets: vec![t.pos], area: vec![] });
+                self.log(
+                    Audience::All,
+                    format!("{name} inspires {} (d{die}).", t.name),
+                );
+                self.emit(
+                    Audience::All,
+                    Event::SpellVisual {
+                        caster: entity,
+                        name: "Bardic Inspiration".into(),
+                        vfx: Vfx::Buff,
+                        from: c.pos,
+                        targets: vec![t.pos],
+                        area: vec![],
+                    },
+                );
             }
             Feature::UseInspiration => {
                 if c.status.inspiration.is_none() {
@@ -309,14 +463,23 @@ impl Session {
                 self.feature_turn_check(who, entity, Cost::Free)?;
                 let armed = !c.status.inspiration_armed;
                 self.creature_mut(entity).status.inspiration_armed = armed;
-                self.log(Audience::DmOnly, format!("{name} {} Bardic Inspiration for the next failed roll.", if armed { "readies" } else { "holds" }));
+                self.log(
+                    Audience::DmOnly,
+                    format!(
+                        "{name} {} Bardic Inspiration for the next failed roll.",
+                        if armed { "readies" } else { "holds" }
+                    ),
+                );
             }
             Feature::DivineSparkHeal | Feature::DivineSparkDamage => {
                 need("Channel Divinity")?;
-                if c.resources.channel_divinity_used >= classes::channel_divinity_uses(ClassId::Cleric, lvl) {
+                if c.resources.channel_divinity_used
+                    >= classes::channel_divinity_uses(ClassId::Cleric, lvl)
+                {
                     return rules("no Channel Divinity uses left");
                 }
-                let target = target.ok_or_else(|| CommandError::Invalid("choose a creature".into()))?;
+                let target =
+                    target.ok_or_else(|| CommandError::Invalid("choose a creature".into()))?;
                 let t = self.creature(target)?.clone();
                 if target == entity || grid_distance_ft(c.pos, t.pos) > 30 {
                     return rules("Divine Spark targets another creature within 30 feet");
@@ -330,18 +493,61 @@ impl Session {
                     13..=17 => 3,
                     _ => 4,
                 };
-                let r = DiceExpr::dice(dice_n, 8).with_modifier(c.mods[Ability::Wisdom.index()]).roll(self.rng.as_mut(), false);
-                self.log(Audience::All, format!("{name} channels Divine Spark at {}: {}", t.name, r.breakdown()));
+                let r = DiceExpr::dice(dice_n, 8)
+                    .with_modifier(c.mods[Ability::Wisdom.index()])
+                    .roll(self.rng.as_mut(), false);
+                self.log(
+                    Audience::All,
+                    format!(
+                        "{name} channels Divine Spark at {}: {}",
+                        t.name,
+                        r.breakdown()
+                    ),
+                );
                 if feature == Feature::DivineSparkHeal {
                     self.heal(target, r.total.max(0));
-                    self.emit(Audience::All, Event::SpellVisual { caster: entity, name: "Divine Spark".into(), vfx: Vfx::Healing, from: c.pos, targets: vec![t.pos], area: vec![] });
+                    self.emit(
+                        Audience::All,
+                        Event::SpellVisual {
+                            caster: entity,
+                            name: "Divine Spark".into(),
+                            vfx: Vfx::Healing,
+                            from: c.pos,
+                            targets: vec![t.pos],
+                            area: vec![],
+                        },
+                    );
                 } else {
                     let dc = sheet.spell_save_dc().unwrap_or(10);
-                    let (ok, _) = self.saving_throw(target, Ability::Constitution, dc, "Divine Spark");
-                    let dmg = if ok { r.total.max(0) / 2 } else { r.total.max(0) };
-                    let o = self.defenses_of(&t).apply(dnd_rules::DamageType::Radiant, dmg, 0);
-                    self.emit(Audience::All, Event::SpellVisual { caster: entity, name: "Divine Spark".into(), vfx: Vfx::Radiant, from: c.pos, targets: vec![t.pos], area: vec![] });
-                    self.emit(Audience::All, Event::Floating { entity: target, text: format!("-{}", o.final_amount), kind: FloatKind::Damage });
+                    let (ok, _) =
+                        self.saving_throw(target, Ability::Constitution, dc, "Divine Spark");
+                    let dmg = if ok {
+                        r.total.max(0) / 2
+                    } else {
+                        r.total.max(0)
+                    };
+                    let o = self
+                        .defenses_of(&t)
+                        .apply(dnd_rules::DamageType::Radiant, dmg, 0);
+                    self.emit(
+                        Audience::All,
+                        Event::SpellVisual {
+                            caster: entity,
+                            name: "Divine Spark".into(),
+                            vfx: Vfx::Radiant,
+                            from: c.pos,
+                            targets: vec![t.pos],
+                            area: vec![],
+                        },
+                    );
+                    self.emit(
+                        Audience::All,
+                        Event::Floating {
+                            entity: target,
+                            text: format!("-{}", o.final_amount),
+                            kind: FloatKind::Damage,
+                        },
+                    );
                     self.apply_damage_from(target, o.final_amount, false, Some(entity));
                 }
             }
@@ -353,9 +559,25 @@ impl Session {
                 let ic = self.feature_turn_check(who, entity, Cost::Bonus)?;
                 self.pay(ic, Cost::Bonus);
                 self.creature_mut(entity).resources.innate_sorcery_used += 1;
-                self.add_effect(entity, "Innate Sorcery", EffectKind::InnateSorcery { target: entity }, Some(10), false);
+                self.add_effect(
+                    entity,
+                    "Innate Sorcery",
+                    EffectKind::InnateSorcery { target: entity },
+                    Some(10),
+                    false,
+                );
                 self.log(Audience::All, format!("{name} unleashes Innate Sorcery (+1 spell save DC, Advantage on Sorcerer spell attacks for 1 minute)."));
-                self.emit(Audience::All, Event::SpellVisual { caster: entity, name: "Innate Sorcery".into(), vfx: Vfx::Arcane, from: c.pos, targets: vec![c.pos], area: vec![] });
+                self.emit(
+                    Audience::All,
+                    Event::SpellVisual {
+                        caster: entity,
+                        name: "Innate Sorcery".into(),
+                        vfx: Vfx::Arcane,
+                        from: c.pos,
+                        targets: vec![c.pos],
+                        area: vec![],
+                    },
+                );
             }
         }
         Ok(())
@@ -367,10 +589,18 @@ impl Session {
         if self.state.combat.is_some() {
             return rules("you can't rest during combat");
         }
-        let party: Vec<EntityId> = self.state.creatures.values().filter(|c| c.faction == Faction::Party && c.is_alive()).map(|c| c.id).collect();
+        let party: Vec<EntityId> = self
+            .state
+            .creatures
+            .values()
+            .filter(|c| c.faction == Faction::Party && c.is_alive())
+            .map(|c| c.id)
+            .collect();
         for id in &party {
             let c = self.state.creatures[id].clone();
-            let Some(sheet) = c.sheet().cloned() else { continue };
+            let Some(sheet) = c.sheet().cloned() else {
+                continue;
+            };
             let lvl = sheet.level;
             let cm = self.creature_mut(*id);
             let r = &mut cm.resources;
@@ -414,22 +644,41 @@ impl Session {
                 if !recovered.is_empty() {
                     r.arcane_recovery_used = true;
                     let name = cm.name.clone();
-                    self.log(Audience::All, format!("{name} uses Arcane Recovery (slots {:?}).", recovered));
+                    self.log(
+                        Audience::All,
+                        format!("{name} uses Arcane Recovery (slots {:?}).", recovered),
+                    );
                 }
             }
         }
         if long {
             // Effects lasting up to 8 hours end; "until dispelled" effects stay.
-            let ids: Vec<u64> = self.state.effects.iter().filter(|e| e.rounds_left.is_some_and(|r| r <= 4800)).map(|e| e.id).collect();
+            let ids: Vec<u64> = self
+                .state
+                .effects
+                .iter()
+                .filter(|e| e.rounds_left.is_some_and(|r| r <= 4800))
+                .map(|e| e.id)
+                .collect();
             for id in ids {
                 self.remove_effect(id);
             }
             for c in self.state.creatures.values_mut() {
                 c.concentration = None;
-                c.status = CombatStatus { milestone_levels: c.status.milestone_levels, ..Default::default() };
+                c.status = CombatStatus {
+                    milestone_levels: c.status.milestone_levels,
+                    ..Default::default()
+                };
             }
         }
-        self.log(Audience::All, if long { "The party finishes a Long Rest: HP, spell slots and features restored." } else { "The party finishes a Short Rest. Spend Hit Point Dice from your character sheet." });
+        self.log(
+            Audience::All,
+            if long {
+                "The party finishes a Long Rest: HP, spell slots and features restored."
+            } else {
+                "The party finishes a Short Rest. Spend Hit Point Dice from your character sheet."
+            },
+        );
         Ok(())
     }
 
@@ -438,7 +687,9 @@ impl Session {
         if !Self::controls(who, &c) {
             return Err(CommandError::NotAuthorized);
         }
-        let sheet = c.sheet().ok_or_else(|| CommandError::Rules("characters only".into()))?;
+        let sheet = c
+            .sheet()
+            .ok_or_else(|| CommandError::Rules("characters only".into()))?;
         if self.state.combat.is_some() {
             return rules("Hit Point Dice are spent during a Short Rest, not in combat");
         }
@@ -450,9 +701,14 @@ impl Session {
         }
         let die = sheet.class_def().hit_die;
         let con = c.mods[Ability::Constitution.index()];
-        let r = DiceExpr::dice(1, die).with_modifier(con).roll(self.rng.as_mut(), false);
+        let r = DiceExpr::dice(1, die)
+            .with_modifier(con)
+            .roll(self.rng.as_mut(), false);
         self.creature_mut(entity).resources.hit_dice_used += 1;
-        self.log(Audience::All, format!("{} spends a Hit Point Die: {}", c.name, r.breakdown()));
+        self.log(
+            Audience::All,
+            format!("{} spends a Hit Point Die: {}", c.name, r.breakdown()),
+        );
         self.heal(entity, r.total.max(1));
         Ok(())
     }
@@ -469,13 +725,24 @@ impl Session {
             if let Some(s) = c.sheet_mut() {
                 s.experience_points = s.experience_points.saturating_add(xp);
                 let can = classes::level_for_xp(s.experience_points) > s.level;
-                self.log(Audience::All, format!("{name} gains {xp} XP{}", if can { " — level up available!" } else { "." }));
+                self.log(
+                    Audience::All,
+                    format!(
+                        "{name} gains {xp} XP{}",
+                        if can { " — level up available!" } else { "." }
+                    ),
+                );
             }
         }
         Ok(())
     }
 
-    pub(crate) fn cmd_level_up(&mut self, who: Principal, entity: EntityId, choices: LevelUpChoices) -> Res<()> {
+    pub(crate) fn cmd_level_up(
+        &mut self,
+        who: Principal,
+        entity: EntityId,
+        choices: LevelUpChoices,
+    ) -> Res<()> {
         let c = self.creature(entity)?.clone();
         if !Self::controls(who, &c) {
             return Err(CommandError::NotAuthorized);
@@ -483,13 +750,20 @@ impl Session {
         if self.state.combat.is_some() {
             return rules("level up outside combat");
         }
-        let mut sheet = c.sheet().cloned().ok_or_else(|| CommandError::Rules("characters only".into()))?;
+        let mut sheet = c
+            .sheet()
+            .cloned()
+            .ok_or_else(|| CommandError::Rules("characters only".into()))?;
         if sheet.level >= 20 {
             return rules("already level 20");
         }
         let by_xp = classes::level_for_xp(sheet.experience_points) > sheet.level;
         if !by_xp && c.status.milestone_levels == 0 && who != Principal::Dm {
-            return rules(format!("{} XP needed for level {}", classes::XP_THRESHOLDS[sheet.level as usize], sheet.level + 1));
+            return rules(format!(
+                "{} XP needed for level {}",
+                classes::XP_THRESHOLDS[sheet.level as usize],
+                sheet.level + 1
+            ));
         }
         sheet.level += 1;
         let new_level = sheet.level;
@@ -503,16 +777,27 @@ impl Session {
             }
             sheet.asi.extend(choices.asi.iter().copied());
         } else if !choices.asi.is_empty() {
-            return rules(format!("level {new_level} doesn't grant an Ability Score Improvement"));
+            return rules(format!(
+                "level {new_level} doesn't grant an Ability Score Improvement"
+            ));
         }
         if choices.fighting_style.is_some() {
             sheet.fighting_style = choices.fighting_style;
         }
         sheet.expertise.extend(choices.expertise.iter().copied());
         sheet.cantrips.extend(choices.new_cantrips.iter().cloned());
-        sheet.prepared_spells.extend(choices.new_prepared.iter().cloned());
-        sheet.weapon_masteries.extend(choices.new_masteries.iter().cloned());
-        let errors: Vec<String> = sheet.validate().into_iter().filter(|i| i.severity == dnd_rules::character::Severity::Error).map(|i| i.detail).collect();
+        sheet
+            .prepared_spells
+            .extend(choices.new_prepared.iter().cloned());
+        sheet
+            .weapon_masteries
+            .extend(choices.new_masteries.iter().cloned());
+        let errors: Vec<String> = sheet
+            .validate()
+            .into_iter()
+            .filter(|i| i.severity == dnd_rules::character::Severity::Error)
+            .map(|i| i.detail)
+            .collect();
         if !errors.is_empty() {
             return Err(CommandError::Invalid(errors.join("; ")));
         }
@@ -525,31 +810,88 @@ impl Session {
         cm.refresh_from_sheet();
         let gained = cm.hp.max - old_max;
         let name = cm.name.clone();
-        let new_feats: Vec<String> = classes::features(sheet.class, new_level, sheet.subclass.as_deref()).into_iter().filter(|f| f.level == new_level).map(|f| f.name.clone()).collect();
-        self.log(Audience::All, format!("{name} reaches level {new_level}! (+{gained} HP) New: {}", if new_feats.is_empty() { "—".into() } else { new_feats.join(", ") }));
-        self.emit(Audience::All, Event::Floating { entity, text: format!("Level {new_level}!"), kind: FloatKind::Info });
+        let new_feats: Vec<String> =
+            classes::features(sheet.class, new_level, sheet.subclass.as_deref())
+                .into_iter()
+                .filter(|f| f.level == new_level)
+                .map(|f| f.name.clone())
+                .collect();
+        self.log(
+            Audience::All,
+            format!(
+                "{name} reaches level {new_level}! (+{gained} HP) New: {}",
+                if new_feats.is_empty() {
+                    "—".into()
+                } else {
+                    new_feats.join(", ")
+                }
+            ),
+        );
+        self.emit(
+            Audience::All,
+            Event::Floating {
+                entity,
+                text: format!("Level {new_level}!"),
+                kind: FloatKind::Info,
+            },
+        );
         let pos = self.state.creatures[&entity].pos;
-        self.emit(Audience::All, Event::SpellVisual { caster: entity, name: "Level Up".into(), vfx: Vfx::Radiant, from: pos, targets: vec![pos], area: vec![] });
+        self.emit(
+            Audience::All,
+            Event::SpellVisual {
+                caster: entity,
+                name: "Level Up".into(),
+                vfx: Vfx::Radiant,
+                from: pos,
+                targets: vec![pos],
+                area: vec![],
+            },
+        );
         Ok(())
     }
 
-    pub(crate) fn cmd_prepare_spells(&mut self, who: Principal, entity: EntityId, cantrips: Vec<String>, prepared: Vec<String>) -> Res<()> {
+    pub(crate) fn cmd_prepare_spells(
+        &mut self,
+        who: Principal,
+        entity: EntityId,
+        cantrips: Vec<String>,
+        prepared: Vec<String>,
+    ) -> Res<()> {
         let c = self.creature(entity)?.clone();
         if !Self::controls(who, &c) {
             return Err(CommandError::NotAuthorized);
         }
-        if self.state.combat.as_ref().is_some_and(|cb| cb.room == c.room) {
+        if self
+            .state
+            .combat
+            .as_ref()
+            .is_some_and(|cb| cb.room == c.room)
+        {
             return rules("change prepared spells outside combat");
         }
-        let mut sheet = c.sheet().cloned().ok_or_else(|| CommandError::Rules("characters only".into()))?;
+        let mut sheet = c
+            .sheet()
+            .cloned()
+            .ok_or_else(|| CommandError::Rules("characters only".into()))?;
         sheet.cantrips = cantrips;
         sheet.prepared_spells = prepared;
-        let errors: Vec<String> = sheet.validate().into_iter().filter(|i| i.severity == dnd_rules::character::Severity::Error && i.key.starts_with("char.spells")).map(|i| i.detail).collect();
+        let errors: Vec<String> = sheet
+            .validate()
+            .into_iter()
+            .filter(|i| {
+                i.severity == dnd_rules::character::Severity::Error
+                    && i.key.starts_with("char.spells")
+            })
+            .map(|i| i.detail)
+            .collect();
         if !errors.is_empty() {
             return Err(CommandError::Invalid(errors.join("; ")));
         }
         *self.creature_mut(entity).sheet_mut().expect("pc") = sheet;
-        self.log(Audience::DmOnly, format!("{} changes prepared spells.", c.name));
+        self.log(
+            Audience::DmOnly,
+            format!("{} changes prepared spells.", c.name),
+        );
         Ok(())
     }
 }
