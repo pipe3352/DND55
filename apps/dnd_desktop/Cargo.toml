@@ -24,6 +24,7 @@ bevy = { version = "0.20.1", default-features = false, features = ["2d", "audio"
 bevy_egui = "0.43.1"
 rfd = "0.15"
 winit = { version = "0.30.13", default-features = false, features = ["rwh_06"] }
+cpal = "0.17.3"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }

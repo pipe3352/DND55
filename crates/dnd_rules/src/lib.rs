@@ -14,6 +14,7 @@
 pub mod ability;
 pub mod attack;
 pub mod character;
+pub mod classes;
 pub mod conditions;
 pub mod content;
 pub mod d20;
@@ -21,8 +22,10 @@ pub mod damage;
 pub mod dice;
 pub mod equipment;
 pub mod hp;
+pub mod items;
 pub mod monster;
 pub mod rng;
+pub mod spells;
 
 pub use ability::{Ability, AbilityScores, Skill, ability_modifier, proficiency_bonus};
 pub use d20::{D20Roll, RollMode};

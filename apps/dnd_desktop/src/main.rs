@@ -41,9 +41,15 @@ fn main() {
         }
     }
     let (w, h) = game_settings.resolution;
+    let audio_ok = game_settings.audio_enabled && platform::audio_available();
+    let mut plugins = DefaultPlugins.build();
+    if !audio_ok {
+        plugins = plugins.disable::<bevy::audio::AudioPlugin>();
+    }
     App::new()
+        .insert_resource(audio::AudioStatus { available: audio_ok })
         .add_plugins(
-            DefaultPlugins
+            plugins
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         title: "DND55 — Fantasy Tabletop RPG".into(),

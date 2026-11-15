@@ -74,6 +74,39 @@ pub fn explain(panic_text: &str) -> &'static str {
     }
 }
 
+/// Probes the default audio output on a throwaway thread. Some systems (no output device, broken
+/// drivers, remote sessions, Wine) make the audio library panic during device enumeration; in that
+/// case DND55 starts without sound instead of crashing.
+pub fn audio_available() -> bool {
+    std::thread::Builder::new()
+        .name("audio-probe".into())
+        .spawn(|| {
+            std::panic::catch_unwind(|| {
+                use cpal::traits::{DeviceTrait, HostTrait};
+                cpal::default_host().default_output_device().map(|d| d.default_output_config().is_ok()).unwrap_or(false)
+            })
+            .unwrap_or(false)
+        })
+        .ok()
+        .and_then(|h| h.join().ok())
+        .unwrap_or(false)
+}
+
+/// After a graphics-initialization failure, relaunch DND55 with the next backend
+/// (automatic → Vulkan → OpenGL). Returns false when there is nothing left to try.
+fn relaunch_with_next_backend() -> bool {
+    let next = match std::env::var("WGPU_BACKEND").ok().as_deref() {
+        None | Some("") | Some("dx12") => "vulkan",
+        Some("vulkan") => "gl",
+        _ => return false,
+    };
+    if std::env::var("DND55_NO_GPU_FALLBACK").is_ok() {
+        return false;
+    }
+    let Ok(exe) = std::env::current_exe() else { return false };
+    std::process::Command::new(exe).args(std::env::args_os().skip(1)).env("WGPU_BACKEND", next).spawn().is_ok()
+}
+
 /// Installs a panic hook that writes `logs\crash-<time>.txt` and shows a dialog.
 pub fn install_crash_handler() {
     let default = std::panic::take_hook();
@@ -84,6 +117,9 @@ pub fn install_crash_handler() {
             .map(|s| s.to_string())
             .or_else(|| info.payload().downcast_ref::<String>().cloned())
             .unwrap_or_else(|| "unknown panic".into());
+        if std::thread::current().name() == Some("audio-probe") {
+            return;
+        }
         let location = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
         let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let dir = logs_dir();
@@ -99,6 +135,13 @@ pub fn install_crash_handler() {
                 std::thread::current().name(),
                 std::backtrace::Backtrace::force_capture()
             );
+        }
+        if std::thread::current().name() == Some("audio-probe") {
+            return; // expected on systems without audio; handled by audio_available()
+        }
+        // Graphics failed: silently retry with another backend before bothering the user.
+        if std::thread::current().name() == Some("main") && explain(&msg).contains("graphics") && relaunch_with_next_backend() {
+            std::process::exit(0);
         }
         // Only the main thread shows a dialog (network threads may panic on shutdown harmlessly).
         if std::thread::current().name() == Some("main") {

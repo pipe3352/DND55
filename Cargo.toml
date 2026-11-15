@@ -29,9 +29,11 @@ dnd_net = { path = "crates/dnd_net" }
 
 [profile.dev.package."*"]
 opt-level = 2
+debug = false
 
 [profile.dev]
 opt-level = 1
+debug = "line-tables-only"
 
 [profile.release]
 strip = true

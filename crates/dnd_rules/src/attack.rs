@@ -5,6 +5,8 @@
 use crate::d20::{D20Roll, ModeSources, RollMode};
 use crate::damage::{DamageOutcome, DamageType, Defenses};
 use crate::dice::{DiceExpr, DiceRoll};
+#[allow(unused_imports)]
+use crate::ability::Ability;
 use crate::equipment::{Mastery, WeaponKind};
 use crate::rng::DiceRng;
 use serde::{Deserialize, Serialize};
@@ -16,7 +18,7 @@ pub struct DamagePart {
     pub damage_type: DamageType,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct AttackProfile {
     pub name: String,
     pub kind: WeaponKind,
@@ -31,6 +33,18 @@ pub struct AttackProfile {
     pub mastery: Option<Mastery>,
     /// Ability modifier used for the attack roll (needed by Graze and Topple).
     pub ability_mod: i32,
+    /// Ability used (Strength-based attacks benefit from Rage).
+    #[serde(default)]
+    pub ability: Option<crate::ability::Ability>,
+    /// Finesse or ranged weapon (Sneak Attack eligibility).
+    #[serde(default)]
+    pub finesse_or_ranged: bool,
+    /// Weapon id for weapon attacks; `None` for unarmed strikes, natural weapons and spells.
+    #[serde(default)]
+    pub weapon_id: Option<String>,
+    /// Heavy/two-handed melee weapon (Great Weapon Fighting).
+    #[serde(default)]
+    pub two_handed_melee: bool,
 }
 
 impl AttackProfile {
@@ -51,11 +65,27 @@ pub struct AttackModifiers {
     pub exhaustion_level: u8,
     /// Target is Paralyzed/Unconscious and the attacker is within 5 ft (see `conditions::hit_becomes_critical`).
     pub hit_is_auto_critical: bool,
+    /// Lowest natural roll that is a Critical Hit (20 normally; 19 for Champion's Improved Critical).
+    pub crit_threshold: u32,
+    /// Dice added to the attack roll (e.g. Bless 1d4, Bardic Inspiration).
+    pub to_hit_dice: Vec<(String, DiceExpr)>,
+    /// Extra damage on a hit (Rage, Sneak Attack, Divine Smite, Hunter's Mark ...), with a label for the log.
+    pub extra_damage_on_hit: Vec<(String, DamagePart)>,
+    /// Great Weapon Fighting: treat 1s and 2s on weapon damage dice as 3.
+    pub min_damage_die: u32,
 }
 
+impl AttackModifiers {
+    pub fn new() -> Self {
+        AttackModifiers { crit_threshold: 20, ..Default::default() }
+    }
+}
+
+/// Damage of one type: every roll that contributed, and the result after defenses (applied once per type).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DamageDealt {
-    pub roll: Option<DiceRoll>,
+    pub rolls: Vec<(String, DiceRoll)>,
+    pub flat: i32,
     pub outcome: DamageOutcome,
 }
 
@@ -107,14 +137,15 @@ impl AttackResult {
             .map(|f| f.1)
             .collect::<Vec<_>>()
             .join(",");
-            match &d.roll {
-                Some(r) => s.push_str(&format!(
-                    "; {} → {} {:?}",
-                    r.breakdown(),
-                    o.final_amount,
-                    o.damage_type
-                )),
-                None => s.push_str(&format!("; {} {:?}", o.final_amount, o.damage_type)),
+            let rolls: Vec<String> = d
+                .rolls
+                .iter()
+                .map(|(label, r)| if label.is_empty() { r.breakdown() } else { format!("{label} {}", r.breakdown()) })
+                .collect();
+            if rolls.is_empty() {
+                s.push_str(&format!("; {} {:?}", o.final_amount, o.damage_type));
+            } else {
+                s.push_str(&format!("; {} → {} {:?}", rolls.join(" + "), o.final_amount, o.damage_type));
             }
             if !flags.is_empty() {
                 s.push_str(&format!(" ({flags})"));
@@ -137,54 +168,79 @@ pub fn resolve_attack(
     mods: &AttackModifiers,
 ) -> AttackResult {
     let mode = mods.sources.mode();
-    let d20 = D20Roll::roll(rng, mode, profile.to_hit, mods.exhaustion_level);
+    let mut d20 = D20Roll::roll(rng, mode, profile.to_hit, mods.exhaustion_level);
+    let mut bonus_rolls = Vec::new();
+    for (label, dice) in &mods.to_hit_dice {
+        let r = dice.roll(rng, false);
+        d20.total += r.total;
+        d20.modifier += r.total;
+        bonus_rolls.push(format!("{label} {}", r.total));
+    }
     // Rolling 20 or 1: natural 20 always hits (Critical Hit); natural 1 always misses.
+    let crit_on = if mods.crit_threshold == 0 { 20 } else { mods.crit_threshold };
+    let natural_crit = d20.natural >= crit_on;
     let hit = if d20.is_natural_20() {
         true
     } else if d20.is_natural_1() {
         false
     } else {
-        d20.total >= target_ac
+        d20.total >= target_ac || (natural_crit && crit_on < 20)
     };
-    let critical = hit && (d20.is_natural_20() || mods.hit_is_auto_critical);
+    let critical = hit && (natural_crit || mods.hit_is_auto_critical);
 
-    let mut damage = Vec::new();
+    let mut raw: Vec<(String, DamageType, Option<DiceRoll>, i32)> = Vec::new();
     let mut mastery_triggered = None;
     if hit {
-        let mut parts: Vec<&DamagePart> = profile.damage.iter().collect();
+        let mut parts: Vec<(&str, &DamagePart)> = profile.damage.iter().map(|p| ("", p)).collect();
         if mode == RollMode::Advantage {
-            parts.extend(profile.extra_damage_with_advantage.iter());
+            parts.extend(profile.extra_damage_with_advantage.iter().map(|p| ("advantage", p)));
         }
-        for part in parts {
+        for (label, part) in parts {
+            let roll = part.dice.roll_with_min(rng, critical, mods.min_damage_die);
+            raw.push((label.to_string(), part.damage_type, Some(roll.clone()), roll.total));
+        }
+        for (label, part) in &mods.extra_damage_on_hit {
             let roll = part.dice.roll(rng, critical);
-            let outcome = target_defenses.apply(part.damage_type, roll.total.max(0), 0);
-            damage.push(DamageDealt {
-                roll: Some(roll),
-                outcome,
-            });
+            raw.push((label.clone(), part.damage_type, Some(roll.clone()), roll.total));
         }
+    } else if profile.mastery == Some(Mastery::Graze) && profile.ability_mod > 0 {
+        // Graze: on a miss, damage equal to the ability modifier used for the attack roll, same type.
+        let dtype = profile.damage.first().map(|d| d.damage_type).unwrap_or(DamageType::Slashing);
+        raw.push(("graze".into(), dtype, None, profile.ability_mod));
+        mastery_triggered = Some(Mastery::Graze);
+    }
+    // Defenses apply once per damage type to that type's total ("Order of Application").
+    let mut damage: Vec<DamageDealt> = Vec::new();
+    for (label, dtype, roll, amount) in raw {
+        match damage.iter_mut().find(|d| d.outcome.damage_type == dtype) {
+            Some(d) => {
+                d.flat += amount;
+                if let Some(r) = roll {
+                    d.rolls.push((label, r));
+                }
+            }
+            None => damage.push(DamageDealt {
+                rolls: roll.map(|r| vec![(label, r)]).unwrap_or_default(),
+                flat: amount,
+                outcome: target_defenses.apply(dtype, 0, 0),
+            }),
+        }
+    }
+    for d in &mut damage {
+        d.outcome = target_defenses.apply(d.outcome.damage_type, d.flat.max(0), 0);
+    }
+    if hit {
         let dealt: i32 = damage.iter().map(|d| d.outcome.final_amount).sum();
         mastery_triggered = match profile.mastery {
             // Sap: "If you hit a creature with this weapon".
             Some(Mastery::Sap) => Some(Mastery::Sap),
             // Vex: "If you hit a creature with this weapon and deal damage to the creature".
             Some(Mastery::Vex) if dealt > 0 => Some(Mastery::Vex),
+            Some(m @ (Mastery::Topple | Mastery::Push | Mastery::Slow | Mastery::Cleave | Mastery::Nick)) => Some(m),
             _ => None,
         };
-    } else if profile.mastery == Some(Mastery::Graze) && profile.ability_mod > 0 {
-        // Graze: on a miss, damage equal to the ability modifier used for the attack roll, same type.
-        let dtype = profile
-            .damage
-            .first()
-            .map(|d| d.damage_type)
-            .unwrap_or(DamageType::Slashing);
-        let outcome = target_defenses.apply(dtype, profile.ability_mod, 0);
-        damage.push(DamageDealt {
-            roll: None,
-            outcome,
-        });
-        mastery_triggered = Some(Mastery::Graze);
     }
+    let _ = bonus_rolls;
     let total_damage = damage.iter().map(|d| d.outcome.final_amount).sum();
     AttackResult {
         attack_name: profile.name.clone(),
@@ -219,6 +275,7 @@ mod tests {
             range_ft: None,
             mastery,
             ability_mod: 3,
+            ..Default::default()
         }
     }
 

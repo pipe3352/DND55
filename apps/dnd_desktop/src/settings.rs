@@ -51,6 +51,7 @@ pub struct GameSettings {
     pub relay_address: String,
     pub host_port: u16,
     pub try_upnp: bool,
+    pub audio_enabled: bool,
 }
 
 impl Default for GameSettings {
@@ -71,6 +72,7 @@ impl Default for GameSettings {
             relay_address: String::new(),
             host_port: 7878,
             try_upnp: false,
+            audio_enabled: true,
         }
     }
 }
@@ -211,7 +213,8 @@ pub fn settings_ui(ui: &mut bevy_egui::egui::Ui, s: &mut GameSettings, i18n: &I1
             ui.end_row();
         }
     });
-    if v.backend != s.backend {
+    ui.checkbox(&mut v.audio_enabled, i18n.t("settings.audio_enabled"));
+    if v.backend != s.backend || v.audio_enabled != s.audio_enabled {
         ui.label(egui::RichText::new(i18n.t("settings.restart_needed")).italics());
     }
     ui.label(format!("{}: {}", i18n.t("settings.data_dir"), crate::platform::data_dir().display()));

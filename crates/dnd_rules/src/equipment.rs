@@ -10,8 +10,9 @@ pub enum WeaponCategory {
     Martial,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum WeaponKind {
+    #[default]
     Melee,
     Ranged,
 }

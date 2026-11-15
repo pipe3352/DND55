@@ -23,6 +23,12 @@ pub enum Sfx {
     Click,
 }
 
+/// Whether an audio device was found at startup (the game runs silently otherwise).
+#[derive(Resource, Clone, Copy)]
+pub struct AudioStatus {
+    pub available: bool,
+}
+
 #[derive(Resource, Default)]
 pub struct SfxBank {
     sounds: HashMap<Sfx, Handle<AudioSource>>,
@@ -173,7 +179,8 @@ pub fn synth(s: Sfx) -> Vec<f32> {
     }
 }
 
-pub fn build_bank(mut bank: ResMut<SfxBank>, mut sources: ResMut<Assets<AudioSource>>) {
+pub fn build_bank(mut bank: ResMut<SfxBank>, sources: Option<ResMut<Assets<AudioSource>>>) {
+    let Some(mut sources) = sources else { return }; // audio disabled
     for s in [
         Sfx::Dice,
         Sfx::Swing,

@@ -2660,6 +2660,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_egui",
+ "cpal",
  "dnd_net",
  "dnd_persist",
  "dnd_rules",

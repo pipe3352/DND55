@@ -143,6 +143,24 @@ impl DiceExpr {
         }
     }
 
+    /// Like [`roll`](Self::roll) but any die showing less than `min_face` counts as `min_face`
+    /// (Great Weapon Fighting: "treat any 1 or 2 on a damage die as a 3"). `min_face` 0 = no minimum.
+    pub fn roll_with_min(&self, rng: &mut dyn DiceRng, critical: bool, min_face: u32) -> DiceRoll {
+        let mut r = self.roll(rng, critical);
+        if min_face > 0 {
+            let mut total = self.modifier;
+            for t in &mut r.terms {
+                for v in &mut t.rolls {
+                    *v = (*v).max(min_face.min(t.term.sides));
+                }
+                let sum: i32 = t.rolls.iter().map(|v| *v as i32).sum();
+                total += if t.term.negative { -sum } else { sum };
+            }
+            r.total = total;
+        }
+        r
+    }
+
     pub fn average(&self) -> f64 {
         let dice: f64 = self
             .terms
