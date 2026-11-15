@@ -12,10 +12,13 @@
 
 pub mod client;
 pub mod host;
+pub mod invite;
 pub mod protocol;
+pub mod upnp;
 
 pub use client::{NetClient, NetEvent};
-pub use host::{HostConfig, HostHandle, SaveHook};
+pub use host::{HostConfig, HostHandle, RelayStatus, SaveHook};
+pub use invite::{Invite, Target};
 pub use protocol::{ClientMsg, Hello, HostRequest, PROTOCOL_VERSION, ServerMsg};
 
 /// Random token (128-bit, hex) from the OS entropy source.

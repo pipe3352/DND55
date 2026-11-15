@@ -17,6 +17,8 @@ futures.workspace = true
 getrandom.workspace = true
 hex.workspace = true
 bytes = "1"
+dnd_relay.workspace = true
+igd-next = "0.18.0"
 
 [dev-dependencies]
 dnd_rules.workspace = true

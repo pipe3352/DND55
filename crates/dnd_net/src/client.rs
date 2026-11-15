@@ -20,7 +20,17 @@ pub struct NetClient {
 }
 
 impl NetClient {
+    /// Direct TCP connection to a host (LAN, port-forwarded or VPN address).
     pub fn connect(addr: String, hello: Hello) -> Self {
+        Self::connect_target(crate::invite::Target::Direct(addr), hello)
+    }
+
+    /// Connects directly or through a relay.
+    pub fn connect_target(target: crate::invite::Target, hello: Hello) -> Self {
+        let addr = match &target {
+            crate::invite::Target::Direct(a) => a.clone(),
+            crate::invite::Target::Relay { relay, .. } => relay.clone(),
+        };
         let (in_tx, in_rx) = std_mpsc::channel();
         let (out_tx, mut out_rx) = mpsc::unbounded_channel::<ClientMsg>();
         let thread = std::thread::Builder::new()
@@ -40,6 +50,21 @@ impl NetClient {
                         }
                     };
                     let _ = stream.set_nodelay(true);
+                    let mut stream = stream;
+                    if let crate::invite::Target::Relay { invite, .. } = &target {
+                        let hello = dnd_relay::RelayHello::Join { protocol: dnd_relay::RELAY_PROTOCOL, invite: invite.clone() };
+                        match tokio::time::timeout(std::time::Duration::from_secs(15), dnd_relay::handshake(&mut stream, &hello)).await {
+                            Ok(Ok(dnd_relay::RelayMsg::Paired)) => {}
+                            Ok(Ok(dnd_relay::RelayMsg::Error { reason })) => {
+                                let _ = in_tx.send(NetEvent::Disconnected(format!("relay: {reason}")));
+                                return;
+                            }
+                            _ => {
+                                let _ = in_tx.send(NetEvent::Disconnected("the relay did not connect us to the host".into()));
+                                return;
+                            }
+                        }
+                    }
                     let mut wire = protocol::framed(stream);
                     if protocol::send(&mut wire, &ClientMsg::Hello(hello)).await.is_err() {
                         let _ = in_tx.send(NetEvent::Disconnected("connection lost".into()));

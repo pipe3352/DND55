@@ -26,6 +26,7 @@ dnd_world = { path = "crates/dnd_world" }
 dnd_session = { path = "crates/dnd_session" }
 dnd_persist = { path = "crates/dnd_persist" }
 dnd_net = { path = "crates/dnd_net" }
+dnd_relay = { path = "crates/dnd_relay" }
 
 [profile.dev.package."*"]
 opt-level = 2
