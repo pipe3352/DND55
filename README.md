@@ -44,7 +44,7 @@ target · right-click cancels or returns to Play · DM: Shift+click teleports th
 
 ### Windows build
 
-The code is cross-checked for `x86_64-pc-windows-gnu`. On Windows, `cargo build --release -p dnd_desktop`
+The release build cross-compiles and links for `x86_64-pc-windows-gnu` (MinGW); it has not yet been run on a Windows machine. On Windows, `cargo build --release -p dnd_desktop`
 produces `target\release\dnd55.exe` (no console window in release builds). An installer is on the roadmap.
 
 ## Tests
