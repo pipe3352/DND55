@@ -15,14 +15,15 @@ run() { # name display port after env...
   rm -rf "$OUT/data-$name"
   env DISPLAY=$disp DND55_DATA_DIR="$OUT/data-$name" DND55_SCREENSHOT="$OUT/$name.png" DND55_SCREENSHOT_AFTER=$after "$@" "$BIN" > "$OUT/$name.log" 2>&1
 }
-run menu :95 6 &
-wait
+run menu :95 6
 for pass in "showcase-dm|showcase-player||wizard" "graph|sheet|graph|" "editor|creator|select|creator"; do
   IFS='|' read -r dm pl dmopen plopen <<<"$pass"
   P=$((7700 + RANDOM % 200))
   run "$dm" :95 18 DND55_AUTO=host DND55_AUTO_SCENARIO=showcase DND55_AUTO_PORT=$P DND55_AUTO_OPEN="$dmopen" DND55_AUTO_OPEN_AT=12 &
+  DMPID=$!
   sleep 4
   run "$pl" :96 16 DND55_AUTO=join DND55_AUTO_ADDR=127.0.0.1:$P DND55_AUTO_CLASS=wizard DND55_AUTO_OPEN="$plopen" DND55_AUTO_OPEN_AT=12 &
-  wait
+  PLPID=$!
+  wait $DMPID $PLPID
 done
 ls -la "$OUT"/*.png
