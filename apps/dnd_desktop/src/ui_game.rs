@@ -290,7 +290,9 @@ fn dice_panel(ui: &mut Ui, g: &mut GameUi) {
     theme::heading(ui, g.i18n.t("dice.title"));
     ui.horizontal_wrapped(|ui| {
         for s in [4, 6, 8, 10, 12, 20, 100] {
-            if ui.button(format!("d{s}")).clicked() {
+            if theme::icon_text_button(ui, crate::icons::Icon::D20, &format!("d{s}"), true)
+                .clicked()
+            {
                 let (mode, private) = (
                     if s == 20 {
                         g.ui.dice_mode
@@ -357,12 +359,28 @@ fn dice_panel(ui: &mut Ui, g: &mut GameUi) {
             total.to_string()
         };
         ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(format!("🎲 {shown}"))
-                    .size(28.0)
-                    .strong()
-                    .color(theme::BLOOD),
+            // Result on a wax seal; the number tumbles while the dice "roll".
+            let (r, _) = ui.allocate_exact_size(egui::vec2(52.0, 52.0), egui::Sense::hover());
+            let p = ui.painter();
+            let wobble = if *t > 0.3 && !theme::reduced_motion(ui.ctx()) {
+                (t * 40.0).sin() * 0.25
+            } else {
+                0.0
+            };
+            p.circle_filled(
+                r.center() + egui::vec2(1.5, 2.5),
+                25.0,
+                egui::Color32::from_black_alpha(70),
             );
+            p.circle_filled(r.center(), 25.0, theme::BURGUNDY);
+            p.circle_stroke(r.center(), 21.0, egui::Stroke::new(1.2, theme::GOLD));
+            let galley = p.layout_no_wrap(
+                shown.clone(),
+                egui::FontId::new(26.0, theme::bold_family()),
+                theme::IVORY,
+            );
+            let pos = r.center() - galley.size() / 2.0;
+            p.add(egui::epaint::TextShape::new(pos, galley, theme::IVORY).with_angle(wobble));
             ui.vertical(|ui| {
                 ui.label(RichText::new(who).strong());
                 ui.label(RichText::new(detail).small());
@@ -759,20 +777,19 @@ fn session_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
 
 fn right_panel(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
     if let Some(c) = &view.combat {
-        theme::heading(ui, g.i18n.t("combat.initiative"));
+        theme::heading(
+            ui,
+            &format!(
+                "{} · {} {}",
+                g.i18n.t("combat.initiative"),
+                g.i18n.t("combat.round"),
+                c.round
+            ),
+        );
         for e in &c.order {
             let active = c.active == Some(e.entity);
-            let text = format!(
-                "{} {} ({})",
-                if active { "▶" } else { "  " },
-                e.name,
-                e.total
-            );
-            ui.label(if active {
-                RichText::new(text).strong().color(theme::BLOOD)
-            } else {
-                RichText::new(text)
-            });
+            let cv = view.creatures.iter().find(|x| x.id == e.entity);
+            initiative_card(ui, e, cv, active);
         }
         if c.waiting_on_reaction {
             ui.label(RichText::new(g.i18n.t("combat.waiting_reaction")).italics());
@@ -973,34 +990,68 @@ fn overlays(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
                     .rect_filled(ctx.viewport_rect(), 0.0, Color32::from_black_alpha(a));
             });
     }
+    // Chapter-style reveal of the room name: Blackletter title rising in, gold rules unfolding.
     if let Some((name, t)) = &g.pres.room_title {
-        let a = (t.min(1.0) * 255.0) as u8;
-        egui::Area::new("room-title".into())
-            .order(egui::Order::Foreground)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -120.0))
-            .interactable(false)
-            .show(ctx, |ui| {
-                ui.label(
-                    RichText::new(name)
-                        .size(40.0)
-                        .color(Color32::from_rgba_unmultiplied(201, 162, 72, a))
-                        .strong(),
-                );
-            });
+        let life = 3.0 - t; // seconds since it appeared
+        let fade_in = (life / 0.8).clamp(0.0, 1.0);
+        let fade_out = t.min(1.0);
+        let a = fade_in * fade_out;
+        let rise = if theme::reduced_motion(ctx) {
+            0.0
+        } else {
+            (1.0 - fade_in) * 18.0
+        };
+        let p = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            "room-title".into(),
+        ));
+        let c = ctx.viewport_rect().center() + egui::vec2(0.0, -130.0 + rise);
+        let galley = p.layout_no_wrap(
+            name.clone(),
+            egui::FontId::new(64.0, theme::display_family()),
+            theme::GOLD_BRIGHT.gamma_multiply(a),
+        );
+        let shadow = p.layout_no_wrap(
+            name.clone(),
+            egui::FontId::new(64.0, theme::display_family()),
+            Color32::from_black_alpha((200.0 * a) as u8),
+        );
+        let pos = c - galley.size() / 2.0;
+        p.rect_filled(
+            egui::Rect::from_center_size(
+                c,
+                egui::vec2(galley.size().x + 160.0, galley.size().y + 30.0),
+            ),
+            30.0,
+            Color32::from_black_alpha((120.0 * a) as u8),
+        );
+        p.galley(pos + egui::vec2(3.0, 4.0), shadow, Color32::BLACK);
+        let gsize = galley.size();
+        p.galley(pos, galley, theme::GOLD_BRIGHT);
+        let half = (gsize.x / 2.0 + 60.0) * fade_in;
+        for dy in [gsize.y / 2.0 + 6.0] {
+            p.line_segment(
+                [c + egui::vec2(-half, dy), c + egui::vec2(half, dy)],
+                egui::Stroke::new(1.5, theme::GOLD.gamma_multiply(a)),
+            );
+        }
+        if !theme::reduced_motion(ctx) {
+            ctx.request_repaint();
+        }
     }
     if g.pres.your_turn_banner > 0.0 {
-        egui::Area::new("turn-banner".into())
-            .order(egui::Order::Foreground)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -60.0))
-            .interactable(false)
-            .show(ctx, |ui| {
-                ui.label(
-                    RichText::new(g.i18n.t("combat.your_turn"))
-                        .size(34.0)
-                        .color(theme::GOLD)
-                        .strong(),
-                );
-            });
+        let a = g.pres.your_turn_banner.min(1.0);
+        let p = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            "turn-banner".into(),
+        ));
+        theme::banner(
+            &p,
+            ctx.viewport_rect().center() + egui::vec2(0.0, -60.0),
+            g.i18n.t("combat.your_turn"),
+            40.0,
+            a,
+        );
     }
     if g.net.you == Some(Principal::Dm) && g.ui.tool != Tool::Play && g.ui.dm_tab != DmTab::Editor {
         egui::Area::new("tool-hint".into())
@@ -1148,4 +1199,138 @@ fn invite_window(ctx: &egui::Context, g: &mut GameUi) {
         crate::hosting::start_upnp(h);
     }
     g.ui.show_invite &= open;
+}
+
+/// One initiative tracker entry: faction token, name, health, initiative seal; the active
+/// creature's card is lit and marked.
+fn initiative_card(
+    ui: &mut Ui,
+    e: &dnd_session::view::InitiativeView,
+    c: Option<&dnd_session::view::CreatureView>,
+    active: bool,
+) {
+    use dnd_session::model::Faction;
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 38.0), egui::Sense::hover());
+    let p = ui.painter();
+    let t = if theme::reduced_motion(ui.ctx()) {
+        0.0
+    } else {
+        ui.input(|i| i.time) as f32
+    };
+    if active {
+        let pulse = 0.75 + 0.25 * (t * 3.0).sin();
+        p.rect_filled(
+            rect.expand(2.0),
+            5.0,
+            theme::GOLD_BRIGHT.gamma_multiply(0.35 * pulse),
+        );
+        ui.ctx().request_repaint();
+    }
+    p.rect_filled(
+        rect,
+        4.0,
+        if active {
+            egui::Color32::from_rgb(0xEC, 0xD6, 0xA0)
+        } else {
+            egui::Color32::from_rgb(0xDB, 0xC6, 0x9A)
+        },
+    );
+    p.rect_stroke(
+        rect,
+        4.0,
+        egui::Stroke::new(
+            if active { 2.0 } else { 1.0 },
+            if active {
+                theme::BURGUNDY
+            } else {
+                theme::BRONZE
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    let faction_color = match c.map(|c| c.faction) {
+        Some(Faction::Party) => theme::FOREST,
+        Some(Faction::Hostile) => theme::BURGUNDY,
+        _ => theme::SLATE,
+    };
+    let token = egui::pos2(rect.left() + 20.0, rect.center().y);
+    p.circle_filled(token, 14.0, faction_color);
+    p.circle_stroke(token, 14.0, egui::Stroke::new(1.5, theme::GOLD));
+    let initial: String = e
+        .name
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().collect())
+        .unwrap_or_default();
+    p.text(
+        token,
+        egui::Align2::CENTER_CENTER,
+        initial,
+        egui::FontId::new(16.0, theme::gothic_family()),
+        theme::IVORY,
+    );
+    p.text(
+        egui::pos2(rect.left() + 42.0, rect.top() + 11.0),
+        egui::Align2::LEFT_CENTER,
+        &e.name,
+        egui::FontId::new(15.0, theme::bold_family()),
+        theme::INK,
+    );
+    if let Some(c) = c {
+        let bar = egui::Rect::from_min_size(
+            egui::pos2(rect.left() + 42.0, rect.top() + 23.0),
+            egui::vec2((rect.width() - 100.0).max(40.0), 7.0),
+        );
+        match c.hp {
+            HpView::Exact { current, max, .. } => {
+                let frac = if max > 0 {
+                    current.max(0) as f32 / max as f32
+                } else {
+                    0.0
+                };
+                theme::paint_bar(
+                    p,
+                    bar,
+                    frac,
+                    if frac <= 0.5 {
+                        theme::BURGUNDY
+                    } else {
+                        theme::HEALTH
+                    },
+                );
+            }
+            HpView::Status(s) => {
+                p.text(
+                    bar.left_center(),
+                    egui::Align2::LEFT_CENTER,
+                    format!("{s:?}"),
+                    egui::FontId::new(11.5, theme::italic_family()),
+                    theme::INK_SOFT,
+                );
+            }
+        }
+    }
+    let seal = egui::pos2(rect.right() - 20.0, rect.center().y);
+    p.circle_filled(seal, 14.0, theme::WOOD);
+    p.circle_stroke(seal, 14.0, egui::Stroke::new(1.0, theme::GOLD));
+    p.text(
+        seal,
+        egui::Align2::CENTER_CENTER,
+        e.total.to_string(),
+        egui::FontId::new(14.0, theme::bold_family()),
+        theme::GOLD_BRIGHT,
+    );
+    if active {
+        let m = egui::pos2(rect.left() - 2.0, rect.center().y);
+        p.add(egui::Shape::convex_polygon(
+            vec![
+                m + egui::vec2(-6.0, -7.0),
+                m + egui::vec2(3.0, 0.0),
+                m + egui::vec2(-6.0, 7.0),
+            ],
+            theme::BURGUNDY,
+            egui::Stroke::NONE,
+        ));
+    }
 }

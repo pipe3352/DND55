@@ -671,8 +671,12 @@ pub fn action_bar(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
                 || turn.bonus_attacks > 0;
             ui.horizontal_wrapped(|ui| {
                 for (i, a) in me.attacks.iter().enumerate() {
-                    if ui
-                        .add_enabled(can_attack, egui::Button::new(format!("⚔ {}", a.name)))
+                    let icon = if a.kind == dnd_rules::equipment::WeaponKind::Ranged {
+                        crate::icons::Icon::Bow
+                    } else {
+                        crate::icons::Icon::Sword
+                    };
+                    if theme::icon_text_button(ui, icon, &a.name, can_attack)
                         .on_hover_text(a.summary())
                         .clicked()
                     {
@@ -688,11 +692,15 @@ pub fn action_bar(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
                             .resources
                             .as_ref()
                             .is_some_and(|r| r.recharging.contains(&i));
-                        let label = format!("☄ {}{}", sa.name, if charging { " ⏳" } else { "" });
-                        if ui
-                            .add_enabled(!charging && !turn.action_used, egui::Button::new(label))
-                            .on_hover_text(&sa.text)
-                            .clicked()
+                        let label = format!("{}{}", sa.name, if charging { " ⏳" } else { "" });
+                        if theme::icon_text_button(
+                            ui,
+                            crate::icons::Icon::Flame,
+                            &label,
+                            !charging && !turn.action_used,
+                        )
+                        .on_hover_text(&sa.text)
+                        .clicked()
                         {
                             g.ui.casting = Some(monster_intent(&me, i, sa));
                         }
@@ -701,37 +709,57 @@ pub fn action_bar(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
             });
             ui.horizontal_wrapped(|ui| {
                 let free = !turn.action_used || turn.extra_actions > 0;
-                if ui
-                    .add_enabled(free, egui::Button::new(g.i18n.t("action.dash")))
-                    .clicked()
+                if theme::icon_text_button(
+                    ui,
+                    crate::icons::Icon::Feather,
+                    g.i18n.t("action.dash"),
+                    free,
+                )
+                .clicked()
                 {
                     g.net.cmd(Command::Dash { entity: me.id });
                 }
-                if ui
-                    .add_enabled(free, egui::Button::new(g.i18n.t("action.dodge")))
-                    .clicked()
+                if theme::icon_text_button(
+                    ui,
+                    crate::icons::Icon::Shield,
+                    g.i18n.t("action.dodge"),
+                    free,
+                )
+                .clicked()
                 {
                     g.net.cmd(Command::Dodge { entity: me.id });
                 }
-                if ui
-                    .add_enabled(free, egui::Button::new(g.i18n.t("action.disengage")))
-                    .clicked()
+                if theme::icon_text_button(
+                    ui,
+                    crate::icons::Icon::Door,
+                    g.i18n.t("action.disengage"),
+                    free,
+                )
+                .clicked()
                 {
                     g.net.cmd(Command::Disengage { entity: me.id });
                 }
                 if sheet
                     .as_ref()
                     .is_some_and(|s| classes::spellcasting(s.class).is_some())
-                    && ui
-                        .button(format!("📖 {}", g.i18n.t("spell.book")))
-                        .clicked()
+                    && theme::icon_text_button(
+                        ui,
+                        crate::icons::Icon::Book,
+                        g.i18n.t("spell.book"),
+                        true,
+                    )
+                    .clicked()
                 {
                     g.ui.selected = Some(me.id);
                     g.ui.show_spellbook = true;
                 }
-                if ui
-                    .button(RichText::new(g.i18n.t("action.end_turn")).strong())
-                    .clicked()
+                if theme::icon_text_button(
+                    ui,
+                    crate::icons::Icon::Hourglass,
+                    g.i18n.t("action.end_turn"),
+                    true,
+                )
+                .clicked()
                 {
                     g.net.cmd(Command::EndTurn);
                     g.ui.targeting = None;

@@ -145,18 +145,88 @@ pub fn creator_ui(ui: &mut egui::Ui, d: &mut CharacterDraft, i18n: &I18n) -> boo
 
 fn step_class(ui: &mut egui::Ui, d: &mut CharacterDraft, i18n: &I18n) {
     theme::heading(ui, i18n.t("creator.step.class"));
-    for c in CLASSES {
-        let selected = d.sheet.class == c.id;
-        let text = format!(
-            "{}  —  d{} HP, saves {:?}/{:?}",
-            c.name, c.hit_die, c.saving_throws[0], c.saving_throws[1]
-        );
-        if ui.selectable_label(selected, text).clicked() && !selected {
-            d.sheet.class = c.id;
-            d.sheet.class_skills.clear();
-            d.sheet.weapon_masteries.clear();
+    // Illustrated class cards: emblem, name, Hit Die and saving throws.
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+        for c in CLASSES {
+            let selected = d.sheet.class == c.id;
+            let (rect, resp) =
+                ui.allocate_exact_size(egui::vec2(132.0, 150.0), egui::Sense::click());
+            let p = ui.painter();
+            let hovered = resp.hovered();
+            if selected {
+                p.rect_filled(
+                    rect.expand(3.0),
+                    8.0,
+                    theme::GOLD_BRIGHT.gamma_multiply(0.35),
+                );
+            }
+            p.rect_filled(
+                rect,
+                6.0,
+                if selected {
+                    egui::Color32::from_rgb(0xEC, 0xD6, 0xA0)
+                } else if hovered {
+                    egui::Color32::from_rgb(0xE6, 0xD4, 0xAC)
+                } else {
+                    egui::Color32::from_rgb(0xDB, 0xC6, 0x9A)
+                },
+            );
+            p.rect_stroke(
+                rect,
+                6.0,
+                egui::Stroke::new(
+                    if selected { 2.5 } else { 1.2 },
+                    if selected {
+                        theme::BURGUNDY
+                    } else {
+                        theme::BRONZE
+                    },
+                ),
+                egui::StrokeKind::Inside,
+            );
+            let em = egui::Rect::from_center_size(
+                egui::pos2(rect.center().x, rect.top() + 44.0),
+                egui::vec2(62.0, 70.0),
+            );
+            crate::icons::emblem(
+                p,
+                em,
+                crate::icons::class_icon(c.id),
+                if selected {
+                    theme::BURGUNDY
+                } else {
+                    theme::SLATE
+                },
+            );
+            p.text(
+                egui::pos2(rect.center().x, rect.top() + 98.0),
+                egui::Align2::CENTER_CENTER,
+                c.name,
+                egui::FontId::new(19.0, theme::gothic_family()),
+                theme::WOOD,
+            );
+            p.text(
+                egui::pos2(rect.center().x, rect.top() + 118.0),
+                egui::Align2::CENTER_CENTER,
+                format!("d{} HP", c.hit_die),
+                egui::FontId::new(13.0, theme::bold_family()),
+                theme::INK,
+            );
+            p.text(
+                egui::pos2(rect.center().x, rect.top() + 135.0),
+                egui::Align2::CENTER_CENTER,
+                format!("{:?} · {:?}", c.saving_throws[0], c.saving_throws[1]),
+                egui::FontId::new(11.0, egui::FontFamily::Proportional),
+                theme::INK_SOFT,
+            );
+            if resp.clicked() && !selected {
+                d.sheet.class = c.id;
+                d.sheet.class_skills.clear();
+                d.sheet.weapon_masteries.clear();
+            }
         }
-    }
+    });
     ui.label(
         RichText::new(i18n.t("creator.class_note"))
             .italics()
@@ -570,19 +640,26 @@ pub fn sheet_ui(
     i18n: &I18n,
 ) {
     ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(&sheet.name)
-                .size(20.0)
-                .strong()
-                .color(theme::WOOD),
+        let (r, _) = ui.allocate_exact_size(egui::vec2(54.0, 62.0), egui::Sense::hover());
+        crate::icons::emblem(
+            ui.painter(),
+            r,
+            crate::icons::class_icon(sheet.class),
+            theme::BURGUNDY,
         );
-        ui.label(format!(
-            "{} {} · {}",
-            content::species(sheet.species).name,
-            sheet.class_def().name,
-            i18n.t("sheet.level")
-        ));
-        ui.label(sheet.level.to_string());
+        ui.vertical(|ui| {
+            ui.label(theme::display(&sheet.name, 28.0).color(theme::WOOD));
+            ui.label(theme::italic(format!(
+                "{} {} · {} {}",
+                content::species(sheet.species).name,
+                sheet.class_def().name,
+                i18n.t("sheet.level"),
+                sheet.level
+            )));
+            if let Some(sub) = sheet.subclass_name() {
+                ui.label(RichText::new(sub).small());
+            }
+        });
     });
     if let Some(c) = me {
         if let HpView::Exact { current, max, temp } = c.hp {
@@ -610,7 +687,8 @@ pub fn sheet_ui(
             ));
         }
     }
-    let xp_next = 300; // level 2 threshold (SRD Character Advancement table)
+    // Next level's XP threshold (SRD Character Advancement table).
+    let xp_next = dnd_rules::classes::XP_THRESHOLDS[(sheet.level as usize).min(19)] as i32;
     theme::bar(
         ui,
         i18n.t("sheet.xp"),
@@ -618,19 +696,32 @@ pub fn sheet_ui(
         xp_next,
         theme::GOLD,
     );
-    ui.horizontal(|ui| {
-        ui.label(format!("{} {}", i18n.t("sheet.ac"), sheet.armor_class()));
-        ui.label(format!(
-            "{} {:+}",
+    ui.horizontal_wrapped(|ui| {
+        use crate::icons::Icon;
+        theme::stat_chip(
+            ui,
+            Icon::Shield,
+            &sheet.armor_class().to_string(),
+            i18n.t("sheet.ac"),
+        );
+        theme::stat_chip(
+            ui,
+            Icon::Hourglass,
+            &format!("{:+}", sheet.initiative_bonus()),
             i18n.t("sheet.initiative"),
-            sheet.initiative_bonus()
-        ));
-        ui.label(format!("{} {} ft", i18n.t("sheet.speed"), sheet.speed_ft()));
-        ui.label(format!(
-            "{} {:+}",
+        );
+        theme::stat_chip(
+            ui,
+            Icon::Feather,
+            &sheet.speed_ft().to_string(),
+            &format!("{} (ft)", i18n.t("sheet.speed")),
+        );
+        theme::stat_chip(
+            ui,
+            Icon::Star,
+            &format!("{:+}", sheet.proficiency_bonus()),
             i18n.t("sheet.proficiency"),
-            sheet.proficiency_bonus()
-        ));
+        );
     });
     let roll = |net: &mut Net, label: String, bonus: i32| {
         net.cmd(Command::RollDice {
@@ -643,16 +734,29 @@ pub fn sheet_ui(
     egui::CollapsingHeader::new(i18n.t("sheet.abilities"))
         .default_open(true)
         .show(ui, |ui| {
-            egui::Grid::new("sheet-ab")
-                .num_columns(4)
-                .striped(true)
-                .show(ui, |ui| {
-                    for a in Ability::ALL {
+            // Six illustrated medallions (click = ability check), save buttons underneath.
+            ui.horizontal_wrapped(|ui| {
+                for a in Ability::ALL {
+                    ui.vertical(|ui| {
                         let score = sheet.scores().get(a);
-                        if ui
-                            .button(format!("{} {score}", ability_label(i18n, a)))
-                            .on_hover_text(i18n.t("sheet.click_check"))
-                            .clicked()
+                        let abbrev: String = ability_label(i18n, a)
+                            .chars()
+                            .take(3)
+                            .collect::<String>()
+                            .to_uppercase();
+                        if theme::stat_medallion(
+                            ui,
+                            crate::icons::ability_icon(a),
+                            &abbrev,
+                            score,
+                            sheet.modifier(a),
+                        )
+                        .on_hover_text(format!(
+                            "{} — {}",
+                            ability_label(i18n, a),
+                            i18n.t("sheet.click_check")
+                        ))
+                        .clicked()
                         {
                             roll(
                                 net,
@@ -660,17 +764,25 @@ pub fn sheet_ui(
                                 sheet.modifier(a),
                             );
                         }
-                        ui.label(format!("{:+}", sheet.modifier(a)));
                         let save = sheet.save_bonus(a);
+                        let proficient = sheet.class_def().saving_throws.contains(&a);
+                        let label = format!(
+                            "{}{} {save:+}",
+                            if proficient { "• " } else { "" },
+                            i18n.t("sheet.save")
+                        );
                         if ui
-                            .button(format!("{} {save:+}", i18n.t("sheet.save")))
+                            .add_sized(
+                                [78.0, 22.0],
+                                egui::Button::new(RichText::new(label).small()),
+                            )
                             .clicked()
                         {
                             roll(net, format!("{} save", ability_label(i18n, a)), save);
                         }
-                        ui.end_row();
-                    }
-                });
+                    });
+                }
+            });
         });
     egui::CollapsingHeader::new(i18n.t("sheet.skills"))
         .default_open(false)

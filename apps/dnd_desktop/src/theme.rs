@@ -911,3 +911,159 @@ mod tests {
         }
     }
 }
+
+/// Button with an illustrated icon and a label (action bar, dice tray, toolbars).
+pub fn icon_text_button(
+    ui: &mut egui::Ui,
+    icon: crate::icons::Icon,
+    text: &str,
+    enabled: bool,
+) -> egui::Response {
+    let font = FontId::new(15.5, egui::FontFamily::Proportional);
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, INK);
+    let size = vec2(galley.size().x + 40.0, 30.0);
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
+    let p = ui.painter();
+    let hovered = enabled && resp.hovered();
+    let fill = if !enabled {
+        PARCHMENT_DARK.gamma_multiply(0.6)
+    } else if resp.is_pointer_button_down_on() {
+        GOLD
+    } else if hovered {
+        rgb(0xEB, 0xD1, 0x93)
+    } else {
+        rgb(0xD8, 0xC3, 0x98)
+    };
+    p.rect_filled(rect, 4.0, fill);
+    p.rect_stroke(
+        rect,
+        4.0,
+        Stroke::new(
+            if hovered { 1.6 } else { 1.0 },
+            if hovered { GOLD_BRIGHT } else { BRONZE },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    crate::icons::paint(
+        p,
+        Rect::from_min_size(rect.min + vec2(5.0, 4.0), vec2(22.0, 22.0)),
+        icon,
+    );
+    let color = if enabled {
+        INK
+    } else {
+        INK_SOFT.gamma_multiply(0.7)
+    };
+    p.galley(
+        pos2(rect.left() + 33.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        color,
+    );
+    if hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp
+}
+
+/// Ability score medallion: emblem, abbreviation, big score and modifier seal. Clickable.
+pub fn stat_medallion(
+    ui: &mut egui::Ui,
+    icon: crate::icons::Icon,
+    abbrev: &str,
+    score: u8,
+    modifier: i32,
+) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(78.0, 98.0), egui::Sense::click());
+    let p = ui.painter();
+    let hovered = resp.hovered();
+    p.rect_filled(
+        rect.translate(vec2(2.0, 3.0)),
+        6.0,
+        Color32::from_black_alpha(60),
+    );
+    p.rect_filled(
+        rect,
+        6.0,
+        if hovered {
+            rgb(0xEC, 0xDB, 0xB4)
+        } else {
+            rgb(0xDD, 0xC9, 0x9E)
+        },
+    );
+    p.rect_stroke(
+        rect,
+        6.0,
+        Stroke::new(1.8, if hovered { GOLD_BRIGHT } else { BRONZE }),
+        egui::StrokeKind::Inside,
+    );
+    p.rect_stroke(
+        rect.shrink(4.0),
+        4.0,
+        Stroke::new(0.7, GOLD.gamma_multiply(0.7)),
+        egui::StrokeKind::Inside,
+    );
+    crate::icons::paint(
+        p,
+        Rect::from_center_size(pos2(rect.center().x, rect.top() + 18.0), vec2(22.0, 22.0)),
+        icon,
+    );
+    p.text(
+        pos2(rect.center().x, rect.top() + 36.0),
+        egui::Align2::CENTER_CENTER,
+        abbrev,
+        FontId::new(13.0, gothic_family()),
+        WOOD,
+    );
+    p.text(
+        pos2(rect.center().x, rect.top() + 57.0),
+        egui::Align2::CENTER_CENTER,
+        score.to_string(),
+        FontId::new(24.0, bold_family()),
+        INK,
+    );
+    let seal = pos2(rect.center().x, rect.bottom() - 13.0);
+    p.circle_filled(seal, 12.0, BURGUNDY);
+    p.circle_stroke(seal, 12.0, Stroke::new(1.0, GOLD));
+    p.text(
+        seal,
+        egui::Align2::CENTER_CENTER,
+        format!("{modifier:+}"),
+        FontId::new(14.0, bold_family()),
+        IVORY,
+    );
+    if hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp
+}
+
+/// Compact icon + value chip (AC, initiative, speed, proficiency).
+pub fn stat_chip(ui: &mut egui::Ui, icon: crate::icons::Icon, value: &str, tooltip: &str) {
+    let (rect, resp) = ui.allocate_exact_size(vec2(70.0, 34.0), egui::Sense::hover());
+    let p = ui.painter();
+    p.rect_filled(rect, 4.0, rgb(0xDD, 0xC9, 0x9E));
+    p.rect_stroke(
+        rect,
+        4.0,
+        Stroke::new(1.0, BRONZE),
+        egui::StrokeKind::Inside,
+    );
+    crate::icons::paint(
+        p,
+        Rect::from_min_size(rect.min + vec2(4.0, 5.0), vec2(24.0, 24.0)),
+        icon,
+    );
+    p.text(
+        pos2(rect.left() + 48.0, rect.center().y),
+        egui::Align2::CENTER_CENTER,
+        value,
+        FontId::new(18.0, bold_family()),
+        INK,
+    );
+    resp.on_hover_text(tooltip);
+}
