@@ -19,6 +19,11 @@ separately, with the same scenario. Nothing here is concept art.
 | Character creator | ![](screenshots/before/creator.png) | ![](screenshots/after/creator.png) |
 | Character sheet | ![](screenshots/before/sheet.png) | ![](screenshots/after/sheet.png) |
 
+The Windows build itself (`DND55.exe` from the portable zip), run under Wine on Linux with the Vulkan
+fallback, draws the same scene, water/lava shader included:
+
+![](screenshots/after/windows-exe-under-wine.png)
+
 The showcase room (`DND55_AUTO_SCENARIO=showcase`) paints every terrain type, a pond, a lava pool, a
 stone house and objects. It also adds three more rooms with regions and with locked, secret and one-way
 links for the graph.
