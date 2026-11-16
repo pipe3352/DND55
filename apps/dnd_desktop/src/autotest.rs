@@ -120,6 +120,88 @@ pub fn auto_script(
                     net.cmd(c);
                 }
             }
+            if once("sc-rooms", 6.3) {
+                for name in ["Old Mill", "Bandit Camp", "Ruined Shrine"] {
+                    net.cmd(Command::Dm(DmCommand::CreateRoom {
+                        name: name.into(),
+                        width: 16,
+                        height: 12,
+                        ambient: dnd_world::map::AmbientLight::Dim,
+                    }));
+                }
+            }
+            if once("sc-links", 7.0)
+                && let Some(v) = gv.view.as_ref()
+            {
+                let id = |n: &str| v.graph.nodes.values().find(|x| x.name == n).map(|x| x.id);
+                if let (Some(guard), Some(crypt), Some(mill), Some(camp), Some(shrine)) = (
+                    id("Guard Room"),
+                    id("Sunken Crypt"),
+                    id("Old Mill"),
+                    id("Bandit Camp"),
+                    id("Ruined Shrine"),
+                ) {
+                    for (a, b, one_way) in [
+                        (guard, room, false),
+                        (room, mill, false),
+                        (mill, camp, false),
+                        (camp, shrine, true),
+                        (crypt, shrine, false),
+                    ] {
+                        net.cmd(Command::Dm(DmCommand::ConnectRooms {
+                            from: a,
+                            to: b,
+                            one_way,
+                        }));
+                    }
+                    for (r, region) in [
+                        (guard, "Keep"),
+                        (crypt, "Keep"),
+                        (room, "Wilds"),
+                        (mill, "Wilds"),
+                        (camp, "Wilds"),
+                    ] {
+                        net.cmd(Command::Dm(DmCommand::UpdateRoomMeta {
+                            room: r,
+                            region: region.into(),
+                            chapter: String::new(),
+                            secret: false,
+                        }));
+                    }
+                    net.cmd(Command::Dm(DmCommand::UpdateRoomMeta {
+                        room: shrine,
+                        region: String::new(),
+                        chapter: String::new(),
+                        secret: true,
+                    }));
+                }
+            }
+            if once("sc-edges", 7.4)
+                && let Some(v) = gv.view.as_ref()
+            {
+                let id = |n: &str| v.graph.nodes.values().find(|x| x.name == n).map(|x| x.id);
+                for e in &v.graph.edges {
+                    let locked = Some(e.from) == id("Old Mill") && Some(e.to) == id("Bandit Camp");
+                    let secret =
+                        Some(e.from) == id("Sunken Crypt") && Some(e.to) == id("Ruined Shrine");
+                    if locked || secret {
+                        net.cmd(Command::Dm(DmCommand::EditEdge {
+                            edge: e.id,
+                            one_way: e.one_way,
+                            locked,
+                            secret,
+                            label: if locked {
+                                "Iron gate".into()
+                            } else {
+                                String::new()
+                            },
+                        }));
+                    }
+                }
+                for (r, pos) in crate::graph_editor::auto_layout(&v.graph, Some(room)) {
+                    net.cmd(Command::Dm(DmCommand::SetRoomPos { room: r, pos }));
+                }
+            }
             if once("sc-travel", 7.5) {
                 net.cmd(Command::Dm(DmCommand::TransitionParty {
                     to: room,

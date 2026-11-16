@@ -29,6 +29,7 @@ pub struct GameUi<'w> {
     pub catalog: Res<'w, CatalogRes>,
     pub next: ResMut<'w, NextState<AppState>>,
     pub hover: Res<'w, crate::input::Hover>,
+    pub graph: ResMut<'w, crate::graph_editor::GraphEditor>,
     pub settings: ResMut<'w, crate::settings::GameSettings>,
     pub audio: Option<Res<'w, crate::audio::AudioStatus>>,
 }
@@ -953,7 +954,7 @@ fn overlays(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
     crate::ui_play::dialogue_window(ctx, g, view);
     if g.net.is_dm() {
         crate::ui_dm::bestiary_window(ctx, g, view);
-        crate::ui_dm::graph_window(ctx, g, view);
+        crate::graph_editor::window(ctx, g, view);
         crate::ui_dm::script_editor_window(ctx, g, view);
     } else if view.players_can_draw || g.ui.tool == Tool::Draw {
         player_draw_toggle(ctx, g, view);

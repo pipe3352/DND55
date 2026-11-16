@@ -866,3 +866,58 @@ fn game_state_roundtrips_through_json() {
     let back: dnd_session::GameState = serde_json::from_str(&json).unwrap();
     assert_eq!(back, s.state);
 }
+
+#[test]
+fn campaign_graph_authoring_data_never_reaches_players() {
+    let mut s = demo_campaign();
+    let (p, _) = join_with_fighter(&mut s, "Alice");
+    dm(
+        &mut s,
+        DmCommand::CreateRoom {
+            name: "Lich Vault".into(),
+            width: 8,
+            height: 8,
+            ambient: AmbientLight::Darkness,
+        },
+    );
+    let vault = s
+        .state
+        .graph
+        .nodes
+        .values()
+        .find(|n| n.name == "Lich Vault")
+        .unwrap()
+        .id;
+    dm(
+        &mut s,
+        DmCommand::UpdateRoomMeta {
+            room: vault,
+            region: "Undercroft".into(),
+            chapter: "III".into(),
+            secret: true,
+        },
+    );
+    let party = s.state.party_room;
+    dm(
+        &mut s,
+        DmCommand::ConnectRooms {
+            from: party,
+            to: vault,
+            one_way: false,
+        },
+    );
+    // DM: every room has a card (thumbnail, status) for the graph editor.
+    let dm_view = s.build_view(Principal::Dm, None);
+    assert_eq!(
+        dm_view.dm.as_ref().unwrap().room_cards.len(),
+        s.state.graph.nodes.len()
+    );
+    // Player: no DM extras, no unvisited/secret room, no region names, nothing in the wire format.
+    let pv = s.build_view(p, None);
+    assert!(pv.dm.is_none());
+    assert!(!pv.graph.nodes.contains_key(&vault));
+    let json = serde_json::to_string(&pv).unwrap();
+    for leak in ["Lich Vault", "Undercroft", "room_cards"] {
+        assert!(!json.contains(leak), "player view leaks {leak}");
+    }
+}

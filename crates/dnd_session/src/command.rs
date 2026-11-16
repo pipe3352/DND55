@@ -203,6 +203,21 @@ pub enum DmCommand {
         music: Option<String>,
         ambience: Option<String>,
     },
+    /// Edit every property of a connection (the graph editor's edge panel).
+    EditEdge {
+        edge: EdgeId,
+        one_way: bool,
+        locked: bool,
+        secret: bool,
+        label: String,
+    },
+    /// Room grouping and secrecy (graph editor).
+    UpdateRoomMeta {
+        room: RoomId,
+        region: String,
+        chapter: String,
+        secret: bool,
+    },
     /// Cosmetic weather/atmosphere for a room.
     SetRoomWeather {
         room: RoomId,

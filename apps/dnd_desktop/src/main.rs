@@ -12,6 +12,7 @@ mod audio;
 mod autotest;
 mod character_ui;
 mod fx;
+mod graph_editor;
 mod hosting;
 mod i18n;
 mod icons;
@@ -97,6 +98,7 @@ fn main() {
         .init_resource::<fx::Presentation>()
         .init_resource::<input::Hover>()
         .init_resource::<input::CameraFit>()
+        .init_resource::<graph_editor::GraphEditor>()
         .init_resource::<menu::MenuCache>()
         .init_resource::<character_ui::CharacterDraft>()
         .init_resource::<audio::SfxBank>()

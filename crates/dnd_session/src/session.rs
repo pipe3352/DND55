@@ -2205,6 +2205,39 @@ impl Session {
                 e.secret = secret;
                 e.arrival = arrival;
             }
+            EditEdge {
+                edge,
+                one_way,
+                locked,
+                secret,
+                label,
+            } => {
+                let e = self
+                    .state
+                    .graph
+                    .edge_mut(edge)
+                    .ok_or_else(|| CommandError::NotFound("edge".into()))?;
+                e.one_way = one_way;
+                e.locked = locked;
+                e.secret = secret;
+                e.label = label.chars().take(60).collect();
+            }
+            UpdateRoomMeta {
+                room,
+                region,
+                chapter,
+                secret,
+            } => {
+                let n = self
+                    .state
+                    .graph
+                    .nodes
+                    .get_mut(&room)
+                    .ok_or_else(|| CommandError::NotFound("room".into()))?;
+                n.region = region.chars().take(40).collect();
+                n.chapter = chapter.chars().take(40).collect();
+                n.secret = secret;
+            }
             DeleteEdge { edge } => {
                 if !self.state.graph.remove_edge(edge) {
                     return Err(CommandError::NotFound("edge".into()));

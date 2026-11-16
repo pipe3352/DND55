@@ -156,6 +156,99 @@ pub struct DmExtras {
     pub custom_monsters: Vec<dnd_rules::monster::MonsterTemplate>,
     pub scripts: Vec<crate::scripts::ScriptedEvent>,
     pub players_can_draw: bool,
+    /// Graph-editor cards for every room (DM only).
+    #[serde(default)]
+    pub room_cards: Vec<RoomCard>,
+}
+
+/// What the campaign-graph editor shows on a room's node (DM only; never sent to players).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RoomCard {
+    pub id: RoomId,
+    /// Tiny RGB preview of the map (`thumb_w`×`thumb_h`).
+    pub thumb_w: u16,
+    pub thumb_h: u16,
+    #[serde(with = "crate::hexbytes")]
+    pub thumb: Vec<u8>,
+    pub visited: bool,
+    pub monsters: u32,
+    pub hidden_monsters: u32,
+    /// Dominant surface: "outdoor", "cave", "dungeon", "building", "water" or "empty".
+    pub kind: String,
+    pub size: (i32, i32),
+}
+
+impl Session {
+    /// Map preview and statistics for one room (graph editor).
+    pub fn room_card(&self, id: RoomId) -> Option<RoomCard> {
+        let r = self.state.rooms.get(&id)?;
+        let m = &r.map;
+        let (tw, th) = (m.width.min(32) as u16, m.height.min(24) as u16);
+        let mut thumb = Vec::with_capacity(tw as usize * th as usize * 3);
+        let mut tally: std::collections::HashMap<&str, u32> = Default::default();
+        for ty in 0..th as i32 {
+            for tx in 0..tw as i32 {
+                let (x, y) = (tx * m.width / tw as i32, ty * m.height / th as i32);
+                let i = (y * m.width + x) as usize;
+                let mut color = m.background;
+                for layer in m
+                    .layers
+                    .iter()
+                    .filter(|l| l.visible && l.kind != dnd_world::map::LayerKind::Overhead)
+                {
+                    let v = layer.tiles[i];
+                    if v != 0
+                        && let Some(p) = m.palette.get(v as usize - 1)
+                    {
+                        if let Some(a) = self.catalog.get(&p.asset_id) {
+                            color = a.color;
+                        }
+                        if layer.kind == dnd_world::map::LayerKind::Terrain {
+                            *tally.entry(p.asset_id.as_str()).or_default() += 1;
+                        }
+                    }
+                }
+                if let Some(o) = m.objects.iter().find(|o| o.covers((x, y)))
+                    && let Some(a) = self.catalog.get(&o.asset_id)
+                {
+                    color = a.color;
+                }
+                thumb.extend_from_slice(&color);
+            }
+        }
+        let dominant = tally
+            .iter()
+            .max_by_key(|(_, n)| **n)
+            .map(|(id, _)| *id)
+            .unwrap_or("");
+        let kind = match dominant {
+            "" => "empty",
+            "grass" | "dirt" | "sand" | "snow" | "road" | "undergrowth" | "mud" | "gravel"
+            | "ice" => "outdoor",
+            "cave_floor" | "rubble" | "lava" => "cave",
+            "wood_floor" => "building",
+            "water_shallow" | "water_deep" => "water",
+            _ => "dungeon",
+        }
+        .to_string();
+        let monsters: Vec<_> = self
+            .state
+            .creatures
+            .values()
+            .filter(|c| c.room == id && c.is_alive() && c.faction != Faction::Party)
+            .collect();
+        Some(RoomCard {
+            id,
+            thumb_w: tw,
+            thumb_h: th,
+            thumb,
+            visited: r.visited,
+            monsters: monsters.len() as u32,
+            hidden_monsters: monsters.iter().filter(|c| c.hidden).count() as u32,
+            kind,
+            size: (m.width, m.height),
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -489,6 +582,12 @@ impl Session {
             custom_monsters: s.custom_monsters.clone(),
             scripts: s.scripts.clone(),
             players_can_draw: s.settings.players_can_draw,
+            room_cards: s
+                .graph
+                .nodes
+                .keys()
+                .filter_map(|id| self.room_card(*id))
+                .collect(),
         });
         let effects = s
             .effects
