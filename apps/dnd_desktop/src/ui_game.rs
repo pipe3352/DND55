@@ -39,13 +39,13 @@ pub fn game_ui(
     mut contexts: EguiContexts,
     mut g: GameUi,
     mut commands: Commands,
-    mut themed: Local<Option<f32>>,
+    mut themed: Local<Option<(f32, bool)>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
     theme::set_reduced_motion(&ctx, g.settings.reduced_motion);
-    if *themed != Some(g.ui.ui_scale) {
+    if *themed != Some((g.ui.ui_scale, g.settings.reduced_motion)) {
         theme::apply(&ctx, g.ui.ui_scale);
-        *themed = Some(g.ui.ui_scale);
+        *themed = Some((g.ui.ui_scale, g.settings.reduced_motion));
         // Named font families become usable from the next frame.
         ctx.request_repaint();
         return Ok(());

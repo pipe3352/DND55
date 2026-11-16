@@ -11,15 +11,21 @@ DND55 is an independent project, compatible with fifth edition. It is not affili
 
 Software libraries (statically linked)
 --------------------------------------
-Bevy (MIT/Apache-2.0), egui & bevy_egui (MIT/Apache-2.0), wgpu (MIT/Apache-2.0), winit (Apache-2.0),
+Bevy (MIT/Apache-2.0), egui & bevy_egui (MIT/Apache-2.0), wgpu (MIT/Apache-2.0), winit (Apache-2.0; a copy with one patched assertion is vendored, see vendor/README.md),
 Tokio (MIT), serde (MIT/Apache-2.0), rusqlite (MIT) with SQLite (public domain), image (MIT/Apache-2.0),
 rand_chacha (MIT/Apache-2.0), rodio/cpal (Apache-2.0), rfd (MIT), plus their dependencies under
 MIT/Apache-2.0/BSD/Zlib-style licenses. Full list: `cargo tree` in the source repository.
 
-Fonts: egui's bundled fonts (Ubuntu-Light: Ubuntu Font Licence; Hack: MIT; Noto Emoji: OFL/Apache;
+Fonts embedded in DND55.exe (SIL Open Font License 1.1; full license texts follow below):
+  UnifrakturCook Bold - Copyright (c) 2010 j. 'mach' wust (Reserved Font Name UnifrakturCook),
+                        Copyright (c) 2009 Peter Wiegel
+  Grenze Gotisch      - Copyright 2020 The Grenze Gotisch Project Authors
+  Crimson Text        - Copyright 2010 The Crimson Text Project Authors
+Also egui's bundled fonts (Ubuntu-Light: Ubuntu Font Licence; Hack: MIT; Noto Emoji: OFL/Apache;
 emoji-icon-font: MIT/OFL) and Bevy's default font (Fira Mono: OFL).
 
 Art and sound
 -------------
-All map tiles, objects, tokens, icons, sound effects and music in DND55 are generated procedurally by
-the program itself (original work, MIT-licensed with the code).
+All map tiles, objects, tokens, icons, menu artwork, materials, water/lava shaders, sound effects and
+music in DND55 are generated procedurally by the program itself (original work, MIT-licensed with the
+code). No third-party images are included.

@@ -27,10 +27,17 @@ It falls under the same license and attribution.
 
 ## Art, audio, fonts
 
-* **Tiles/objects:** procedurally generated at runtime by `apps/dnd_desktop/src/textures.rs`. This is
-  original work, so there is no third-party art.
+* **Tiles/objects/icons/menu scene/materials:** procedurally generated at runtime by
+  `terrain_art.rs`, `icons.rs`, `menu_scene.rs` and `theme.rs`; water and lava come from the
+  `shaders/liquid.wgsl` shader. This is original work, so there is no third-party art.
 * **Sound effects:** synthesized at startup by `audio.rs` (original).
-* **Fonts:** egui's and Bevy's bundled default fonts, under their respective open licenses.
+* **Fonts:** three SIL OFL 1.1 fonts are embedded (licenses in `apps/dnd_desktop/assets/fonts/` and in
+  the release's `LICENSE.txt`): *UnifrakturCook* (Blackletter titles), *Grenze Gotisch* (headings) and
+  *Crimson Text* (body text). They come from the Google Fonts repository and were chosen for their
+  license and Italian character coverage. egui's and Bevy's bundled fonts are used as symbol fallbacks.
+* **Art direction references:** the reference images supplied by the project owner (illustrated
+  medieval emblems, Blackletter alphabet, tile sheets) only inspired the style. Nothing was traced or
+  copied; every icon, tile, object and the menu scene is drawn by code in this repository.
 * **Portraits:** uploaded by users. The host re-encodes them and keeps them inside the campaign.
 * **Future asset packs** must ship with a license file; the importer will record source and license for each pack.
 

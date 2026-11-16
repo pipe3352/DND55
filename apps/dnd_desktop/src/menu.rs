@@ -49,13 +49,13 @@ pub fn menu_ui(
     mut p: MenuParams,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
-    mut themed: Local<Option<f32>>,
+    mut themed: Local<Option<(f32, bool)>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
     theme::set_reduced_motion(&ctx, p.settings.reduced_motion);
-    if *themed != Some(p.ui.ui_scale) {
+    if *themed != Some((p.ui.ui_scale, p.settings.reduced_motion)) {
         theme::apply(&ctx, p.ui.ui_scale);
-        *themed = Some(p.ui.ui_scale);
+        *themed = Some((p.ui.ui_scale, p.settings.reduced_motion));
         // Named font families become usable from the next frame.
         ctx.request_repaint();
         return Ok(());

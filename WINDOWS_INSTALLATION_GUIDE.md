@@ -91,7 +91,9 @@ Open **Start menu → DND55**. The first start can take a few seconds while Wind
 ### Step 8 — Settings
 
 Main menu → **Settings** (or **⚙** in the game's top bar): language (English/Italiano), interface scale, resolution, windowed / borderless /
-fullscreen, VSync, graphics backend, and master / effects / music / ambience volume. The **Open save
+fullscreen, VSync, FPS limit, **graphics quality** (Low / Medium / High / Ultra: use Low or Medium on
+older laptops), **Reduced motion** (fewer animations), graphics backend, and master / effects / music /
+ambience volume. The **Open save
 folder** button opens the folder with your saves and logs.
 
 ### Step 9 — Play

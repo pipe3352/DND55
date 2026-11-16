@@ -29,16 +29,16 @@ PL=$!
 sleep 12
 click() { xdotool mousemove "$1" "$2"; sleep 0.4; xdotool mousedown 1; sleep 0.15; xdotool mouseup 1; }
 # Player: cast Fire Bolt at the goblin.
-DISPLAY=:98 click 499 185
+DISPLAY=:98 click 496 228
 sleep 1
-DISPLAY=:98 click 855 462
+DISPLAY=:98 click 623 340
 # DM: drag a monster from the bestiary list onto the map.
 export DISPLAY=:97
 # Press on the centre of the first row ("Aboleth"; the window is pinned at 18,18), start the drag
 # inside that row (egui's drag threshold), then carry it over the map and drop.
-xdotool mousemove 200 151; sleep 0.3; xdotool mousedown 1; sleep 0.2
-for x in 206 214 224; do xdotool mousemove $x 151; sleep 0.1; done
-for x in 400 600 800 1000; do xdotool mousemove $x 300; sleep 0.1; done
+xdotool mousemove 200 222; sleep 0.3; xdotool mousedown 1; sleep 0.2
+for x in 206 214 224; do xdotool mousemove $x 222; sleep 0.1; done
+for x in 400 600 800 900; do xdotool mousemove $x 250; sleep 0.1; done
 sleep 0.3; xdotool mouseup 1
 unset DISPLAY
 wait $PL $DM

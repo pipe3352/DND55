@@ -10,6 +10,19 @@
 | **Wine** | The Windows `.exe` started under Wine on Linux (not real Windows). |
 | **Manual (Windows)** | Not done yet. Use [`WINDOWS_ACCEPTANCE_CHECKLIST.md`](WINDOWS_ACCEPTANCE_CHECKLIST.md). |
 
+## Milestone 3 — Visual overhaul (this release)
+
+| Area | Status | Verified by |
+|---|---|---|
+| Design system: palette, OFL Blackletter/gothic/serif fonts, materials, components, icon set | ✅ | Font coverage + icon tests; screenshots |
+| Main menu scene, creator class cards, sheet medallions, HUD (initiative, dice, banners, titles) | ✅ | Screenshots (before/after) |
+| Terrain materials, variants, organic transitions, AO, shadows, decor, illustrated objects | ✅ | Art tests (sizes, seamless edges, masks); screenshots |
+| Animated water and lava shader; lava as a light source | ✅ | Light test; screenshots (software Vulkan). DX12 on real Windows not verified |
+| Soft fog of war without leaks | ✅ | Unit test |
+| Weather/atmosphere, combat VFX, crit shake, quality presets, reduced motion, FPS cap | ✅ | Screenshots; settings tests |
+| Map editor workspace (toolbar, palette, inspector, layers bar, minimap, overlays, context menu, preview) | ✅ | Screenshot; drag-from-bestiary click test |
+| Campaign graph editor (cards, styled edges, drag-connect, edge editing, layout, minimap, regions, confirmed travel) | ✅ | Layout/reachability/secrecy tests; screenshot. Canvas interactions not click-tested |
+
 ## Milestone 2 — "Complete game + Windows release" (this release)
 
 | Area | Status | Verified by |
