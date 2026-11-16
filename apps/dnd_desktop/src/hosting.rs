@@ -17,10 +17,10 @@ pub fn open_store() -> Result<Store, String> {
     // campaigns.db.bak (recovery copy if a save or a migration ever goes wrong).
     static BACKUP: std::sync::Once = std::sync::Once::new();
     BACKUP.call_once(|| {
-        if path.exists() {
-            if let Err(e) = std::fs::copy(&path, path.with_extension("db.bak")) {
-                bevy::log::warn!("could not back up {}: {e}", path.display());
-            }
+        if path.exists()
+            && let Err(e) = std::fs::copy(&path, path.with_extension("db.bak"))
+        {
+            bevy::log::warn!("could not back up {}: {e}", path.display());
         }
     });
     Store::open(&path).map_err(|e| e.to_string())

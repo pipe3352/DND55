@@ -3,7 +3,7 @@
 # displays, driven by actual mouse events. Asserts on the adventure log each client received.
 #
 #   1. Player (Wizard): Spellbook → "Cast" Fire Bolt → click the goblin  ⇒ "casts Fire Bolt"
-#   2. DM: drag a monster from the Bestiary list onto the map          ⇒ a second monster appears
+#   2. DM: drag "Aboleth" from the Bestiary list onto the map          ⇒ "Aboleth 1" is on the map
 #
 # Coordinates assume a 1600×900 window at UI scale 1.0.
 # Usage: scripts/gui-click-test.sh [path/to/DND55]
@@ -34,15 +34,16 @@ sleep 1
 DISPLAY=:98 click 855 462
 # DM: drag a monster from the bestiary list onto the map.
 export DISPLAY=:97
-xdotool mousemove 200 167; sleep 0.3; xdotool mousedown 1
-for x in 300 500 700 900 1000; do xdotool mousemove $x 300; sleep 0.1; done
+# Press on the centre of the first row ("Aboleth"; the window is pinned at 18,18), start the drag
+# inside that row (egui's drag threshold), then carry it over the map and drop.
+xdotool mousemove 200 151; sleep 0.3; xdotool mousedown 1; sleep 0.2
+for x in 206 214 224; do xdotool mousemove $x 151; sleep 0.1; done
+for x in 400 600 800 1000; do xdotool mousemove $x 300; sleep 0.1; done
 sleep 0.3; xdotool mouseup 1
 unset DISPLAY
 wait $PL $DM
 fail=0
 grep -q "GAMELOG: .*casts Fire Bolt" "$OUT/player.log" && echo "PASS: player cast Fire Bolt via mouse" || { echo "FAIL: no Fire Bolt in player log"; fail=1; }
-# The DM's room starts with Brunhild + Goblin Warrior 1; a dropped monster makes it three.
-n=$(grep "GAMELOG-CREATURES:" "$OUT/dm.log" | tr ',' '\n' | wc -l)
-[ "$n" -ge 3 ] && echo "PASS: DM dragged a monster from the bestiary onto the map ($(grep GAMELOG-CREATURES "$OUT/dm.log"))" || { echo "FAIL: no dragged monster on the DM map"; fail=1; }
+grep -q "GAMELOG-CREATURES: .*Aboleth 1" "$OUT/dm.log" && echo "PASS: DM dragged a monster from the bestiary onto the map ($(grep GAMELOG-CREATURES "$OUT/dm.log"))" || { echo "FAIL: no dragged monster on the DM map"; fail=1; }
 echo "Screenshots: $OUT/dm.png $OUT/player.png"
 exit $fail
