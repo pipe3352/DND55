@@ -71,16 +71,30 @@ pub fn error_dialog(title: &str, message: &str) {
     eprintln!("{title}: {message}");
 }
 
+/// Whether a panic came from graphics initialisation (by message or by where it happened).
+pub fn is_graphics_failure(message: &str, location: &str) -> bool {
+    let t = message.to_lowercase();
+    [
+        "adapter",
+        "gpu",
+        "wgpu",
+        "surface",
+        "vulkan",
+        "dx12",
+        "requestdevice",
+        "device(lost)",
+        "swapchain",
+    ]
+    .iter()
+    .any(|k| t.contains(k))
+        || location.contains("bevy_render")
+        || location.contains("wgpu")
+}
+
 /// Human explanation for common fatal errors (shown in the crash dialog).
 pub fn explain(panic_text: &str) -> &'static str {
     let t = panic_text.to_lowercase();
-    if t.contains("adapter")
-        || t.contains("gpu")
-        || t.contains("wgpu")
-        || t.contains("surface")
-        || t.contains("vulkan")
-        || t.contains("dx12")
-    {
+    if is_graphics_failure(&t, "") {
         "DND55 could not start the graphics system.\n\n\
          • Update your graphics driver (NVIDIA / AMD / Intel website).\n\
          • Open Settings ▶ Graphics backend and try another option (DirectX 12 / Vulkan / OpenGL),\n\
@@ -175,7 +189,7 @@ pub fn install_crash_handler() {
         }
         // Graphics failed: silently retry with another backend before bothering the user.
         if std::thread::current().name() == Some("main")
-            && explain(&msg).contains("graphics")
+            && is_graphics_failure(&msg, &location)
             && relaunch_with_next_backend()
         {
             std::process::exit(0);
@@ -186,7 +200,11 @@ pub fn install_crash_handler() {
                 "DND55 — error",
                 &format!(
                     "{}\n\nDetails: {msg}\n\nA crash report was saved to:\n{}",
-                    explain(&msg),
+                    if is_graphics_failure(&msg, &location) {
+                        explain("gpu")
+                    } else {
+                        explain(&msg)
+                    },
                     path.display()
                 ),
             );
@@ -252,5 +270,28 @@ mod tests {
         unsafe { std::env::set_var("DND55_DATA_DIR", "/tmp/dnd55-test-dir") };
         assert_eq!(data_dir(), PathBuf::from("/tmp/dnd55-test-dir"));
         unsafe { std::env::remove_var("DND55_DATA_DIR") };
+    }
+}
+
+#[cfg(test)]
+mod gpu_tests {
+    use super::*;
+
+    #[test]
+    fn graphics_failures_are_recognised() {
+        // Seen under Wine: DX12 device creation fails with a generic error inside bevy_render.
+        assert!(is_graphics_failure(
+            "called `Result::unwrap()` on an `Err` value: RequestDeviceError { inner: Core(Device(Lost)) }",
+            ""
+        ));
+        assert!(is_graphics_failure(
+            "something odd",
+            "/x/bevy_render-0.20.1/src/renderer/mod.rs:364"
+        ));
+        assert!(!is_graphics_failure(
+            "index out of bounds",
+            "src/ui_game.rs:10"
+        ));
+        assert!(explain("Unable to find a GPU adapter").contains("graphics"));
     }
 }

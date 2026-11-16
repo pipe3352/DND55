@@ -39,3 +39,8 @@ debug = "line-tables-only"
 [profile.release]
 strip = true
 lto = "thin"
+
+# winit 0.30.13 with one change: skip incomplete display modes on Windows instead of panicking
+# (crash seen under Wine; also reported with some virtual/remote display drivers). See vendor/README.md.
+[patch.crates-io]
+winit = { path = "vendor/winit-0.30.13" }
