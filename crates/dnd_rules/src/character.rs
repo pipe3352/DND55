@@ -70,6 +70,45 @@ pub struct CharacterSheet {
     pub inventory: Vec<crate::items::ItemStack>,
     #[serde(default)]
     pub currency: crate::items::Currency,
+    /// Map token icon ("knight", "archer"…). `None` = the class default (see `token_icon`).
+    #[serde(default)]
+    pub token_icon: Option<String>,
+}
+
+/// Token icons a player can choose for a character.
+pub const TOKEN_ICONS: [&str; 14] = [
+    "warrior",
+    "knight",
+    "mage",
+    "archer",
+    "rogue",
+    "cleric",
+    "paladin",
+    "druid",
+    "barbarian",
+    "bard",
+    "monk",
+    "ranger",
+    "sorcerer",
+    "warlock",
+];
+
+/// The default token icon of a class.
+pub fn class_token_icon(class: ClassId) -> &'static str {
+    match class {
+        ClassId::Barbarian => "barbarian",
+        ClassId::Bard => "bard",
+        ClassId::Cleric => "cleric",
+        ClassId::Druid => "druid",
+        ClassId::Fighter => "warrior",
+        ClassId::Monk => "monk",
+        ClassId::Paladin => "paladin",
+        ClassId::Ranger => "ranger",
+        ClassId::Rogue => "rogue",
+        ClassId::Sorcerer => "sorcerer",
+        ClassId::Warlock => "warlock",
+        ClassId::Wizard => "mage",
+    }
 }
 
 /// SRD 5.2.1 Fighting Style feats.
@@ -133,6 +172,14 @@ pub const STANDARD_ARRAY: [u8; 6] = [15, 14, 13, 12, 10, 8];
 pub const POINT_BUY_BUDGET: u32 = 27;
 
 impl CharacterSheet {
+    /// The icon drawn on this character's map token.
+    pub fn token_icon(&self) -> String {
+        self.token_icon
+            .clone()
+            .filter(|t| TOKEN_ICONS.contains(&t.as_str()))
+            .unwrap_or_else(|| class_token_icon(self.class).to_string())
+    }
+
     pub fn class_def(&self) -> &'static content::ClassDef {
         content::class(self.class)
     }
@@ -730,6 +777,7 @@ impl CharacterSheet {
             prepared_spells: vec![],
             inventory: vec![],
             currency: Default::default(),
+            token_icon: None,
         }
     }
 

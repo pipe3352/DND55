@@ -326,7 +326,7 @@ pub fn palette(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
             asset_grid(ui, g, &recent);
         }
     }
-    for (cat, key) in [
+    const CATS: [(Category, &str); 7] = [
         (Category::Terrain, "cat.terrain"),
         (Category::Architecture, "cat.architecture"),
         (Category::Vegetation, "cat.vegetation"),
@@ -334,23 +334,91 @@ pub fn palette(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
         (Category::Natural, "cat.natural"),
         (Category::Dungeon, "cat.dungeon"),
         (Category::Fantasy, "cat.fantasy"),
-    ] {
-        let items: Vec<String> = g
-            .catalog
-            .0
-            .search(&search, Some(cat))
-            .map(|a| a.id.clone())
-            .collect();
-        if items.is_empty() {
+    ];
+    // Category filter chips.
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .selectable_label(g.ui.asset_cat.is_none(), g.i18n.t("editor.all"))
+            .clicked()
+        {
+            g.ui.asset_cat = None;
+            g.ui.asset_group = None;
+        }
+        for (cat, key) in CATS {
+            if ui
+                .selectable_label(g.ui.asset_cat == Some(cat), g.i18n.t(key))
+                .clicked()
+            {
+                g.ui.asset_cat = (g.ui.asset_cat != Some(cat)).then_some(cat);
+                g.ui.asset_group = None;
+            }
+        }
+    });
+    for (cat, key) in CATS {
+        if g.ui.asset_cat.is_some_and(|c| c != cat) {
             continue;
         }
-        egui::CollapsingHeader::new(theme::gothic(
-            format!("{} ({})", g.i18n.t(key), items.len()),
-            17.0,
-        ))
-        .id_salt(key)
-        .default_open(!search.is_empty() || cat == Category::Terrain)
-        .show(ui, |ui| asset_grid(ui, g, &items));
+        // Items grouped by their sub-group (first tag); objects without one go under "other".
+        let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+        for a in g.catalog.0.search(&search, Some(cat)) {
+            let grp = a.tags.first().cloned().unwrap_or_default();
+            match groups.iter_mut().find(|(k, _)| *k == grp) {
+                Some((_, v)) => v.push(a.id.clone()),
+                None => groups.push((grp, vec![a.id.clone()])),
+            }
+        }
+        let total: usize = groups.iter().map(|(_, v)| v.len()).sum();
+        if total == 0 {
+            continue;
+        }
+        let only = g.ui.asset_cat == Some(cat);
+        if only && groups.len() > 1 {
+            ui.horizontal_wrapped(|ui| {
+                for (grp, v) in &groups {
+                    let label = format!("{} {}", group_label(g, grp), v.len());
+                    if ui
+                        .selectable_label(g.ui.asset_group.as_deref() == Some(grp.as_str()), label)
+                        .clicked()
+                    {
+                        g.ui.asset_group = (g.ui.asset_group.as_deref() != Some(grp.as_str()))
+                            .then(|| grp.clone());
+                    }
+                }
+            });
+        }
+        egui::CollapsingHeader::new(theme::gothic(format!("{} ({total})", g.i18n.t(key)), 17.0))
+            .id_salt(key)
+            .default_open(!search.is_empty() || only || cat == Category::Terrain)
+            .open((only || !search.is_empty()).then_some(true))
+            .show(ui, |ui| {
+                for (grp, items) in &groups {
+                    if only && g.ui.asset_group.as_ref().is_some_and(|sel| sel != grp) {
+                        continue;
+                    }
+                    if groups.len() > 1 {
+                        ui.label(
+                            theme::italic(group_label(g, grp))
+                                .size(14.0)
+                                .color(theme::INK_SOFT),
+                        );
+                    }
+                    asset_grid(ui, g, items);
+                }
+            });
+    }
+}
+
+/// Sub-group name ("tree" → "Trees"); unknown groups show the tag itself.
+fn group_label(g: &GameUi, grp: &str) -> String {
+    if grp.is_empty() {
+        return g.i18n.t("group.other").to_string();
+    }
+    let key = format!("group.{grp}");
+    let t = g.i18n.t(&key);
+    if t == key {
+        grp.to_string()
+    } else {
+        t.to_string()
     }
 }
 

@@ -24,6 +24,11 @@ pub struct CharacterDraft {
     pub library_id: Option<i64>,
     pub step: usize,
     pub message: String,
+    /// Character Manager state: list search, editor open, details tab, pending delete.
+    pub cm_search: String,
+    pub cm_editing: bool,
+    pub cm_tab: u8,
+    pub cm_confirm_delete: Option<i64>,
 }
 
 impl Default for CharacterDraft {
@@ -37,6 +42,10 @@ impl Default for CharacterDraft {
             library_id: None,
             step: 0,
             message: String::new(),
+            cm_search: String::new(),
+            cm_editing: false,
+            cm_tab: 0,
+            cm_confirm_delete: None,
         }
     }
 }
@@ -64,7 +73,7 @@ pub fn skill_name(s: Skill) -> String {
     out
 }
 
-fn load_portrait_tex(ctx: &egui::Context, png: &[u8]) -> Option<egui::TextureHandle> {
+pub fn load_portrait_tex(ctx: &egui::Context, png: &[u8]) -> Option<egui::TextureHandle> {
     let img = image::load_from_memory(png)
         .ok()?
         .thumbnail(192, 192)
@@ -567,11 +576,75 @@ fn step_details(ui: &mut egui::Ui, d: &mut CharacterDraft, i18n: &I18n) {
             d.portrait_tex = None;
         }
     });
-    if let Some(t) = &d.portrait_tex {
-        ui.image((t.id(), egui::vec2(96.0, 96.0)));
-    }
+    token_picker(ui, d, i18n);
     ui.label(i18n.t("creator.biography"));
     ui.add(egui::TextEdit::multiline(&mut d.sheet.biography).desired_rows(5));
+}
+
+/// Map token: class default or one of the illustrated icons, with a live preview. An uploaded
+/// portrait replaces the icon on the map (inside the same side frame).
+fn token_picker(ui: &mut egui::Ui, d: &mut CharacterDraft, i18n: &I18n) {
+    use crate::terrain_art::token_art::Side;
+    use dnd_rules::character::{TOKEN_ICONS, class_token_icon};
+    theme::heading(ui, i18n.t("creator.token"));
+    ui.horizontal(|ui| {
+        // Preview at map size and at a large size.
+        let icon = d.sheet.token_icon();
+        let tex = crate::tokens::token_egui(ui.ctx(), &icon, Side::Friendly);
+        ui.vertical(|ui| {
+            if let Some(t) = &d.portrait_tex {
+                ui.image((t.id(), egui::vec2(96.0, 96.0)));
+                ui.label(egui::RichText::new(i18n.t("creator.token_portrait")).small());
+            } else {
+                ui.image((tex.id(), egui::vec2(96.0, 96.0)));
+            }
+            ui.horizontal(|ui| {
+                ui.image((tex.id(), egui::vec2(28.0, 28.0)));
+                ui.label(egui::RichText::new(i18n.t("creator.token_map_size")).small());
+            });
+        });
+        ui.vertical(|ui| {
+            let default = class_token_icon(d.sheet.class);
+            if ui
+                .selectable_label(
+                    d.sheet.token_icon.is_none(),
+                    format!(
+                        "{} ({})",
+                        i18n.t("creator.token_class_default"),
+                        i18n.t(&format!("token.{default}"))
+                    ),
+                )
+                .clicked()
+            {
+                d.sheet.token_icon = None;
+            }
+            // As many icons per row as fit, so the grid never spills into the next column.
+            let per_row = ((ui.available_width() / 60.0).floor() as usize).clamp(2, 7);
+            egui::Grid::new("token-grid")
+                .spacing([4.0, 4.0])
+                .show(ui, |ui| {
+                    for (k, name) in TOKEN_ICONS.iter().enumerate() {
+                        let t = crate::tokens::token_egui(ui.ctx(), name, Side::Friendly);
+                        let selected = d.sheet.token_icon.as_deref() == Some(*name);
+                        let r = ui
+                            .add(
+                                egui::Button::image(egui::Image::new((
+                                    t.id(),
+                                    egui::vec2(40.0, 40.0),
+                                )))
+                                .selected(selected),
+                            )
+                            .on_hover_text(i18n.t(&format!("token.{name}")));
+                        if r.clicked() {
+                            d.sheet.token_icon = Some((*name).to_string());
+                        }
+                        if k % per_row == per_row - 1 {
+                            ui.end_row();
+                        }
+                    }
+                });
+        });
+    });
 }
 
 fn summary(ui: &mut egui::Ui, d: &CharacterDraft, i18n: &I18n) {

@@ -2042,7 +2042,7 @@ impl Session {
         }
         let closing = o.open;
         if closing
-            && o.asset_id == "door"
+            && dnd_world::map::is_door(&o.asset_id)
             && self
                 .state
                 .creatures

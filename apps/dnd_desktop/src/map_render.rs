@@ -43,6 +43,8 @@ pub struct ArtCache {
     shadow: Option<Handle<Image>>,
     glow: Option<Handle<Image>>,
     fog: Option<Handle<Image>>,
+    /// Object art replaced by imported packs (loaded on first use; see `asset_packs`).
+    packs: Option<HashMap<String, std::path::PathBuf>>,
 }
 
 impl ArtCache {
@@ -81,9 +83,33 @@ impl ArtCache {
         color: [u8; 3],
         images: &mut Assets<Image>,
     ) -> Handle<Image> {
+        let packs = self.packs.get_or_insert_with(|| {
+            let root = crate::platform::data_dir().join("asset_packs");
+            let ids: Vec<String> = dnd_world::catalog::Catalog::builtin()
+                .assets
+                .into_iter()
+                .filter(|a| a.is_object)
+                .map(|a| a.id)
+                .collect();
+            crate::asset_packs::write_template(&root, &ids);
+            let p = crate::asset_packs::scan(&root, &ids);
+            for (name, license) in &p.loaded {
+                info!("art pack '{name}' loaded ({license})");
+            }
+            for problem in &p.problems {
+                warn!("art pack: {problem}");
+            }
+            p.art
+        });
+        let pack = packs.get(id).cloned();
         self.objects
             .entry(format!("{id}:{w}x{h}"))
-            .or_insert_with(|| images.add(art::object(id, w, h, color)))
+            .or_insert_with(|| {
+                let img = pack
+                    .and_then(|p| crate::asset_packs::load_png(&p))
+                    .unwrap_or_else(|| art::object(id, w, h, color));
+                images.add(img)
+            })
             .clone()
     }
     fn decor(&mut self, d: Decor, images: &mut Assets<Image>) -> Handle<Image> {
@@ -410,12 +436,55 @@ pub fn rebuild_map(
         };
         let flat = matches!(
             o.asset_id.as_str(),
-            "rune_circle" | "pressure_plate" | "bones"
+            "rune_circle"
+                | "pressure_plate"
+                | "bones"
+                | "carpet"
+                | "rug"
+                | "puddle"
+                | "bloodstain"
+                | "ritual_symbol"
+                | "leaf_pile"
+                | "small_stones"
+                | "tall_grass"
+                | "cobweb"
+                | "spike_trap"
+                | "pit_trap"
+                | "scroll"
+                | "wildflowers"
+                | "roots"
+                | "vines"
+                | "fern"
+                | "secret_door"
+                | "portal"
+                | "chains"
+                | "stone_stairs"
         );
+        use dnd_world::map::ObjectLayer;
+        let flat = flat || o.layer == ObjectLayer::Floor;
+        // Floor decals under everything, standard objects under tokens (z 2), overhead above them.
+        let (z, layer_alpha) = match o.layer {
+            ObjectLayer::Floor => (0.62, 1.0),
+            ObjectLayer::Standard => (0.8, 1.0),
+            ObjectLayer::Overhead => (2.8, 0.85),
+        };
         if q.shadows() && !flat {
             let tall = matches!(
                 o.asset_id.as_str(),
-                "tree" | "big_tree" | "pillar" | "stalagmite" | "bookshelf"
+                "tree"
+                    | "big_tree"
+                    | "pillar"
+                    | "stalagmite"
+                    | "bookshelf"
+                    | "pine_tree"
+                    | "birch_tree"
+                    | "dead_tree"
+                    | "ancient_tree"
+                    | "statue"
+                    | "wardrobe"
+                    | "hanging_cage"
+                    | "stone_arch"
+                    | "magic_crystal"
             );
             let off = if tall { 0.18 } else { 0.09 };
             commands.spawn((
@@ -434,10 +503,10 @@ pub fn rebuild_map(
             Sprite {
                 image: cache.object(&def.id, o.w, o.h, def.color, &mut images),
                 custom_size: Some(Vec2::new(o.w as f32 * CELL, o.h as f32 * CELL)),
-                color: Color::srgba(1.0, 1.0, 1.0, alpha),
+                color: Color::srgba(1.0, 1.0, 1.0, alpha * layer_alpha),
                 ..default()
             },
-            Transform::from_xyz(center.x, center.y, 0.8).with_rotation(Quat::from_rotation_z(
+            Transform::from_xyz(center.x, center.y, z).with_rotation(Quat::from_rotation_z(
                 -(o.rotation as f32) * std::f32::consts::FRAC_PI_2,
             )),
         ));

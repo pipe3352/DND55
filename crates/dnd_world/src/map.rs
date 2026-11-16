@@ -56,6 +56,43 @@ pub enum AmbientLight {
     Darkness,
 }
 
+/// Draw order of an object relative to tokens: floor decals under everything, standard objects
+/// under tokens, overhead objects (cobwebs, hanging cages, banners) above tokens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ObjectLayer {
+    Floor,
+    #[default]
+    Standard,
+    Overhead,
+}
+
+impl ObjectLayer {
+    pub const ALL: [ObjectLayer; 3] = [
+        ObjectLayer::Floor,
+        ObjectLayer::Standard,
+        ObjectLayer::Overhead,
+    ];
+    pub fn default_for(asset_id: &str) -> Self {
+        match asset_id {
+            "carpet" | "rug" | "puddle" | "bloodstain" | "ritual_symbol" | "rune_circle"
+            | "pressure_plate" | "spike_trap" | "pit_trap" | "stone_stairs" | "leaf_pile"
+            | "small_stones" | "wildflowers" | "bedroll" | "secret_door" => ObjectLayer::Floor,
+            "cobweb" | "hanging_cage" | "chains" | "wall_banner" | "lantern" | "stone_arch" => {
+                ObjectLayer::Overhead
+            }
+            _ => ObjectLayer::Standard,
+        }
+    }
+}
+
+/// Doors and gates: they can be opened, and stop blocking while open.
+pub fn is_door(asset_id: &str) -> bool {
+    matches!(
+        asset_id,
+        "door" | "heavy_door" | "secret_door" | "iron_gate"
+    )
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MapObject {
     pub id: ObjectId,
@@ -78,6 +115,9 @@ pub struct MapObject {
     pub label: String,
     /// DM-only notes.
     pub dm_notes: String,
+    /// Draw layer (older saves default to Standard).
+    #[serde(default)]
+    pub layer: ObjectLayer,
 }
 
 impl MapObject {
@@ -95,10 +135,20 @@ impl MapObject {
             blocks_sight: a.blocks_sight,
             difficult: a.difficult,
             light: a.light.clone(),
-            interactable: matches!(a.id.as_str(), "door" | "chest" | "lever"),
+            interactable: is_door(&a.id)
+                || matches!(
+                    a.id.as_str(),
+                    "chest"
+                        | "reinforced_chest"
+                        | "locked_chest"
+                        | "lever"
+                        | "switch"
+                        | "puzzle_mechanism"
+                ),
             open: false,
             label: String::new(),
             dm_notes: String::new(),
+            layer: ObjectLayer::default_for(&a.id),
         }
     }
 
@@ -114,10 +164,10 @@ impl MapObject {
         self.footprint().any(|f| f == c)
     }
     fn effective_blocks_movement(&self) -> bool {
-        self.blocks_movement && !(self.open && self.asset_id == "door")
+        self.blocks_movement && !(self.open && is_door(&self.asset_id))
     }
     fn effective_blocks_sight(&self) -> bool {
-        self.blocks_sight && !(self.open && self.asset_id == "door")
+        self.blocks_sight && !(self.open && is_door(&self.asset_id))
     }
 }
 
@@ -370,6 +420,37 @@ impl GridMap {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn object_saves_without_layer_still_load_and_new_objects_round_trip() {
+        let cat = crate::catalog::Catalog::builtin();
+        let o = MapObject::from_asset(ObjectId(7), cat.get("cobweb").unwrap(), 2, 3);
+        assert_eq!(o.layer, ObjectLayer::Overhead);
+        let mut v = serde_json::to_value(&o).unwrap();
+        v.as_object_mut().unwrap().remove("layer"); // a save from before object layers
+        let old: MapObject = serde_json::from_value(v).unwrap();
+        assert_eq!(old.layer, ObjectLayer::Standard);
+        for a in cat.assets.iter().filter(|a| a.is_object) {
+            let o = MapObject::from_asset(ObjectId(1), a, 0, 0);
+            let back: MapObject =
+                serde_json::from_str(&serde_json::to_string(&o).unwrap()).unwrap();
+            assert_eq!(back, o, "{}", a.id);
+        }
+    }
+
+    #[test]
+    fn heavy_doors_and_gates_stop_blocking_when_open() {
+        let cat = crate::catalog::Catalog::builtin();
+        for id in ["heavy_door", "iron_gate", "secret_door"] {
+            let mut o = MapObject::from_asset(ObjectId(1), cat.get(id).unwrap(), 0, 0);
+            assert!(o.interactable && o.effective_blocks_movement(), "{id}");
+            o.open = true;
+            assert!(
+                !o.effective_blocks_movement() && !o.effective_blocks_sight(),
+                "{id}"
+            );
+        }
+    }
+
     use super::*;
     use crate::catalog::Catalog;
 

@@ -33,6 +33,7 @@ pub struct GameUi<'w> {
     pub fit: ResMut<'w, crate::input::CameraFit>,
     pub settings: ResMut<'w, crate::settings::GameSettings>,
     pub audio: Option<Res<'w, crate::audio::AudioStatus>>,
+    pub map_ptr: ResMut<'w, crate::pointer::MapPointer>,
 }
 
 pub fn game_ui(
@@ -51,6 +52,7 @@ pub fn game_ui(
         return Ok(());
     }
     let Some(view) = g.gv.view.clone() else {
+        *g.map_ptr = Default::default();
         egui::Area::new("waiting".into())
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(&ctx, |ui| {
@@ -245,6 +247,8 @@ pub fn game_ui(
             });
         });
 
+    // Whatever the panels left free is the map canvas: only there do wheel/clicks reach the map.
+    *g.map_ptr = crate::pointer::compute(&ctx, root.available_rect_before_wrap());
     overlays(&ctx, &mut g, &view);
     if editing && !preview {
         crate::editor_ui::minimap(&ctx, &mut g, &view);
@@ -1200,7 +1204,6 @@ fn initiative_card(
     c: Option<&dnd_session::view::CreatureView>,
     active: bool,
 ) {
-    use dnd_session::model::Faction;
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 38.0), egui::Sense::hover());
     let p = ui.painter();
@@ -1240,27 +1243,36 @@ fn initiative_card(
         ),
         egui::StrokeKind::Inside,
     );
-    let faction_color = match c.map(|c| c.faction) {
-        Some(Faction::Party) => theme::FOREST,
-        Some(Faction::Hostile) => theme::BURGUNDY,
-        _ => theme::SLATE,
-    };
+    // Illustrated token (emblem + side frame): sides differ by frame shape, not only colour.
     let token = egui::pos2(rect.left() + 20.0, rect.center().y);
-    p.circle_filled(token, 14.0, faction_color);
-    p.circle_stroke(token, 14.0, egui::Stroke::new(1.5, theme::GOLD));
-    let initial: String = e
-        .name
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().collect())
-        .unwrap_or_default();
-    p.text(
-        token,
-        egui::Align2::CENTER_CENTER,
-        initial,
-        egui::FontId::new(16.0, theme::gothic_family()),
-        theme::IVORY,
-    );
+    if let Some(c) = c {
+        let tex = crate::tokens::token_egui(
+            ui.ctx(),
+            &crate::tokens::emblem(c),
+            crate::tokens::side(c.faction),
+        );
+        p.image(
+            tex.id(),
+            egui::Rect::from_center_size(token, egui::vec2(32.0, 32.0)),
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    } else {
+        p.circle_filled(token, 14.0, theme::SLATE);
+        let initial: String = e
+            .name
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().collect())
+            .unwrap_or_default();
+        p.text(
+            token,
+            egui::Align2::CENTER_CENTER,
+            initial,
+            egui::FontId::new(16.0, theme::gothic_family()),
+            theme::IVORY,
+        );
+    }
     p.text(
         egui::pos2(rect.left() + 42.0, rect.top() + 11.0),
         egui::Align2::LEFT_CENTER,

@@ -192,6 +192,9 @@ pub struct UiState {
     pub layer: LayerKind,
     pub asset: String,
     pub asset_search: String,
+    /// Asset browser filters: category chip and sub-group chip (first tag, e.g. "tree").
+    pub asset_cat: Option<dnd_world::catalog::Category>,
+    pub asset_group: Option<String>,
     pub favorites: Vec<String>,
     pub monster: String,
     pub spawn_hidden: bool,
@@ -295,6 +298,8 @@ impl Default for UiState {
             layer: LayerKind::Terrain,
             asset: "stone_floor".into(),
             asset_search: String::new(),
+            asset_cat: None,
+            asset_group: None,
             favorites: vec![
                 "stone_floor".into(),
                 "stone_wall".into(),

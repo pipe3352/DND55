@@ -1,6 +1,6 @@
 //! Main menu: Play (quick demo), Create, Join, Load, Character Manager, Settings, Exit.
 
-use crate::character_ui::{CharacterDraft, creator_ui};
+use crate::character_ui::CharacterDraft;
 use crate::hosting::{self, open_store};
 use crate::i18n::I18n;
 use crate::state::{HostRuntime, MenuPage, Net, UiState};
@@ -95,7 +95,9 @@ pub fn menu_ui(
         });
 
     // Sub-pages open as a parchment window on the right, fading in.
-    if page != MenuPage::Main {
+    if page == MenuPage::Characters {
+        crate::char_manager::window(&ctx, &mut p);
+    } else if page != MenuPage::Main {
         let fade = if reduced {
             1.0
         } else {
@@ -109,11 +111,7 @@ pub fn menu_ui(
             )
             .resizable(false)
             .collapsible(false)
-            .min_width(if page == MenuPage::Characters {
-                860.0
-            } else {
-                440.0
-            })
+            .min_width(440.0)
             .max_height(ctx.viewport_rect().height() - 120.0)
             .show(&ctx, |ui| {
                 theme::window_bg(ui);
@@ -124,7 +122,7 @@ pub fn menu_ui(
                         MenuPage::Create => create_page(ui, &mut p, &mut commands),
                         MenuPage::Join => join_page(ui, &mut p),
                         MenuPage::Load => load_page(ui, &mut p, &mut commands),
-                        MenuPage::Characters => characters_page(ui, &mut p),
+                        MenuPage::Characters => {}
                         MenuPage::Settings => settings_page(ui, &mut p),
                     }
                     ui.separator();
@@ -380,46 +378,6 @@ fn load_page(ui: &mut egui::Ui, p: &mut MenuParams, commands: &mut Commands) {
         });
     if let Some(id) = chosen {
         load_campaign(p, commands, id);
-    }
-}
-
-fn characters_page(ui: &mut egui::Ui, p: &mut MenuParams) {
-    theme::heading(ui, p.i18n.t("menu.characters"));
-    ui.horizontal(|ui| {
-        ui.label(p.i18n.t("chars.library"));
-        if ui.button(p.i18n.t("chars.new")).clicked() {
-            *p.draft = CharacterDraft::default();
-        }
-        let mut load = None;
-        for c in &p.cache.characters {
-            if ui.button(&c.name).clicked() {
-                load = Some(c.clone());
-            }
-        }
-        if let Some(c) = load {
-            p.draft.sheet = c.sheet;
-            p.draft.portrait_tex = None;
-            p.draft.portrait = c.portrait_png;
-            p.draft.library_id = Some(c.id);
-        }
-    });
-    ui.separator();
-    if creator_ui(ui, &mut p.draft, &p.i18n) {
-        match open_store().and_then(|s| {
-            s.save_character(
-                p.draft.library_id,
-                &p.draft.sheet,
-                p.draft.portrait.as_deref(),
-            )
-            .map_err(|e| e.to_string())
-        }) {
-            Ok(id) => {
-                p.draft.library_id = Some(id);
-                p.draft.message = p.i18n.t("chars.saved").into();
-                p.cache.refresh();
-            }
-            Err(e) => p.draft.message = e,
-        }
     }
 }
 

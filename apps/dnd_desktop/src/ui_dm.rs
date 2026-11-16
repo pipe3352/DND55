@@ -186,6 +186,35 @@ fn object_properties(ui: &mut Ui, g: &mut GameUi, room: RoomId, o: MapObject) {
         ui.checkbox(&mut e.blocks_sight, g.i18n.t("props.blocks_sight"));
         ui.checkbox(&mut e.difficult, g.i18n.t("props.difficult"));
     });
+    // Size (scaling in whole cells), rotation and draw layer.
+    ui.horizontal_wrapped(|ui| {
+        ui.label(g.i18n.t("props.size"));
+        ui.add(egui::DragValue::new(&mut e.w).range(1..=8).prefix("w "));
+        ui.add(egui::DragValue::new(&mut e.h).range(1..=8).prefix("h "));
+        if ui
+            .small_button("+90°")
+            .on_hover_text(g.i18n.t("props.rotate"))
+            .clicked()
+        {
+            e.rotation = (e.rotation + 1) % 4;
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(g.i18n.t("props.layer"));
+        for (l, key) in [
+            (dnd_world::map::ObjectLayer::Floor, "props.layer_floor"),
+            (
+                dnd_world::map::ObjectLayer::Standard,
+                "props.layer_standard",
+            ),
+            (
+                dnd_world::map::ObjectLayer::Overhead,
+                "props.layer_overhead",
+            ),
+        ] {
+            ui.selectable_value(&mut e.layer, l, g.i18n.t(key));
+        }
+    });
     let mut has_light = e.light.is_some();
     ui.horizontal(|ui| {
         ui.checkbox(&mut has_light, g.i18n.t("props.light"));
@@ -428,9 +457,18 @@ pub fn bestiary_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
         }
         if ctx.input(|i| i.pointer.any_released()) {
             g.ui.dragging_monster = None;
-            if !ctx.is_pointer_over_egui()
-                && let (Some(cell), Some(r)) = (g.hover.cell, &view.room)
-            {
+            let over_map = g
+                .map_ptr
+                .map_rect
+                .zip(ctx.pointer_latest_pos())
+                .is_some_and(|(r, p)| {
+                    crate::pointer::over_map_at(
+                        ctx,
+                        egui::Rect::from_min_max(egui::pos2(r[0], r[1]), egui::pos2(r[2], r[3])),
+                        p,
+                    )
+                });
+            if over_map && let (Some(cell), Some(r)) = (g.hover.cell, &view.room) {
                 let hidden = g.ui.spawn_hidden;
                 g.net.cmd(Command::Dm(DmCommand::SpawnMonster {
                     template: id,

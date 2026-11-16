@@ -13,7 +13,7 @@ pub struct TextureCache {
     pub disc: Option<Handle<Image>>,
 }
 
-fn new_image(w: u32, h: u32, data: Vec<u8>) -> Image {
+pub(crate) fn new_image(w: u32, h: u32, data: Vec<u8>) -> Image {
     let mut img = Image::new_fill(
         Extent3d {
             width: w,

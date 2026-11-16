@@ -60,6 +60,15 @@ fn smooth(e0: f32, e1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+#[path = "object_art.rs"]
+mod object_art;
+#[path = "token_art.rs"]
+pub mod token_art;
+
+fn object_star(cx: f32, cy: f32, ro: f32, ri: f32, n: usize) -> Vec<(f32, f32)> {
+    object_art::star(cx, cy, ro, ri, n, -std::f32::consts::FRAC_PI_2)
+}
+
 const INK: Rgba = [0.141, 0.114, 0.102, 1.0];
 
 impl Canvas {
@@ -896,6 +905,9 @@ pub fn object(id: &str, w: u8, h: u8, fallback: [u8; 3]) -> Image {
         c.disc(cx, cy, r + ow * 0.6, INK);
         c.disc(cx, cy, r, col);
     };
+    if object_art::draw(&mut c, id, fw, fh) {
+        return c.into_image();
+    }
     match id {
         "tree" | "big_tree" | "bush" => {
             let bush = id == "bush";
@@ -1384,6 +1396,20 @@ pub fn object(id: &str, w: u8, h: u8, fallback: [u8; 3]) -> Image {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_catalog_object_has_its_own_art() {
+        let cat = dnd_world::catalog::Catalog::builtin();
+        for a in cat.assets.iter().filter(|a| a.is_object) {
+            let art = object(&a.id, a.size.0, a.size.1, a.color);
+            let generic = object("__no_such_object__", a.size.0, a.size.1, a.color);
+            assert!(
+                art.data != generic.data,
+                "{} falls back to the generic placeholder",
+                a.id
+            );
+        }
+    }
+
     use super::*;
 
     #[test]

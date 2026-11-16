@@ -101,6 +101,11 @@ pub struct GameSettings {
     pub host_port: u16,
     pub try_upnp: bool,
     pub audio_enabled: bool,
+    /// Show creature names under map tokens.
+    pub token_names: bool,
+    /// Character Manager window: last size (points) and whether it was maximized.
+    pub char_window: (f32, f32),
+    pub char_window_max: bool,
 }
 
 impl Default for GameSettings {
@@ -125,6 +130,9 @@ impl Default for GameSettings {
             host_port: 7878,
             try_upnp: false,
             audio_enabled: true,
+            token_names: true,
+            char_window: (1100.0, 720.0),
+            char_window_max: false,
         }
     }
 }
@@ -314,6 +322,9 @@ pub fn settings_ui(ui: &mut bevy_egui::egui::Ui, s: &mut GameSettings, i18n: &I1
                 &mut v.reduced_motion,
                 i18n.t("settings.reduced_motion_help"),
             );
+            ui.end_row();
+            ui.label(i18n.t("settings.token_names"));
+            ui.checkbox(&mut v.token_names, i18n.t("settings.token_names_help"));
             ui.end_row();
             ui.label(i18n.t("settings.resolution"));
             egui::ComboBox::from_id_salt("res")

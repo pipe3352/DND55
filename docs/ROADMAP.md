@@ -10,7 +10,19 @@
 | **Wine** | The Windows `.exe` started under Wine on Linux (not real Windows). |
 | **Manual (Windows)** | Not done yet. Use [`WINDOWS_ACCEPTANCE_CHECKLIST.md`](WINDOWS_ACCEPTANCE_CHECKLIST.md). |
 
-## Milestone 3 — Visual overhaul (this release)
+## Milestone 4 — Editor fixes, object library, tokens, Character Manager (this release)
+
+| Area | Status | Verified by |
+|---|---|---|
+| Mouse wheel/clicks reach the map only over the map canvas (panels, lists, windows scroll themselves) | ✅ | `pointer` unit tests + `scripts/gui-wheel-test.sh` (real xdotool wheel events; fails on the old code, passes now) |
+| +81 objects (Natural: trees/plants/rocks; Furniture: tables/seating/storage/decor; Dungeon: architecture/atmosphere/gameplay), each with its own art | ✅ | Art tests (no generic fallback, pairwise distinct); contact sheet `docs/screenshots/after/objects.png` |
+| Browser: search (names + tags), category chips, sub-group chips, thumbnails, favorites, recent | ✅ | Screenshot; real-input scroll test |
+| Object size (scaling), rotation, collision, light, draw layer (floor/standard/overhead), save/load, multiplayer sync | ✅ | World tests (old saves load, round-trip of every object, doors/gates open) |
+| PNG art packs with license manifest (`asset_packs/`) | ✅ | Unit test (license required, bad ids/files rejected). Rendering of a real pack not screenshot-tested |
+| Illustrated tokens: 14 class icons + 14 monster-type emblems, side shown by frame shape, shadow, selection/turn rings, HP bar, optional names; chooser + preview in the creator | ✅ | Token tests (distinct emblems, distinct frame shapes); screenshots |
+| Character Manager: resizable, maximize/restore, remembered size, 3 panels that stack when narrow, search/create/delete | ✅ | Window-rect unit test; real xdotool session (open, new, maximize, restore, drag-resize to 800×600 → stacked layout, size saved) |
+
+## Milestone 3 — Visual overhaul
 
 | Area | Status | Verified by |
 |---|---|---|

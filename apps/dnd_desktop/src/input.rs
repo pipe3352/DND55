@@ -35,6 +35,7 @@ pub fn camera_controls(
     scroll: Res<AccumulatedMouseScroll>,
     motion: Res<AccumulatedMouseMotion>,
     egui: Res<EguiWantsInput>,
+    map_ptr: Res<crate::pointer::MapPointer>,
     time: Res<Time>,
     cam: Single<(&mut Transform, &mut Projection), With<Camera2d>>,
     window: Single<&Window>,
@@ -88,7 +89,9 @@ pub fn camera_controls(
         }
         t.translation += (d * 700.0 * o.scale * time.delta_secs()).extend(0.0);
     }
-    if !egui.wants_any_pointer_input() {
+    // Zoom/pan only when the pointer is over the map canvas, never over panels or windows
+    // (they scroll themselves).
+    if map_ptr.over_map {
         if scroll.delta.y != 0.0 {
             let target = fit.target_scale.unwrap_or(o.scale);
             fit.target_scale =
@@ -146,19 +149,20 @@ pub fn track_hover(
 pub fn map_click(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
-    egui: Res<EguiWantsInput>,
+    map_ptr: Res<crate::pointer::MapPointer>,
     mut hover: ResMut<Hover>,
     mut ui: ResMut<UiState>,
     mut net: ResMut<Net>,
     gv: Res<GameView>,
     window: Single<&Window>,
+    mut press_on_map: Local<bool>,
 ) {
     // Right-click on an object with the Select tool opens its context menu.
     if buttons.just_pressed(MouseButton::Right)
         && !keys.pressed(KeyCode::Space)
         && ui.tool == Tool::Select
         && net.is_dm()
-        && !egui.wants_any_pointer_input()
+        && map_ptr.over_map
         && let (Some(cell), Some(map), Some(cursor)) =
             (hover.cell, &gv.map, window.cursor_position())
         && let Some(o) = map.objects.iter().rev().find(|o| o.covers(cell))
@@ -167,7 +171,8 @@ pub fn map_click(
         ui.map_context = Some(((cursor.x / k, cursor.y / k), o.id));
         return;
     }
-    if buttons.just_pressed(MouseButton::Right) && !keys.pressed(KeyCode::Space) {
+    if buttons.just_pressed(MouseButton::Right) && !keys.pressed(KeyCode::Space) && map_ptr.over_map
+    {
         ui.targeting = None;
         ui.rect_start = None;
         if ui.casting.take().is_some() || ui.feature_target.take().is_some() {
@@ -180,7 +185,18 @@ pub fn map_click(
         }
         return;
     }
-    if egui.wants_any_pointer_input() {
+    // Pointer capture: a left press belongs to whatever it started on. A press (or drag) that starts on
+    // the UI never places, selects or draws on the map, even if released over it.
+    if buttons.just_pressed(MouseButton::Left) {
+        *press_on_map = map_ptr.over_map;
+    }
+    let mid_gesture =
+        buttons.pressed(MouseButton::Left) || buttons.just_released(MouseButton::Left);
+    if if mid_gesture {
+        !*press_on_map
+    } else {
+        !map_ptr.over_map
+    } {
         return;
     }
     let Some(view) = &gv.view else { return };

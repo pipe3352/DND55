@@ -455,3 +455,25 @@ fn showcase_commands(room: dnd_world::RoomId) -> Vec<Command> {
     }
     v
 }
+
+/// With `DND55_AUTO` set: prints `CAMERA-ZOOM: <target>` whenever the map zoom target changes and
+/// `MAP-POINTER: <bool>` when the pointer enters/leaves the map canvas (used by the GUI wheel test).
+pub fn log_camera(
+    fit: Res<crate::input::CameraFit>,
+    ptr: Res<crate::pointer::MapPointer>,
+    mut last: Local<(Option<f32>, Option<bool>)>,
+) {
+    if std::env::var("DND55_AUTO").is_err() {
+        return;
+    }
+    if fit.target_scale != last.0 {
+        last.0 = fit.target_scale;
+        if let Some(s) = fit.target_scale {
+            println!("CAMERA-ZOOM: {s:.4}");
+        }
+    }
+    if Some(ptr.over_map) != last.1 {
+        last.1 = Some(ptr.over_map);
+        println!("MAP-POINTER: {}", ptr.over_map);
+    }
+}

@@ -227,3 +227,20 @@ crisp at any UI scale.
   * Audio output (no sound device in the build environment).
 * The art is procedural. It is original and consistent, but it is not hand-painted AAA artwork. Asset
   packs with proper licenses can replace any tile or object through the catalog's `sprite` field.
+
+
+## Object library, tokens and art packs
+
+* **Objects** (`apps/dnd_desktop/src/object_art.rs`): every catalog object has its own procedural
+  top-down drawing (ink outline, flat shading, highlights) — see `screenshots/after/objects.png`.
+  A test fails if an object falls back to the generic placeholder or two objects look alike.
+* **Tokens** (`token_art.rs`): an emblem on a coloured field inside a frame whose *shape* shows the
+  side — friendly: smooth gold ring with blue studs; hostile: spiked iron ring; neutral: bronze
+  octagon. Player characters use their chosen icon (default: class icon) or their uploaded portrait;
+  monsters use their creature type. See `screenshots/after/tokens.png`.
+* **Art packs**: put `asset_packs/<pack>/manifest.json` in the data folder
+  (`%APPDATA%\DND55` on Windows):
+  `{"name": "...", "license": "...", "author": "...", "source": "...", "objects": [{"id": "oak_tree"... }]}`
+  with `"file": "oak.png"` per object. The game writes `asset_packs/manifest.template.json` listing
+  every object id. Packs without a license are ignored; only use art you are allowed to redistribute.
+  Packs are local to each PC (other players without the pack see the built-in art).

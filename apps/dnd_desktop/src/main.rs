@@ -8,8 +8,10 @@
 // Hide the console window on Windows release builds.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod asset_packs;
 mod audio;
 mod autotest;
+mod char_manager;
 mod character_ui;
 mod editor_ui;
 mod fx;
@@ -24,6 +26,7 @@ mod menu;
 mod menu_scene;
 mod net_sync;
 mod platform;
+mod pointer;
 mod settings;
 mod state;
 mod terrain_art;
@@ -102,8 +105,11 @@ fn main() {
         .init_resource::<weather::WeatherSprites>()
         .init_resource::<vfx::CameraShake>()
         .init_resource::<tokens::TokenAnims>()
+        .init_resource::<tokens::TokenArt>()
         .init_resource::<fx::Presentation>()
         .init_resource::<input::Hover>()
+        .init_resource::<pointer::MapPointer>()
+        .init_resource::<pointer::MapPointer>()
         .init_resource::<input::CameraFit>()
         .init_resource::<graph_editor::GraphEditor>()
         .init_resource::<editor_ui::PaletteThumbs>()
@@ -126,6 +132,7 @@ fn main() {
             ),
         )
         .add_systems(Update, autotest::auto_script.after(net_sync::poll_network))
+        .add_systems(Update, autotest::log_camera)
         .add_systems(
             EguiPrimaryContextPass,
             menu::menu_ui.run_if(in_state(AppState::MainMenu)),
@@ -149,6 +156,7 @@ fn main() {
                 vfx::animate_particles,
                 (
                     tokens::animate_tokens,
+                    tokens::token_indicators,
                     fx::animate_fx,
                     map_render::flicker_lights,
                 ),
