@@ -43,6 +43,9 @@ pub fn game_ui(
     if *themed != Some(g.ui.ui_scale) {
         theme::apply(&ctx, g.ui.ui_scale);
         *themed = Some(g.ui.ui_scale);
+        // Named font families become usable from the next frame.
+        ctx.request_repaint();
+        return Ok(());
     }
     let Some(view) = g.gv.view.clone() else {
         egui::Area::new("waiting".into())
@@ -67,28 +70,25 @@ pub fn game_ui(
 
     // ---------------- top bar
     egui::Panel::top("top")
-        .frame(theme::panel_frame().inner_margin(egui::Margin::symmetric(10, 4)))
+        .frame(theme::toolbar_frame())
         .show(&mut root, |ui| {
+            theme::wood_bg(ui);
+            theme::dark_scope(ui);
             ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(&view.campaign_name)
-                        .strong()
-                        .color(theme::WOOD)
-                        .size(17.0),
-                );
+                ui.label(theme::display(&view.campaign_name, 22.0).color(theme::GOLD_BRIGHT));
                 if let Some(r) = &view.room {
-                    ui.label(format!("· {}", r.name));
+                    ui.label(theme::gothic(format!("· {}", r.name), 18.0).color(theme::PARCHMENT));
                     if dm && !r.is_party_room {
                         ui.label(
-                            RichText::new(g.i18n.t("game.editing_other_room")).color(theme::BLOOD),
+                            theme::italic(g.i18n.t("game.editing_other_room"))
+                                .color(egui::Color32::from_rgb(235, 150, 120)),
                         );
                     }
                 }
                 if let Some(c) = &view.combat {
                     ui.label(
-                        RichText::new(format!("⚔ {} {}", g.i18n.t("combat.round"), c.round))
-                            .color(theme::BLOOD)
-                            .strong(),
+                        theme::gothic(format!("⚔ {} {}", g.i18n.t("combat.round"), c.round), 18.0)
+                            .color(egui::Color32::from_rgb(240, 120, 100)),
                     );
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -129,7 +129,7 @@ pub fn game_ui(
                                     h.handle.session_code
                                 ))
                                 .strong()
-                                .color(theme::BLOOD),
+                                .color(theme::GOLD_BRIGHT),
                             );
                             if ui
                                 .button(format!("✉ {}", g.i18n.t("invite.button")))
@@ -169,6 +169,7 @@ pub fn game_ui(
         .default_size(170.0)
         .frame(theme::panel_frame())
         .show(&mut root, |ui| {
+            theme::panel_bg(ui);
             ui.columns(2, |cols| {
                 dice_panel(&mut cols[0], &mut g);
                 log_panel(&mut cols[1], &mut g, &view);
@@ -182,6 +183,7 @@ pub fn game_ui(
             .default_size(290.0)
             .frame(theme::panel_frame())
             .show(&mut root, |ui| {
+                theme::panel_bg(ui);
                 ui.horizontal(|ui| {
                     for (tab, key) in [
                         (DmTab::Editor, "dm.editor"),
@@ -210,6 +212,7 @@ pub fn game_ui(
         .default_size(320.0)
         .frame(theme::panel_frame())
         .show(&mut root, |ui| {
+            theme::panel_bg(ui);
             egui::ScrollArea::vertical().show(ui, |ui| right_panel(ui, &mut g, &view));
         });
 
@@ -219,9 +222,10 @@ pub fn game_ui(
     }
     if g.ui.show_settings {
         let mut open = true;
-        egui::Window::new(format!("⚙ {}", g.i18n.t("menu.settings")))
+        theme::win(format!("⚙ {}", g.i18n.t("menu.settings")))
             .open(&mut open)
             .show(&ctx, |ui| {
+                theme::window_bg(ui);
                 if g.audio.as_ref().is_some_and(|a| !a.available) {
                     ui.label(
                         RichText::new(g.i18n.t("settings.no_audio_device")).color(theme::BLOOD),
@@ -964,10 +968,11 @@ fn overlays(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
             .find(|x| x.id == p.mover)
             .map(|m| m.name.clone())
             .unwrap_or_default();
-        egui::Window::new(g.i18n.t("reaction.title"))
+        theme::win(g.i18n.t("reaction.title"))
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .collapsible(false)
             .show(ctx, |ui| {
+                theme::window_bg(ui);
                 ui.label(format!("{mover} {}", g.i18n.t("reaction.leaving")));
                 if let Some(r) = &reactor {
                     let melee: Vec<(usize, String)> = r
@@ -1015,10 +1020,11 @@ fn overlays(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
     if g.ui.show_creator && !g.net.is_dm() {
         let mut open = true;
         let mut submit = false;
-        egui::Window::new(g.i18n.t("game.create_character"))
+        theme::win(g.i18n.t("game.create_character"))
             .open(&mut open)
             .default_width(860.0)
             .show(ctx, |ui| {
+                theme::window_bg(ui);
                 submit = creator_ui(ui, &mut g.draft, &g.i18n);
             });
         if submit {
@@ -1119,13 +1125,14 @@ fn player_draw_toggle(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
         }
         return;
     }
-    egui::Window::new(g.i18n.t("draw.title"))
+    theme::win(g.i18n.t("draw.title"))
         .id("player-draw".into())
         .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 50.0))
         .collapsible(true)
         .default_open(false)
         .resizable(false)
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             let mut on = g.ui.tool == Tool::Draw;
             if ui.toggle_value(&mut on, g.i18n.t("tool.draw")).changed() {
                 g.ui.tool = if on { Tool::Draw } else { Tool::Play };
@@ -1146,10 +1153,11 @@ fn invite_window(ctx: &egui::Context, g: &mut GameUi) {
     let port = host.handle.local_addr.port();
     let mut go_online = None;
     let mut try_upnp = false;
-    egui::Window::new(format!("✉ {}", g.i18n.t("invite.title")))
+    theme::win(format!("✉ {}", g.i18n.t("invite.title")))
         .open(&mut open)
         .default_width(560.0)
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             ui.label(g.i18n.t("invite.intro"));
             for (key, link) in &invites {
                 ui.horizontal(|ui| {

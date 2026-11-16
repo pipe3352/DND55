@@ -73,7 +73,11 @@ mod tests {
         let src_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
         let mut missing = vec![];
         for entry in std::fs::read_dir(src_dir).unwrap() {
-            let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|e| e != "rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(path).unwrap();
             for part in text.split(".t(\"").skip(1) {
                 let key = part.split('"').next().unwrap();
                 if i.t(key) == key {

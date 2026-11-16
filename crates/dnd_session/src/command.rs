@@ -203,6 +203,11 @@ pub enum DmCommand {
         music: Option<String>,
         ambience: Option<String>,
     },
+    /// Cosmetic weather/atmosphere for a room.
+    SetRoomWeather {
+        room: RoomId,
+        weather: crate::model::Weather,
+    },
     SaveCustomMonster {
         template: Box<dnd_rules::monster::MonsterTemplate>,
     },

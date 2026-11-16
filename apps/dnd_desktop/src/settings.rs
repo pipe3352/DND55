@@ -33,9 +33,58 @@ impl GraphicsBackend {
     }
 }
 
+/// Graphics quality preset. Every level changes real rendering work (see the methods below).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Quality {
+    Low,
+    Medium,
+    High,
+    Ultra,
+}
+
+impl Quality {
+    pub const ALL: [Quality; 4] = [Quality::Low, Quality::Medium, Quality::High, Quality::Ultra];
+    /// Scattered ground details (tufts, pebbles, flowers) per cell, relative to High.
+    pub fn decor_density(self) -> f32 {
+        [0.0, 0.5, 1.0, 1.5][self as usize]
+    }
+    /// Organic terrain transitions between neighbouring materials.
+    pub fn transitions(self) -> bool {
+        self >= Quality::Medium
+    }
+    /// Contact shadows under objects/walls and ambient occlusion along walls.
+    pub fn shadows(self) -> bool {
+        self >= Quality::Medium
+    }
+    /// Weather/ambient particle count multiplier.
+    pub fn particles(self) -> f32 {
+        [0.25, 0.6, 1.0, 1.6][self as usize]
+    }
+    /// Noise octaves used by the water/lava shader (0..3) and flicker detail.
+    pub fn liquid(self) -> f32 {
+        self as usize as f32
+    }
+    /// Soft (sub-cell) fog-of-war edges instead of hard squares.
+    pub fn soft_fog(self) -> bool {
+        self >= Quality::Medium
+    }
+    pub fn key(self) -> &'static str {
+        [
+            "settings.q_low",
+            "settings.q_medium",
+            "settings.q_high",
+            "settings.q_ultra",
+        ][self as usize]
+    }
+}
+
 #[derive(Resource, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GameSettings {
+    pub quality: Quality,
+    pub reduced_motion: bool,
+    /// Frame-rate cap (0 = unlimited).
+    pub fps_cap: u32,
     pub language: String,
     pub ui_scale: f32,
     pub resolution: (u32, u32),
@@ -57,6 +106,9 @@ pub struct GameSettings {
 impl Default for GameSettings {
     fn default() -> Self {
         GameSettings {
+            quality: Quality::High,
+            reduced_motion: false,
+            fps_cap: 0,
             language: "en".into(),
             ui_scale: 1.0,
             resolution: (1600, 900),
@@ -160,6 +212,7 @@ pub fn apply_settings(
     mut ui: ResMut<UiState>,
     mut audio: ResMut<AudioSettings>,
     mut i18n: ResMut<I18n>,
+    mut liquid: ResMut<crate::liquid::LiquidSettings>,
     mut first: Local<bool>,
 ) {
     if !settings.is_changed() && *first {
@@ -182,6 +235,10 @@ pub fn apply_settings(
         }
     }
     ui.ui_scale = settings.ui_scale;
+    *liquid = crate::liquid::LiquidSettings {
+        quality: settings.quality.liquid(),
+        reduced_motion: settings.reduced_motion,
+    };
     *audio = AudioSettings {
         master: settings.master,
         effects: settings.effects,
@@ -230,6 +287,33 @@ pub fn settings_ui(ui: &mut bevy_egui::egui::Ui, s: &mut GameSettings, i18n: &I1
                     i18n.t("settings.fullscreen"),
                 );
             });
+            ui.end_row();
+            ui.label(i18n.t("settings.quality"));
+            ui.horizontal(|ui| {
+                for q in Quality::ALL {
+                    ui.selectable_value(&mut v.quality, q, i18n.t(q.key()));
+                }
+            });
+            ui.end_row();
+            ui.label(i18n.t("settings.fps_cap"));
+            egui::ComboBox::from_id_salt("fps")
+                .selected_text(if v.fps_cap == 0 {
+                    i18n.t("settings.unlimited").to_string()
+                } else {
+                    v.fps_cap.to_string()
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut v.fps_cap, 0, i18n.t("settings.unlimited"));
+                    for f in [30, 60, 120, 144] {
+                        ui.selectable_value(&mut v.fps_cap, f, f.to_string());
+                    }
+                });
+            ui.end_row();
+            ui.label(i18n.t("settings.reduced_motion"));
+            ui.checkbox(
+                &mut v.reduced_motion,
+                i18n.t("settings.reduced_motion_help"),
+            );
             ui.end_row();
             ui.label(i18n.t("settings.resolution"));
             egui::ComboBox::from_id_salt("res")
@@ -333,4 +417,18 @@ mod tests {
         assert_eq!(s.language, "it");
         assert_eq!(s.resolution, (1600, 900));
     }
+}
+
+/// Simple frame limiter for the FPS cap setting (sleeps out the rest of the frame budget).
+pub fn frame_limiter(settings: Res<GameSettings>, mut last: Local<Option<std::time::Instant>>) {
+    if settings.fps_cap > 0 {
+        let budget = std::time::Duration::from_secs_f64(1.0 / settings.fps_cap as f64);
+        if let Some(prev) = *last {
+            let spent = prev.elapsed();
+            if spent < budget {
+                std::thread::sleep(budget - spent);
+            }
+        }
+    }
+    *last = Some(std::time::Instant::now());
 }

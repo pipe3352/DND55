@@ -55,90 +55,139 @@ pub fn menu_ui(
     if *themed != Some(p.ui.ui_scale) {
         theme::apply(&ctx, p.ui.ui_scale);
         *themed = Some(p.ui.ui_scale);
+        // Named font families become usable from the next frame.
+        ctx.request_repaint();
+        return Ok(());
     }
     if !p.cache.refreshed {
         p.cache.refresh();
     }
-    // Dark backdrop with a title.
-    let mut root = Ui::new(
-        ctx.clone(),
-        "menu-root".into(),
-        egui::UiBuilder::new()
-            .layer_id(egui::LayerId::background())
-            .max_rect(ctx.viewport_rect()),
+    // Animated painted backdrop (still when Reduced Motion is on).
+    let reduced = theme::reduced_motion(&ctx);
+    let t = if reduced {
+        12.0
+    } else {
+        ctx.input(|i| i.time) as f32
+    };
+    if !reduced {
+        ctx.request_repaint();
+    }
+    crate::menu_scene::paint(
+        &ctx.layer_painter(egui::LayerId::background()),
+        ctx.viewport_rect(),
+        t,
     );
-    egui::CentralPanel::default()
-        .frame(egui::Frame::new().fill(egui::Color32::from_rgb(20, 14, 10)))
-        .show(&mut root, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(40.0);
-                ui.label(
-                    RichText::new(p.i18n.t("app.title"))
-                        .size(44.0)
-                        .color(theme::GOLD)
-                        .strong(),
-                );
-                ui.label(
-                    RichText::new(p.i18n.t("app.subtitle"))
-                        .size(16.0)
-                        .color(theme::PARCHMENT_DARK)
-                        .italics(),
-                );
-            });
+
+    // Left column: Blackletter title and the illustrated menu plaques.
+    let page = p.ui.menu;
+    egui::Area::new("menu-left".into())
+        .anchor(egui::Align2::LEFT_TOP, egui::vec2(64.0, 48.0))
+        .show(&ctx, |ui| {
+            theme::title(ui, p.i18n.t("app.title"), 66.0, theme::GOLD_BRIGHT);
+            ui.label(
+                theme::italic(p.i18n.t("app.subtitle"))
+                    .size(18.0)
+                    .color(theme::PARCHMENT),
+            );
+            ui.add_space(26.0);
+            main_page(ui, &mut p, &mut commands, &mut exit);
         });
 
-    let i18n_lang = p.i18n.lang;
-    egui::Window::new(p.i18n.t("menu.title"))
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 40.0))
-        .resizable(false)
-        .collapsible(false)
-        .min_width(if p.ui.menu == MenuPage::Characters {
-            900.0
+    // Sub-pages open as a parchment window on the right, fading in.
+    if page != MenuPage::Main {
+        let fade = if reduced {
+            1.0
         } else {
-            420.0
-        })
-        .show(&ctx, |ui| {
-            let page = p.ui.menu;
-            match page {
-                MenuPage::Main => main_page(ui, &mut p, &mut commands, &mut exit),
-                MenuPage::Create => create_page(ui, &mut p, &mut commands),
-                MenuPage::Join => join_page(ui, &mut p),
-                MenuPage::Load => load_page(ui, &mut p, &mut commands),
-                MenuPage::Characters => characters_page(ui, &mut p),
-                MenuPage::Settings => settings_page(ui, &mut p),
-            }
-            if page != MenuPage::Main {
-                ui.separator();
-                if ui.button(p.i18n.t("menu.back")).clicked() {
-                    p.ui.menu = MenuPage::Main;
+            ctx.animate_bool_with_time(egui::Id::new(("menu-page", page as u8)), true, 0.25)
+        };
+        theme::win(page_title(&p, page))
+            .id(egui::Id::new("menu-page"))
+            .anchor(
+                egui::Align2::RIGHT_CENTER,
+                egui::vec2(-48.0 + (1.0 - fade) * 40.0, 10.0),
+            )
+            .resizable(false)
+            .collapsible(false)
+            .min_width(if page == MenuPage::Characters {
+                860.0
+            } else {
+                440.0
+            })
+            .max_height(ctx.viewport_rect().height() - 120.0)
+            .show(&ctx, |ui| {
+                theme::window_bg(ui);
+                ui.set_opacity(fade);
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    match page {
+                        MenuPage::Main => {}
+                        MenuPage::Create => create_page(ui, &mut p, &mut commands),
+                        MenuPage::Join => join_page(ui, &mut p),
+                        MenuPage::Load => load_page(ui, &mut p, &mut commands),
+                        MenuPage::Characters => characters_page(ui, &mut p),
+                        MenuPage::Settings => settings_page(ui, &mut p),
+                    }
+                    ui.separator();
+                    if ui.button(p.i18n.t("menu.back")).clicked() {
+                        p.ui.menu = MenuPage::Main;
+                    }
+                });
+            });
+    }
+    // Status and errors as a banner-like strip at the bottom of the menu column.
+    if !p.net.status.is_empty() || !p.cache.error.is_empty() {
+        egui::Area::new("menu-status".into())
+            .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(64.0, -40.0))
+            .show(&ctx, |ui| {
+                ui.set_max_width(520.0);
+                if !p.net.status.is_empty() {
+                    ui.label(theme::italic(&p.net.status).color(theme::PARCHMENT));
                 }
-            }
-            if !p.net.status.is_empty() {
-                ui.label(RichText::new(&p.net.status).italics());
-            }
-            if !p.cache.error.is_empty() {
-                ui.label(RichText::new(&p.cache.error).color(theme::BLOOD));
-            }
-        });
-    let _ = i18n_lang;
+                if !p.cache.error.is_empty() {
+                    ui.label(
+                        theme::bold(&p.cache.error).color(egui::Color32::from_rgb(230, 120, 100)),
+                    );
+                }
+            });
+    }
     egui::Area::new("attribution".into())
         .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -8.0))
         .show(&ctx, |ui| {
             ui.label(
                 RichText::new(dnd_rules::SRD_ATTRIBUTION)
-                    .size(10.0)
-                    .color(theme::PARCHMENT_DARK),
+                    .size(11.0)
+                    .color(theme::PARCHMENT_DARK.gamma_multiply(0.8)),
             );
         });
     Ok(())
 }
 
-fn big_button(ui: &mut egui::Ui, text: &str) -> bool {
-    ui.add_sized(
-        [360.0, 38.0],
-        egui::Button::new(RichText::new(text).size(18.0)),
-    )
-    .clicked()
+fn page_title(p: &MenuParams, page: MenuPage) -> String {
+    p.i18n
+        .t(match page {
+            MenuPage::Main => "menu.title",
+            MenuPage::Create => "menu.create",
+            MenuPage::Join => "menu.join",
+            MenuPage::Load => "menu.load",
+            MenuPage::Characters => "menu.characters",
+            MenuPage::Settings => "menu.settings",
+        })
+        .to_string()
+}
+
+/// Loads the latest valid save of a campaign and hosts it.
+fn load_campaign(p: &mut MenuParams, commands: &mut Commands, id: i64) {
+    match open_store().and_then(|s| s.load_latest_valid(id).map_err(|e| e.to_string())) {
+        Ok((info, state, assets)) => {
+            p.net.status = format!("{} — {}", p.i18n.t("load.loaded"), info.label);
+            let session = Session::from_state(
+                state,
+                assets,
+                Box::new(dnd_rules::rng::GameRng::from_entropy()),
+            );
+            start_hosting(p, commands, session, Some(id));
+        }
+        Err(e) => p.cache.error = e,
+    }
 }
 
 fn main_page(
@@ -147,31 +196,52 @@ fn main_page(
     commands: &mut Commands,
     exit: &mut MessageWriter<AppExit>,
 ) {
-    ui.vertical_centered(|ui| {
-        if big_button(ui, p.i18n.t("menu.play")) {
-            start_hosting(p, commands, demo_campaign(), None);
+    use crate::icons::Icon;
+    let w = 360.0;
+    ui.spacing_mut().item_spacing.y = 10.0;
+    // Continue the most recently played campaign.
+    if let Some(last) = p
+        .cache
+        .campaigns
+        .iter()
+        .max_by_key(|c| c.updated_at)
+        .cloned()
+    {
+        let label = format!("{} — {}", p.i18n.t("menu.continue"), last.name);
+        if theme::plaque_button(ui, Icon::Book, &label, w).clicked() {
+            load_campaign(p, commands, last.id);
         }
-        if big_button(ui, p.i18n.t("menu.create")) {
-            p.ui.menu = MenuPage::Create;
+    }
+    let items: [(Icon, &str, Option<MenuPage>); 7] = [
+        (Icon::D20, "menu.play", None),
+        (Icon::Quill, "menu.create", Some(MenuPage::Create)),
+        (Icon::Banner, "menu.join", Some(MenuPage::Join)),
+        (Icon::Chest, "menu.load", Some(MenuPage::Load)),
+        (Icon::Helm, "menu.characters", Some(MenuPage::Characters)),
+        (Icon::Gear, "menu.settings", Some(MenuPage::Settings)),
+        (Icon::Door, "menu.exit", None),
+    ];
+    for (icon, key, target) in items {
+        if theme::plaque_button(ui, icon, p.i18n.t(key), w).clicked() {
+            match (key, target) {
+                ("menu.play", _) => start_hosting(p, commands, demo_campaign(), None),
+                ("menu.exit", _) => {
+                    exit.write(AppExit::Success);
+                }
+                (_, Some(page)) => {
+                    if matches!(page, MenuPage::Load | MenuPage::Characters) {
+                        p.cache.refresh();
+                    }
+                    p.ui.menu = if p.ui.menu == page {
+                        MenuPage::Main
+                    } else {
+                        page
+                    };
+                }
+                _ => {}
+            }
         }
-        if big_button(ui, p.i18n.t("menu.join")) {
-            p.ui.menu = MenuPage::Join;
-        }
-        if big_button(ui, p.i18n.t("menu.load")) {
-            p.cache.refresh();
-            p.ui.menu = MenuPage::Load;
-        }
-        if big_button(ui, p.i18n.t("menu.characters")) {
-            p.cache.refresh();
-            p.ui.menu = MenuPage::Characters;
-        }
-        if big_button(ui, p.i18n.t("menu.settings")) {
-            p.ui.menu = MenuPage::Settings;
-        }
-        if big_button(ui, p.i18n.t("menu.exit")) {
-            exit.write(AppExit::Success);
-        }
-    });
+    }
 }
 
 fn start_hosting(
@@ -308,18 +378,7 @@ fn load_page(ui: &mut egui::Ui, p: &mut MenuParams, commands: &mut Commands) {
             }
         });
     if let Some(id) = chosen {
-        match open_store().and_then(|s| s.load_latest_valid(id).map_err(|e| e.to_string())) {
-            Ok((info, state, assets)) => {
-                p.net.status = format!("{} — {}", p.i18n.t("load.loaded"), info.label);
-                let session = Session::from_state(
-                    state,
-                    assets,
-                    Box::new(dnd_rules::rng::GameRng::from_entropy()),
-                );
-                start_hosting(p, commands, session, Some(id));
-            }
-            Err(e) => p.cache.error = e,
-        }
+        load_campaign(p, commands, id);
     }
 }
 

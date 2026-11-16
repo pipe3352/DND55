@@ -596,6 +596,16 @@ impl Catalog {
             false,
             None,
         );
+        // Molten lava glows: a light source per cell (bright 5 ft, dim 10 ft beyond). Rendering adds the
+        // animated glow; this value is what the visibility rules use.
+        if let Some(lava) = v.iter_mut().find(|a| a.id == "lava") {
+            lava.light = Some(LightEmission {
+                bright_ft: 5,
+                dim_ft: 10,
+                color: [255, 120, 40],
+                flicker: true,
+            });
+        }
         Catalog { assets: v }
     }
 }

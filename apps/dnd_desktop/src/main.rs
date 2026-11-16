@@ -14,13 +14,17 @@ mod character_ui;
 mod fx;
 mod hosting;
 mod i18n;
+mod icons;
 mod input;
+mod liquid;
 mod map_render;
 mod menu;
+mod menu_scene;
 mod net_sync;
 mod platform;
 mod settings;
 mod state;
+mod terrain_art;
 mod textures;
 mod theme;
 mod tokens;
@@ -70,10 +74,13 @@ fn main() {
                 }),
         )
         .insert_resource(game_settings)
+        .init_resource::<liquid::LiquidSettings>()
+        .add_plugins(liquid::LiquidPlugin)
         .add_systems(
             Update,
             (settings::apply_settings, platform::set_window_icon),
         )
+        .add_systems(Last, settings::frame_limiter)
         .add_plugins(EguiPlugin::default())
         .insert_resource(ClearColor(Color::srgb(0.07, 0.055, 0.045)))
         .init_state::<AppState>()
@@ -83,9 +90,11 @@ fn main() {
         .init_resource::<AudioSettings>()
         .init_resource::<i18n::I18n>()
         .init_resource::<textures::TextureCache>()
+        .init_resource::<map_render::ArtCache>()
         .init_resource::<tokens::TokenAnims>()
         .init_resource::<fx::Presentation>()
         .init_resource::<input::Hover>()
+        .init_resource::<input::CameraFit>()
         .init_resource::<menu::MenuCache>()
         .init_resource::<character_ui::CharacterDraft>()
         .init_resource::<audio::SfxBank>()

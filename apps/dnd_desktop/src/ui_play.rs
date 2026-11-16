@@ -190,11 +190,12 @@ pub fn targeting_click(
 /// Floating panel while choosing targets.
 pub fn targeting_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
     if let Some((_, f)) = g.ui.feature_target {
-        egui::Window::new(g.i18n.t("cast.choose"))
+        theme::win(g.i18n.t("cast.choose"))
             .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 70.0))
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
+                theme::window_bg(ui);
                 ui.label(format!("{f:?}: {}", g.i18n.t("cast.click_creature")));
                 if f == Feature::LayOnHands {
                     ui.add(
@@ -211,11 +212,12 @@ pub fn targeting_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) 
     let Some(intent) = g.ui.casting.clone() else {
         return;
     };
-    egui::Window::new(g.i18n.t("cast.choose"))
+    theme::win(g.i18n.t("cast.choose"))
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 70.0))
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             ui.label(RichText::new(&intent.label).strong().color(theme::GOLD));
             let hint = match intent.mode {
                 TargetMode::Point if intent.self_origin => g.i18n.t("cast.click_direction"),
@@ -643,12 +645,13 @@ pub fn action_bar(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
         .iter()
         .find(|(id, _)| *id == active)
         .map(|(_, s)| s.clone());
-    egui::Window::new(g.i18n.t("combat.your_turn"))
+    theme::win(g.i18n.t("combat.your_turn"))
         .id("action-bar".into())
         .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -190.0))
         .collapsible(true)
         .resizable(false)
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             ui.label(RichText::new(&me.name).strong());
             let tick = |used: bool| if used { "✖" } else { "✔" };
             ui.label(format!(
@@ -780,11 +783,12 @@ pub fn reaction_prompts(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) 
         let target = creature(view, p.target)
             .map(|a| a.name.clone())
             .unwrap_or_default();
-        egui::Window::new(g.i18n.t("reaction.hit_title"))
+        theme::win(g.i18n.t("reaction.hit_title"))
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -40.0))
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
+                theme::window_bg(ui);
                 ui.label(format!(
                     "{attacker} ▶ {target}: {} {}",
                     g.i18n.t("reaction.hit_roll"),
@@ -864,11 +868,12 @@ pub fn spellbook_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) 
         return;
     };
     let mut open = true;
-    egui::Window::new(format!("📖 {} — {}", g.i18n.t("spell.book"), sheet.name))
+    theme::win(format!("📖 {} — {}", g.i18n.t("spell.book"), sheet.name))
         .open(&mut open)
         .default_width(520.0)
         .default_height(520.0)
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             let Some((ability, _)) = classes::spellcasting(sheet.class) else {
                 ui.label(g.i18n.t("spell.not_caster"));
                 return;
@@ -1144,10 +1149,11 @@ pub fn levelup_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
     };
     let new_level = sheet.level + 1;
     let mut open = true;
-    egui::Window::new(format!("⬆ {} {} ▶ {}", sheet.name, sheet.level, new_level))
+    theme::win(format!("⬆ {} {} ▶ {}", sheet.name, sheet.level, new_level))
         .open(&mut open)
         .default_width(460.0)
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             let subclass = sheet.subclass.clone().or_else(|| {
                 (new_level >= 3).then(|| classes::srd_subclass(sheet.class).to_string())
             });
@@ -1381,10 +1387,11 @@ pub fn inventory_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) 
     };
     let me_pos = creature(view, id).map(|c| c.pos);
     let mut open = true;
-    egui::Window::new(format!("🎒 {}", sheet.name))
+    theme::win(format!("🎒 {}", sheet.name))
         .open(&mut open)
         .default_width(440.0)
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             let cur = sheet.currency;
             ui.label(format!(
                 "{} {} pp · {} gp · {} ep · {} sp · {} cp",
@@ -1543,10 +1550,11 @@ pub fn loot_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
         } else {
             o.label.clone()
         };
-        egui::Window::new(format!("💰 {title}"))
+        theme::win(format!("💰 {title}"))
             .id(egui::Id::new(("loot", obj.0)))
             .default_pos(egui::pos2(420.0, 160.0))
             .show(ctx, |ui| {
+                theme::window_bg(ui);
                 for it in items {
                     ui.horizontal(|ui| {
                         ui.label(format!("{}× {}", it.quantity, it.name))
@@ -1576,7 +1584,7 @@ pub fn loot_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
 /// NPC dialogue with choices (from scripted events) and narrated messages.
 pub fn dialogue_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
     if let Some((speaker, text, choices)) = &view.dialogue {
-        egui::Window::new(if speaker.is_empty() {
+        theme::win(if speaker.is_empty() {
             g.i18n.t("dialogue.title").to_string()
         } else {
             speaker.clone()
@@ -1587,6 +1595,7 @@ pub fn dialogue_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
         .resizable(false)
         .default_width(460.0)
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             ui.label(RichText::new(text).size(16.0));
             ui.add_space(6.0);
             for (i, c) in choices.iter().enumerate() {
@@ -1603,7 +1612,7 @@ pub fn dialogue_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
     if let Some((n, speaker, text)) = g.pres.message.clone()
         && n > g.ui.dismissed_message
     {
-        egui::Window::new(if speaker.is_empty() {
+        theme::win(if speaker.is_empty() {
             g.i18n.t("dialogue.narration").to_string()
         } else {
             speaker
@@ -1613,6 +1622,7 @@ pub fn dialogue_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             ui.set_max_width(480.0);
             ui.label(RichText::new(text).italics().size(15.0));
             if ui.button(g.i18n.t("dialogue.ok")).clicked() {

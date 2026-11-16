@@ -36,3 +36,6 @@ winresource = "0.1.34"
 ProductName = "DND55"
 FileDescription = "DND55 - fantasy tabletop RPG (5e 2024 compatible)"
 LegalCopyright = "MIT OR Apache-2.0; includes SRD 5.2.1 material (CC-BY-4.0)"
+
+[dev-dependencies]
+ttf-parser = "0.25"

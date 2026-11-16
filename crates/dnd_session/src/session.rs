@@ -101,7 +101,15 @@ impl Session {
         )
     }
 
-    pub fn from_state(state: GameState, assets: AssetStore, rng: Box<dyn DiceRng + Send>) -> Self {
+    pub fn from_state(
+        mut state: GameState,
+        assets: AssetStore,
+        rng: Box<dyn DiceRng + Send>,
+    ) -> Self {
+        let catalog = Catalog::builtin();
+        for r in state.rooms.values_mut() {
+            r.map.refresh_palette(&catalog);
+        }
         Session {
             state,
             assets,
@@ -2698,6 +2706,17 @@ impl Session {
                 if self.state.dm_view_room == room {
                     self.state.dm_view_room = self.state.party_room;
                 }
+            }
+            SetRoomWeather { room, weather } => {
+                let rs = self
+                    .state
+                    .rooms
+                    .get_mut(&room)
+                    .ok_or_else(|| CommandError::NotFound("room".into()))?;
+                rs.weather = crate::model::Weather {
+                    kind: weather.kind,
+                    intensity: weather.intensity.clamp(0.0, 1.0),
+                };
             }
             SetRoomAudio {
                 room,

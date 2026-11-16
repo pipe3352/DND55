@@ -341,6 +341,39 @@ impl Creature {
     }
 }
 
+/// Purely visual atmosphere chosen by the DM per room. It never changes visibility or rules
+/// (use the room's ambient light and heavily-obscured areas for that).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum WeatherKind {
+    #[default]
+    None,
+    Rain,
+    Snow,
+    Fog,
+    Leaves,
+    Dust,
+    Embers,
+    Fireflies,
+    Magic,
+    Ash,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Weather {
+    pub kind: WeatherKind,
+    /// 0..1
+    pub intensity: f32,
+}
+
+impl Default for Weather {
+    fn default() -> Self {
+        Weather {
+            kind: WeatherKind::None,
+            intensity: 0.5,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RoomState {
     pub map: GridMap,
@@ -356,6 +389,9 @@ pub struct RoomState {
     pub music: Option<String>,
     #[serde(default)]
     pub ambience: Option<String>,
+    /// Cosmetic weather/atmosphere particles for this room (no rules effect).
+    #[serde(default)]
+    pub weather: Weather,
     /// DM (and permitted player) drawings on the map.
     #[serde(default)]
     pub drawings: Vec<Drawing>,
@@ -404,6 +440,7 @@ impl RoomState {
             extra_lights: vec![],
             music: None,
             ambience: None,
+            weather: Weather::default(),
             drawings: vec![],
             containers: BTreeMap::new(),
         }

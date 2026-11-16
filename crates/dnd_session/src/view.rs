@@ -103,6 +103,8 @@ pub struct RoomView {
     pub music: Option<String>,
     #[serde(default)]
     pub ambience: Option<String>,
+    #[serde(default)]
+    pub weather: Weather,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -297,6 +299,7 @@ impl Session {
                     .collect(),
                 music: r.music.clone(),
                 ambience: r.ambience.clone(),
+                weather: r.weather,
             }
         });
 

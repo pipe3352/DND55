@@ -497,11 +497,12 @@ pub fn bestiary_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
     }
     let templates = all_templates(view);
     let mut open = true;
-    egui::Window::new(format!("🐉 {}", g.i18n.t("bestiary.title")))
+    theme::win(format!("🐉 {}", g.i18n.t("bestiary.title")))
         .open(&mut open)
         .default_width(720.0)
         .default_height(560.0)
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             ui.horizontal_wrapped(|ui| {
                 ui.add(
                     egui::TextEdit::singleline(&mut g.ui.bestiary_search)
@@ -746,10 +747,11 @@ fn custom_monster_window(ctx: &egui::Context, g: &mut GameUi) {
     };
     let mut open = true;
     let mut save = false;
-    egui::Window::new(format!("★ {}", g.i18n.t("custom.title")))
+    theme::win(format!("★ {}", g.i18n.t("custom.title")))
         .open(&mut open)
         .default_width(480.0)
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             egui::ScrollArea::vertical()
                 .max_height(520.0)
                 .show(ui, |ui| {
@@ -934,10 +936,11 @@ pub fn graph_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
     let party = view.dm.as_ref().map(|d| d.party_room);
     let viewing = view.room.as_ref().map(|r| r.id);
     let mut open = true;
-    egui::Window::new(format!("🗺 {}", g.i18n.t("graph.title")))
+    theme::win(format!("🗺 {}", g.i18n.t("graph.title")))
         .open(&mut open)
         .default_size(egui::vec2(760.0, 520.0))
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             ui.label(RichText::new(g.i18n.t("graph.help")).small());
             if let Some(from) = g.ui.graph_link_from {
                 ui.horizontal(|ui| {
@@ -1386,10 +1389,11 @@ pub fn script_editor_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientVi
         .unwrap_or(dnd_world::RoomId(0));
     let mut open = true;
     let mut save = false;
-    egui::Window::new(format!("⚙ {}", g.i18n.t("events.editor")))
+    theme::win(format!("⚙ {}", g.i18n.t("events.editor")))
         .open(&mut open)
         .default_width(520.0)
         .show(ctx, |ui| {
+            theme::window_bg(ui);
             egui::ScrollArea::vertical()
                 .max_height(560.0)
                 .show(ui, |ui| {

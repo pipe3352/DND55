@@ -99,7 +99,38 @@ pub fn auto_script(
         }
     };
     let crypt = env("DND55_AUTO_SCENARIO").as_deref() == Some("crypt");
-    if env("DND55_AUTO").as_deref() == Some("host") && crypt {
+    let showcase = env("DND55_AUTO_SCENARIO").as_deref() == Some("showcase");
+    if env("DND55_AUTO").as_deref() == Some("host") && showcase {
+        if once("sc-create", 5.0) {
+            net.cmd(Command::Dm(DmCommand::CreateRoom {
+                name: "Whispering Vale".into(),
+                width: 26,
+                height: 15,
+                ambient: dnd_world::map::AmbientLight::Dim,
+            }));
+        }
+        let vale = gv
+            .view
+            .as_ref()
+            .and_then(|v| v.graph.nodes.values().find(|n| n.name == "Whispering Vale"))
+            .map(|n| n.id);
+        if let Some(room) = vale {
+            if once("sc-paint", 6.0) {
+                for c in showcase_commands(room) {
+                    net.cmd(c);
+                }
+            }
+            if once("sc-travel", 7.5) {
+                net.cmd(Command::Dm(DmCommand::TransitionParty {
+                    to: room,
+                    override_rules: true,
+                }));
+            }
+            if once("sc-view", 8.5) {
+                net.cmd(Command::Dm(DmCommand::ViewRoom { room }));
+            }
+        }
+    } else if env("DND55_AUTO").as_deref() == Some("host") && crypt {
         if once("travel", 8.0)
             && let Some(to) = gv
                 .view
@@ -140,7 +171,7 @@ pub fn auto_script(
         }
     }
     if env("DND55_AUTO").as_deref() == Some("join")
-        && crypt
+        && (crypt || showcase)
         && once("walk", 11.0)
         && let Some((id, _)) = gv
             .view
@@ -154,6 +185,7 @@ pub fn auto_script(
     }
     if env("DND55_AUTO").as_deref() == Some("join")
         && !crypt
+        && !showcase
         && once("move", 9.0)
         && let Some((id, _)) = gv
             .view
@@ -262,6 +294,7 @@ fn open_windows(list: &str, ui: &mut crate::state::UiState, gv: &GameView) {
                 }
             }
             "draw" => ui.tool = Tool::Draw,
+            "creator" => ui.show_creator = true,
             "cast" => {
                 if let Some((id, sheet)) = view.and_then(|v| v.my_characters.first().cloned())
                     && let Some(sp) = dnd_rules::spells::spell("burning_hands")
@@ -272,4 +305,64 @@ fn open_windows(list: &str, ui: &mut crate::state::UiState, gv: &GameView) {
             _ => {}
         }
     }
+}
+
+/// A room exercising every terrain type, water, lava and object families (visual regression scene).
+fn showcase_commands(room: dnd_world::RoomId) -> Vec<Command> {
+    use dnd_world::map::LayerKind::{Terrain, Walls};
+    let fill = |layer, a: (i32, i32), b: (i32, i32), asset: &str| {
+        Command::Dm(DmCommand::FillRect {
+            room,
+            layer,
+            a,
+            b,
+            asset: Some(asset.into()),
+        })
+    };
+    let obj = |asset: &str, cell: (i32, i32)| {
+        Command::Dm(DmCommand::PlaceObject {
+            room,
+            asset: asset.into(),
+            cell,
+            hidden: false,
+        })
+    };
+    let mut v = vec![
+        fill(Terrain, (0, 0), (25, 14), "grass"),
+        fill(Terrain, (0, 6), (25, 7), "road"),
+        fill(Terrain, (8, 0), (9, 14), "dirt"),
+        fill(Terrain, (1, 1), (6, 4), "water_shallow"),
+        fill(Terrain, (2, 2), (5, 3), "water_deep"),
+        fill(Terrain, (1, 9), (5, 13), "mud"),
+        fill(Terrain, (11, 9), (16, 13), "stone_floor"),
+        fill(Walls, (11, 9), (16, 9), "stone_wall"),
+        fill(Walls, (11, 9), (11, 13), "stone_wall"),
+        fill(Terrain, (18, 9), (24, 13), "cave_floor"),
+        fill(Terrain, (20, 10), (23, 12), "lava"),
+        fill(Terrain, (11, 0), (15, 4), "sand"),
+        fill(Terrain, (16, 0), (20, 4), "snow"),
+        fill(Terrain, (21, 0), (25, 4), "ice"),
+        fill(Terrain, (12, 11), (15, 12), "wood_floor"),
+        fill(Terrain, (6, 9), (7, 13), "gravel"),
+        fill(Terrain, (2, 8), (4, 8), "undergrowth"),
+    ];
+    for (a, c) in [
+        ("tree", (0, 5)),
+        ("big_tree", (6, 0)),
+        ("bush", (7, 5)),
+        ("bush", (10, 8)),
+        ("boulder", (17, 6)),
+        ("crystal", (19, 9)),
+        ("torch", (12, 10)),
+        ("brazier", (24, 9)),
+        ("table", (13, 11)),
+        ("chest", (15, 12)),
+        ("barrel", (14, 10)),
+        ("bones", (21, 13)),
+        ("stalagmite", (18, 13)),
+        ("pillar", (16, 10)),
+    ] {
+        v.push(obj(a, c));
+    }
+    v
 }

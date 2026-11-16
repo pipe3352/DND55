@@ -115,6 +115,24 @@ pub fn collect_lights(map: &GridMap, extra: &[PointLight]) -> Vec<PointLight> {
             })
         })
         .collect();
+    // Light-emitting tiles (lava) on visible layers.
+    for layer in map.layers.iter().filter(|l| l.visible) {
+        for (i, t) in layer.tiles.iter().enumerate() {
+            if *t == 0 {
+                continue;
+            }
+            if let Some((bright_ft, dim_ft)) =
+                map.palette.get(*t as usize - 1).and_then(|p| p.light)
+            {
+                let cell = ((i as i32) % map.width, (i as i32) / map.width);
+                v.push(PointLight {
+                    cell,
+                    bright_ft,
+                    dim_ft,
+                });
+            }
+        }
+    }
     v.extend_from_slice(extra);
     v
 }
@@ -203,6 +221,22 @@ pub fn visibility_map(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lava_tiles_light_a_dark_room() {
+        let cat = crate::catalog::Catalog::builtin();
+        let mut m = GridMap::new(9, 3, AmbientLight::Darkness).unwrap();
+        m.set_tile(crate::map::LayerKind::Terrain, (1, 1), cat.get("lava"))
+            .unwrap();
+        let lights = collect_lights(&m, &[]);
+        assert_eq!(lights.len(), 1);
+        let lv = light_map(&m, &lights);
+        let at = |x: i32| lv[(1 * m.width + x) as usize];
+        assert_eq!(at(1), LightLevel::Bright, "the lava cell itself");
+        assert_eq!(at(2), LightLevel::Bright, "5 ft away: bright");
+        assert_eq!(at(4), LightLevel::Dim, "15 ft away: dim");
+        assert_eq!(at(7), LightLevel::Darkness, "far away stays dark");
+    }
     use crate::catalog::Catalog;
     use crate::map::LayerKind;
 

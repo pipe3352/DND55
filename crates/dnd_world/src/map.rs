@@ -35,6 +35,9 @@ pub struct PaletteEntry {
     pub blocks_movement: bool,
     pub blocks_sight: bool,
     pub difficult: bool,
+    /// Light emitted by every cell painted with this tile (bright ft, dim ft), e.g. lava.
+    #[serde(default)]
+    pub light: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -209,8 +212,18 @@ impl GridMap {
             blocks_movement: a.blocks_movement,
             blocks_sight: a.blocks_sight,
             difficult: a.difficult,
+            light: a.light.as_ref().map(|l| (l.bright_ft, l.dim_ft)),
         });
         Ok(self.palette.len() as u16)
+    }
+
+    /// Re-derives cached tile properties (light) from the catalog, for maps saved by older versions.
+    pub fn refresh_palette(&mut self, catalog: &crate::catalog::Catalog) {
+        for p in &mut self.palette {
+            if let Some(a) = catalog.get(&p.asset_id) {
+                p.light = a.light.as_ref().map(|l| (l.bright_ft, l.dim_ft));
+            }
+        }
     }
 
     /// Paints (`Some`) or erases (`None`) a tile. Returns the previous palette value for undo.

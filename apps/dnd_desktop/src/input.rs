@@ -15,6 +15,16 @@ pub struct Hover {
     pub stroke: Vec<(i32, i32)>,
 }
 
+/// Camera framing requests (fit the room on entering it, or from the editor's Fit button).
+#[derive(Resource, Default)]
+pub struct CameraFit {
+    pub request: bool,
+    /// Smooth-zoom target (orthographic scale).
+    pub target_scale: Option<f32>,
+    last_room: Option<dnd_world::RoomId>,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn camera_controls(
     keys: Res<ButtonInput<KeyCode>>,
     buttons: Res<ButtonInput<MouseButton>>,
@@ -23,11 +33,41 @@ pub fn camera_controls(
     egui: Res<EguiWantsInput>,
     time: Res<Time>,
     cam: Single<(&mut Transform, &mut Projection), With<Camera2d>>,
+    window: Single<&Window>,
+    gv: Res<GameView>,
+    net: Res<Net>,
+    mut fit: ResMut<CameraFit>,
 ) {
     let (mut t, mut proj) = cam.into_inner();
     let Projection::Orthographic(o) = &mut *proj else {
         return;
     };
+    // Frame the whole room in the free area between the UI panels when it changes.
+    let room = gv.view.as_ref().and_then(|v| v.room.as_ref()).map(|r| r.id);
+    if room.is_some() && room != fit.last_room {
+        fit.last_room = room;
+        fit.request = true;
+    }
+    if fit.request
+        && let Some(map) = &gv.map
+    {
+        fit.request = false;
+        let (ww, wh) = (window.width(), window.height());
+        let (left, right, top, bottom) =
+            (if net.is_dm() { 380.0 } else { 20.0 }, 330.0, 44.0, 175.0);
+        let (aw, ah) = (
+            (ww - left - right).max(200.0),
+            (wh - top - bottom).max(150.0),
+        );
+        let size = Vec2::new(map.width as f32 * CELL, map.height as f32 * CELL);
+        let scale = (size.x / aw).max(size.y / ah).clamp(0.25, 4.0) * 1.04;
+        o.scale = scale;
+        fit.target_scale = Some(scale);
+        // Offset so the map sits in the centre of the free area, not of the window.
+        let off = Vec2::new((left - right) / 2.0, (bottom - top) / 2.0) * scale;
+        t.translation.x = size.x / 2.0 - off.x;
+        t.translation.y = -size.y / 2.0 - off.y;
+    }
     if !egui.wants_any_keyboard_input() {
         let mut d = Vec2::ZERO;
         if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) {
@@ -46,13 +86,23 @@ pub fn camera_controls(
     }
     if !egui.wants_any_pointer_input() {
         if scroll.delta.y != 0.0 {
-            o.scale = (o.scale * (1.0 - scroll.delta.y.signum() * 0.1)).clamp(0.25, 4.0);
+            let target = fit.target_scale.unwrap_or(o.scale);
+            fit.target_scale =
+                Some((target * (1.0 - scroll.delta.y.signum() * 0.12)).clamp(0.25, 4.0));
         }
         if buttons.pressed(MouseButton::Middle)
             || buttons.pressed(MouseButton::Right) && keys.pressed(KeyCode::Space)
         {
             t.translation.x -= motion.delta.x * o.scale;
             t.translation.y += motion.delta.y * o.scale;
+        }
+    }
+    // Smooth zoom towards the target.
+    if let Some(target) = fit.target_scale {
+        let k = (time.delta_secs() * 12.0).min(1.0);
+        o.scale += (target - o.scale) * k;
+        if (o.scale - target).abs() < 0.0005 {
+            o.scale = target;
         }
     }
 }
@@ -592,7 +642,7 @@ pub fn draw_overlays(
     let Some(view) = &gv.view else { return };
     let (w, h) = (map.width as f32 * CELL, map.height as f32 * CELL);
     if ui.show_grid {
-        let c = Color::srgba(0.0, 0.0, 0.0, 0.28);
+        let c = Color::srgba(0.09, 0.06, 0.04, 0.16);
         for x in 0..=map.width {
             gizmos.line_2d(
                 Vec2::new(x as f32 * CELL, 0.0),
