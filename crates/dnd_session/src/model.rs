@@ -343,7 +343,7 @@ impl Creature {
 
 /// Purely visual atmosphere chosen by the DM per room. It never changes visibility or rules
 /// (use the room's ambient light and heavily-obscured areas for that).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum WeatherKind {
     #[default]
     None,

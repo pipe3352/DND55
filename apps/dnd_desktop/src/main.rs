@@ -31,6 +31,7 @@ mod tokens;
 mod ui_dm;
 mod ui_game;
 mod ui_play;
+mod weather;
 
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
@@ -91,6 +92,7 @@ fn main() {
         .init_resource::<i18n::I18n>()
         .init_resource::<textures::TextureCache>()
         .init_resource::<map_render::ArtCache>()
+        .init_resource::<weather::WeatherSprites>()
         .init_resource::<tokens::TokenAnims>()
         .init_resource::<fx::Presentation>()
         .init_resource::<input::Hover>()
@@ -128,6 +130,7 @@ fn main() {
                 )
                     .chain(),
                 fx::process_events,
+                weather::update_weather,
                 (
                     tokens::animate_tokens,
                     fx::animate_fx,
@@ -164,6 +167,7 @@ fn cleanup_world(
             With<map_render::LightGlow>,
             With<tokens::Token>,
             With<fx::FloatText>,
+            With<weather::Particle>,
             With<input::DrawingLabel>,
         )>,
     >,

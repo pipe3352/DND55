@@ -345,6 +345,13 @@ fn showcase_commands(room: dnd_world::RoomId) -> Vec<Command> {
         fill(Terrain, (12, 11), (15, 12), "wood_floor"),
         fill(Terrain, (6, 9), (7, 13), "gravel"),
         fill(Terrain, (2, 8), (4, 8), "undergrowth"),
+        Command::Dm(DmCommand::SetRoomWeather {
+            room,
+            weather: dnd_session::model::Weather {
+                kind: dnd_session::model::WeatherKind::Leaves,
+                intensity: 0.8,
+            },
+        }),
     ];
     for (a, c) in [
         ("tree", (0, 5)),
