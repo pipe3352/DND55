@@ -57,7 +57,12 @@ impl ArtCache {
     ) -> Handle<Image> {
         self.tiles
             .entry((id.to_string(), variant))
-            .or_insert_with(|| images.add(art::tile(id, variant, color)))
+            .or_insert_with(|| {
+                images.add(crate::pixel::pixelize(
+                    &art::tile(id, variant, color),
+                    false,
+                ))
+            })
             .clone()
     }
     fn transition(
@@ -71,7 +76,8 @@ impl ArtCache {
             return h.clone();
         }
         let base = art::tile(id, 0, color);
-        let h = images.add(art::transition(&base, dir));
+        // Dithered pixel edge: organic transitions in the same pixel grid as the tiles.
+        let h = images.add(crate::pixel::pixelize(&art::transition(&base, dir), true));
         self.transitions.insert((id.to_string(), dir), h.clone());
         h
     }
@@ -107,7 +113,7 @@ impl ArtCache {
             .or_insert_with(|| {
                 let img = pack
                     .and_then(|p| crate::asset_packs::load_png(&p))
-                    .unwrap_or_else(|| art::object(id, w, h, color));
+                    .unwrap_or_else(|| crate::pixel_objects::image(id, w, h, color));
                 images.add(img)
             })
             .clone()
@@ -115,7 +121,7 @@ impl ArtCache {
     fn decor(&mut self, d: Decor, images: &mut Assets<Image>) -> Handle<Image> {
         self.decor
             .entry(d)
-            .or_insert_with(|| images.add(art::decor(d)))
+            .or_insert_with(|| images.add(crate::pixel::pixelize(&art::decor(d), false)))
             .clone()
     }
     fn ao(&mut self, dir: usize, images: &mut Assets<Image>) -> Handle<Image> {
@@ -473,7 +479,8 @@ pub fn rebuild_map(
             ObjectLayer::Standard => (0.8, 1.0),
             ObjectLayer::Overhead => (2.8, 0.85),
         };
-        if q.shadows() && !flat {
+        // Pixel sprites carry their own ground shadow.
+        if q.shadows() && !flat && !crate::pixel_objects::has(&o.asset_id) {
             let tall = matches!(
                 o.asset_id.as_str(),
                 "tree"

@@ -29,7 +29,7 @@ fn thumb(g: &mut GameUi, ctx: &egui::Context, id: &str) -> Option<egui::TextureH
     }
     let def = g.catalog.0.get(id)?.clone();
     let img = if def.is_object {
-        crate::terrain_art::object(&def.id, def.size.0, def.size.1, def.color)
+        crate::pixel_objects::image(&def.id, def.size.0, def.size.1, def.color)
     } else {
         crate::terrain_art::tile(&def.id, 0, def.color)
     };
@@ -50,7 +50,15 @@ fn thumb(g: &mut GameUi, ctx: &egui::Context, id: &str) -> Option<egui::TextureH
             }
         }
     }
-    let tex = ctx.load_texture(format!("palette-{id}"), ci, egui::TextureOptions::LINEAR);
+    let tex = ctx.load_texture(
+        format!("palette-{id}"),
+        ci,
+        if def.is_object {
+            egui::TextureOptions::NEAREST
+        } else {
+            egui::TextureOptions::LINEAR
+        },
+    );
     g.thumbs.0.insert(id.to_string(), tex.clone());
     Some(tex)
 }

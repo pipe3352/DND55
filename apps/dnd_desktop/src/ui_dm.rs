@@ -576,10 +576,24 @@ pub fn bestiary_window(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
                                 t.armor_class,
                                 t.hit_points
                             );
+                            // Pixel-art portrait of the monster (same sprite as on the map).
+                            let key = format!(
+                                "mon:{}:{}",
+                                t.creature_type.to_lowercase(),
+                                t.name.to_lowercase()
+                            );
+                            let tex = crate::tokens::token_egui(
+                                ui.ctx(),
+                                &key,
+                                crate::terrain_art::token_art::Side::Hostile,
+                            );
                             let resp = ui.add(
-                                egui::Button::new(text)
-                                    .selected(g.ui.bestiary_preview.as_deref() == Some(&t.id))
-                                    .sense(egui::Sense::click_and_drag()),
+                                egui::Button::image_and_text(
+                                    egui::Image::new((tex.id(), egui::vec2(24.0, 24.0))),
+                                    text,
+                                )
+                                .selected(g.ui.bestiary_preview.as_deref() == Some(&t.id))
+                                .sense(egui::Sense::click_and_drag()),
                             );
                             if resp.clicked() {
                                 g.ui.bestiary_preview = Some(t.id.clone());

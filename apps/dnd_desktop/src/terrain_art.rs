@@ -65,6 +65,7 @@ mod object_art;
 #[path = "token_art.rs"]
 pub mod token_art;
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn object_star(cx: f32, cy: f32, ro: f32, ri: f32, n: usize) -> Vec<(f32, f32)> {
     object_art::star(cx, cy, ro, ri, n, -std::f32::consts::FRAC_PI_2)
 }

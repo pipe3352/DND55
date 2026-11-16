@@ -121,6 +121,43 @@ fn river(p: &Painter, r: Rect, t: f32) {
     }
 }
 
+/// Arched stone bridge silhouette.
+fn bridge(p: &Painter, start: Pos2, len: f32, hgt: f32) {
+    let col = Color32::from_rgb(22, 24, 32);
+    p.rect_filled(
+        Rect::from_min_size(pos2(start.x, start.y - hgt * 0.35), vec2(len, hgt * 0.35)),
+        0.0,
+        col,
+    );
+    let arches = 3;
+    for k in 0..arches {
+        let x0 = start.x + len * k as f32 / arches as f32;
+        let aw = len / arches as f32;
+        p.rect_filled(
+            Rect::from_min_size(pos2(x0, start.y), vec2(aw * 0.18, hgt * 0.65)),
+            0.0,
+            col,
+        );
+        let pts: Vec<Pos2> = (0..=8)
+            .map(|i| {
+                let a = std::f32::consts::PI + i as f32 / 8.0 * std::f32::consts::PI;
+                pos2(
+                    x0 + aw * 0.59 + a.cos() * aw * 0.41,
+                    start.y + hgt * 0.2 + a.sin() * -hgt * 0.0 + (a.sin()).abs() * -hgt * 0.15,
+                )
+            })
+            .collect();
+        p.add(Shape::line(pts, egui::Stroke::new(2.0, col)));
+    }
+    p.line_segment(
+        [
+            pos2(start.x, start.y - hgt * 0.35),
+            pos2(start.x + len, start.y - hgt * 0.35),
+        ],
+        egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(150, 170, 210, 70)),
+    );
+}
+
 fn castle(p: &Painter, base: Pos2, s: f32, t: f32) {
     let dark = Color32::from_rgb(14, 12, 14);
     let rect = |x: f32, y: f32, w: f32, h: f32| {
@@ -365,12 +402,16 @@ pub fn paint(p: &Painter, r: Rect, t: f32) {
         }
     }
     // Castle on the near ridge.
-    castle(
+    // Stone bridge leading to the gate, then the castle itself (larger, on its hill).
+    let cs = (h / 900.0).max(0.6) * 1.35;
+    let cbase = pos2(r.left() + w * 0.68, r.top() + h * 0.64);
+    bridge(
         p,
-        pos2(r.left() + w * 0.66, r.top() + h * 0.64),
-        (h / 900.0).max(0.6),
-        t,
+        pos2(cbase.x - 150.0 * cs, cbase.y + 4.0),
+        110.0 * cs,
+        26.0 * cs,
     );
+    castle(p, cbase, cs, t);
     mountain_layer(
         p,
         r,
@@ -393,6 +434,50 @@ pub fn paint(p: &Painter, r: Rect, t: f32) {
             h * 0.22,
             i as u32 * 7 + 3,
         );
+    }
+    // Warm village lights along the valley road, flickering softly.
+    for i in 0..22u32 {
+        let f = h1(i + 5000);
+        let x = r.left() + w * (0.5 + f * 0.42);
+        let y = r.top() + h * (0.72 + h1(i + 5100) * 0.12);
+        let fl = 0.75 + 0.25 * (t * (2.0 + h1(i) * 3.0) + i as f32).sin();
+        p.circle_filled(
+            pos2(x, y),
+            6.0,
+            Color32::from_rgba_unmultiplied(255, 170, 70, (14.0 * fl) as u8),
+        );
+        p.circle_filled(
+            pos2(x, y),
+            1.6,
+            Color32::from_rgba_unmultiplied(255, 200, 110, (230.0 * fl) as u8),
+        );
+    }
+    // Foreground rocks on the right with a moonlit rim.
+    for (fx, fy, rw, rh) in [
+        (0.86f32, 0.9f32, 0.16f32, 0.2f32),
+        (0.97, 0.84, 0.12, 0.26),
+        (0.74, 0.97, 0.1, 0.1),
+    ] {
+        let c0 = pos2(r.left() + w * fx, r.top() + h * fy);
+        let pts: Vec<Pos2> = (0..9)
+            .map(|k| {
+                let a = std::f32::consts::PI + k as f32 / 8.0 * std::f32::consts::PI;
+                let j = 0.85 + 0.15 * h1(k + (fx * 100.0) as u32);
+                pos2(
+                    c0.x + a.cos() * w * rw * 0.5 * j,
+                    c0.y + a.sin() * h * rh * j,
+                )
+            })
+            .collect();
+        p.add(Shape::convex_polygon(
+            pts.clone(),
+            Color32::from_rgb(14, 16, 22),
+            egui::Stroke::NONE,
+        ));
+        p.add(Shape::line(
+            pts[3..7].to_vec(),
+            egui::Stroke::new(1.6, Color32::from_rgba_unmultiplied(150, 170, 210, 90)),
+        ));
     }
     // Low mist.
     for i in 0..14u32 {

@@ -37,7 +37,7 @@ pub struct TurnRing;
 #[derive(Resource, Default)]
 pub struct TokenArt {
     faces: HashMap<(String, Side), Handle<Image>>,
-    frames: HashMap<Side, Handle<Image>>,
+    frames: HashMap<(Side, bool), Handle<Image>>,
     ring: Option<Handle<Image>>,
 }
 
@@ -45,13 +45,20 @@ impl TokenArt {
     fn face(&mut self, emblem: &str, side: Side, images: &mut Assets<Image>) -> Handle<Image> {
         self.faces
             .entry((emblem.to_string(), side))
-            .or_insert_with(|| images.add(token_art::face(emblem, side)))
+            .or_insert_with(|| images.add(crate::sprites::creature(emblem).into_image()))
             .clone()
     }
-    fn frame(&mut self, side: Side, images: &mut Assets<Image>) -> Handle<Image> {
+    /// Side marker: a ground ring under sprites, the round frame over portraits.
+    fn frame(&mut self, side: Side, portrait: bool, images: &mut Assets<Image>) -> Handle<Image> {
         self.frames
-            .entry(side)
-            .or_insert_with(|| images.add(token_art::frame(side)))
+            .entry((side, portrait))
+            .or_insert_with(|| {
+                images.add(if portrait {
+                    token_art::frame(side)
+                } else {
+                    base_marker(side).into_image()
+                })
+            })
             .clone()
     }
     fn ring(&mut self, images: &mut Assets<Image>) -> Handle<Image> {
@@ -69,31 +76,73 @@ pub fn side(f: Faction) -> Side {
     }
 }
 
-/// Emblem for a creature: the character's chosen/class icon, or the monster's creature type.
+/// Sprite key for a creature: `class:<icon>` for characters, `mon:<type>:<name>` for monsters
+/// (trailing numbers such as "Goblin 2" are ignored, so every goblin shares its look).
 pub fn emblem(c: &dnd_session::view::CreatureView) -> String {
-    c.token.clone().unwrap_or_else(|| {
-        let t = c
-            .creature_type
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
-            .to_lowercase();
-        if t.is_empty() {
-            "monstrosity".into()
-        } else {
-            t
+    match &c.token {
+        Some(icon) => format!("class:{icon}"),
+        None => {
+            let name = c
+                .name
+                .trim_end_matches(|ch: char| ch.is_ascii_digit() || ch == ' ')
+                .to_lowercase();
+            format!("mon:{}:{name}", c.creature_type.to_lowercase())
         }
-    })
+    }
+}
+
+/// Ground marker under a sprite token. Its *shape* tells the side: friendly = smooth gold ring,
+/// hostile = red ring with four spikes, neutral = broken bronze ring.
+pub fn base_marker(side: Side) -> crate::pixel::Pix {
+    use crate::pixel::*;
+    let mut p = Pix::new(32, 32);
+    let (col, fill): (C, C) = match side {
+        Side::Friendly => (c(240, 196, 80), [70, 120, 220, 110]),
+        Side::Hostile => (c(214, 50, 44), [150, 30, 30, 110]),
+        Side::Neutral => (c(170, 130, 80), [120, 110, 90, 90]),
+    };
+    for i in 0..64 {
+        let a = i as f32 / 64.0 * std::f32::consts::TAU;
+        let (x, y) = (
+            (16.0 + a.cos() * 12.5) as i32,
+            (28.5 + a.sin() * 2.6) as i32,
+        );
+        if side != Side::Neutral || i % 8 < 5 {
+            p.set(x, y, col);
+        }
+    }
+    for y in 27..31 {
+        for x in 5..27 {
+            let (dx, dy) = (
+                (x as f32 + 0.5 - 16.0) / 11.5,
+                (y as f32 + 0.5 - 28.5) / 2.0,
+            );
+            if dx * dx + dy * dy < 1.0 && p.get(x, y)[3] == 0 {
+                p.set(x, y, fill);
+            }
+        }
+    }
+    if side == Side::Hostile {
+        for (x, y, dx) in [(2, 28, -1), (29, 28, 1)] {
+            p.set(x, y, col);
+            p.set(x + dx, y, col);
+        }
+        p.rect(15, 31, 2, 1, col);
+        p.rect(15, 25, 2, 1, col);
+    }
+    p
 }
 
 /// Token diameter: scales with the grid and creature size but never covers neighbouring cells.
 fn token_px(size: dnd_rules::content::Size) -> f32 {
     use dnd_rules::content::Size::*;
     CELL * match size {
-        Tiny => 0.62,
-        Small => 0.8,
-        Medium => 0.88,
-        _ => 0.96,
+        Tiny => 0.7,
+        Small => 0.9,
+        Medium => 1.0,
+        Large => 1.8,
+        Huge => 2.6,
+        Gargantuan => 3.4,
     }
 }
 
@@ -110,12 +159,18 @@ pub fn sync_tokens(
     mut gv: ResMut<GameView>,
     mut tokens: Query<(Entity, &Token, &mut Sprite, &Children)>,
     mut labels: Query<&mut Text2d, With<TokenLabel>>,
-    mut fills: Query<(&mut Sprite, &mut Transform), (With<HpFill>, Without<Token>)>,
+    mut fills: Query<
+        (&mut Sprite, &mut Transform),
+        (With<HpFill>, Without<Token>, Without<TokenFrame>),
+    >,
     mut anims: ResMut<TokenAnims>,
     mut tex: ResMut<TextureCache>,
     mut art: ResMut<TokenArt>,
     mut images: ResMut<Assets<Image>>,
-    mut frames: Query<&mut Sprite, (With<TokenFrame>, Without<Token>, Without<HpFill>)>,
+    mut frames: Query<
+        (&mut Sprite, &mut Transform),
+        (With<TokenFrame>, Without<Token>, Without<HpFill>),
+    >,
 ) {
     if !gv.view_dirty {
         return;
@@ -155,8 +210,10 @@ pub fn sync_tokens(
             if let Ok(mut t) = labels.get_mut(child) {
                 t.0 = label_text(c);
             }
-            if let Ok(mut f) = frames.get_mut(child) {
-                f.image = art.frame(side(c.faction), &mut images);
+            if let Ok((mut f, mut ftr)) = frames.get_mut(child) {
+                let portrait = has_portrait(c, &tex);
+                f.image = art.frame(side(c.faction), portrait, &mut images);
+                ftr.translation.z = if portrait { 0.02 } else { -0.02 };
             }
             if let Ok((mut s, mut tr)) = fills.get_mut(child) {
                 let (frac, color) = hp_fraction(&c.hp);
@@ -180,7 +237,8 @@ pub fn sync_tokens(
         anims.pos.insert(c.id, p);
         let (frac, color) = hp_fraction(&c.hp);
         let d = token_px(c.size);
-        let frame = art.frame(side(c.faction), &mut images);
+        let portrait = has_portrait(c, &tex);
+        let frame = art.frame(side(c.faction), portrait, &mut images);
         let ring = art.ring(&mut images);
         let disc = tex.disc(&mut images);
         commands
@@ -195,16 +253,18 @@ pub fn sync_tokens(
                 Transform::from_xyz(p.x, p.y, 2.0),
             ))
             .with_children(|parent| {
-                // Soft drop shadow, below the token.
-                parent.spawn((
-                    Sprite {
-                        image: disc,
-                        custom_size: Some(Vec2::splat(d * 0.86)),
-                        color: Color::srgba(0.0, 0.0, 0.0, 0.38),
-                        ..default()
-                    },
-                    Transform::from_xyz(d * 0.05, -d * 0.07, -0.06),
-                ));
+                // Portrait discs get a soft drop shadow; sprites carry their own ground shadow.
+                if portrait {
+                    parent.spawn((
+                        Sprite {
+                            image: disc,
+                            custom_size: Some(Vec2::splat(d * 0.86)),
+                            color: Color::srgba(0.0, 0.0, 0.0, 0.38),
+                            ..default()
+                        },
+                        Transform::from_xyz(d * 0.05, -d * 0.07, -0.06),
+                    ));
+                }
                 for (marker_sel, color) in [
                     (true, Color::srgb(1.0, 0.82, 0.3)),
                     (false, Color::srgb(0.9, 0.98, 0.85)),
@@ -232,7 +292,7 @@ pub fn sync_tokens(
                         custom_size: Some(Vec2::splat(d)),
                         ..default()
                     },
-                    Transform::from_xyz(0.0, 0.0, 0.02),
+                    Transform::from_xyz(0.0, 0.0, if portrait { 0.02 } else { -0.02 }),
                 ));
                 parent.spawn((
                     TokenLabel,
@@ -242,7 +302,7 @@ pub fn sync_tokens(
                         ..default()
                     },
                     TextColor(Color::srgb(0.98, 0.94, 0.82)),
-                    Transform::from_xyz(0.0, -CELL * 0.58, 2.5),
+                    Transform::from_xyz(0.0, -d * 0.5 - 7.0, 2.5),
                 ));
                 parent.spawn((
                     HpBack,
@@ -362,7 +422,13 @@ fn hp_fraction(hp: &HpView) -> (f32, Color) {
     }
 }
 
-/// Portrait (if the player uploaded one) or the illustrated emblem token. Never a plain disc.
+fn has_portrait(c: &dnd_session::view::CreatureView, tex: &TextureCache) -> bool {
+    c.portrait
+        .as_deref()
+        .is_some_and(|h| tex.portraits.contains_key(h))
+}
+
+/// Portrait (if the player uploaded one) or the pixel-art sprite. Never a plain disc.
 fn token_look(
     c: &dnd_session::view::CreatureView,
     tex: &mut TextureCache,
@@ -455,29 +521,22 @@ pub fn token_egui(
     if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
         return t;
     }
-    let (face, frame) = (token_art::face(emblem, side), token_art::frame(side));
-    let (f, fr) = (
-        face.data.unwrap_or_default(),
-        frame.data.unwrap_or_default(),
-    );
-    let n = token_art::SIZE as usize;
-    let mut px = Vec::with_capacity(n * n);
-    for i in 0..n * n {
-        let a = fr[i * 4 + 3] as f32 / 255.0;
-        let fa = f[i * 4 + 3] as f32 / 255.0;
-        let ch = |k: usize| (fr[i * 4 + k] as f32 * a + f[i * 4 + k] as f32 * (1.0 - a)) as u8;
-        px.push(egui::Color32::from_rgba_unmultiplied(
-            ch(0),
-            ch(1),
-            ch(2),
-            ((a + fa * (1.0 - a)) * 255.0) as u8,
-        ));
-    }
-    let img = egui::ColorImage::new([n, n], px);
+    // Sprite over its side marker, centred on a square canvas, crisp pixels.
+    let key = if emblem.contains(':') {
+        emblem.to_string()
+    } else {
+        format!("class:{emblem}")
+    };
+    let sprite = crate::sprites::creature(&key);
+    let n = sprite.w.max(32);
+    let mut canvas = crate::pixel::Pix::new(n, n);
+    canvas.blit(&base_marker(side), (n - 32) / 2, n - 32);
+    canvas.blit(&sprite, (n - sprite.w) / 2, n - sprite.h);
+    let img = egui::ColorImage::from_rgba_unmultiplied([n as usize, n as usize], &canvas.rgba());
     let t = ctx.load_texture(
         format!("token-{emblem}-{}", side as u8),
         img,
-        egui::TextureOptions::LINEAR,
+        egui::TextureOptions::NEAREST,
     );
     ctx.data_mut(|d| d.insert_temp(id, t.clone()));
     t

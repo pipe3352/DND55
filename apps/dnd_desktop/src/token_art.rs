@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), allow(dead_code))]
+// Emblem faces are kept for tests and as the fallback style; map tokens use `sprites.rs`.
 //! Original procedural map tokens: an emblem on a coloured field (`face`) inside a frame whose
 //! *shape* tells the side — friendly: smooth gold ring; hostile: spiked iron ring; neutral:
 //! bronze octagon — so sides read without relying on red/green alone.
