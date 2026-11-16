@@ -106,6 +106,7 @@ pub fn update_weather(
     time: Res<Time>,
     gv: Res<GameView>,
     settings: Res<GameSettings>,
+    ui: Res<crate::state::UiState>,
     cam: Single<(&Transform, &Projection), With<Camera2d>>,
     window: Single<&Window>,
     mut sprites: ResMut<WeatherSprites>,
@@ -119,6 +120,7 @@ pub fn update_weather(
         .as_ref()
         .and_then(|v| v.room.as_ref())
         .map(|r| r.weather)
+        .filter(|_| ui.fx_filter == 0)
         .unwrap_or_default();
     let reduced = settings.reduced_motion;
     let mult = settings.quality.particles();

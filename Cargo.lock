@@ -2696,6 +2696,7 @@ dependencies = [
  "dnd_session",
  "dnd_world",
  "image",
+ "libc",
  "rfd",
  "serde",
  "serde_json",

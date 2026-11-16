@@ -78,22 +78,52 @@ pub fn menu_ui(
         ctx.viewport_rect(),
         t,
     );
+    let vp = ctx.viewport_rect();
+    {
+        // Hanging banner on the left edge and the candle on its books (bottom-left).
+        let bg = ctx.layer_painter(egui::LayerId::background());
+        crate::chrome::banner(
+            &bg,
+            egui::Rect::from_min_size(egui::pos2(22.0, 0.0), egui::vec2(82.0, 270.0)),
+            crate::icons::Icon::Sword,
+        );
+        crate::chrome::candle(&bg, egui::pos2(78.0, vp.bottom() - 66.0), 0.95, t);
+    }
 
-    // Left column: Blackletter title and the illustrated menu plaques.
+    // Left column: dragon crest, Blackletter title, subtitle, divider and the menu plaques.
     let page = p.ui.menu;
     egui::Area::new("menu-left".into())
-        .anchor(egui::Align2::LEFT_TOP, egui::vec2(64.0, 48.0))
+        .anchor(egui::Align2::LEFT_TOP, egui::vec2(112.0, 22.0))
         .show(&ctx, |ui| {
-            theme::title(ui, p.i18n.t("app.title"), 66.0, theme::GOLD_BRIGHT);
-            ui.label(
-                theme::italic(p.i18n.t("app.subtitle"))
-                    .size(18.0)
-                    .color(theme::PARCHMENT),
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(124.0, 112.0), egui::Sense::hover());
+                crate::chrome::dragon(ui.painter(), r);
+                ui.vertical(|ui| {
+                    ui.add_space(14.0);
+                    theme::title(ui, p.i18n.t("app.title"), 62.0, theme::GOLD_BRIGHT);
+                    ui.label(
+                        theme::italic(p.i18n.t("app.subtitle"))
+                            .size(19.0)
+                            .color(theme::PARCHMENT),
+                    );
+                });
+            });
+            let (r, _) = ui.allocate_exact_size(egui::vec2(600.0, 18.0), egui::Sense::hover());
+            let pnt = ui.painter();
+            pnt.hline(
+                r.x_range(),
+                r.center().y,
+                egui::Stroke::new(1.0, theme::GOLD.gamma_multiply(0.7)),
             );
-            ui.add_space(26.0);
-            main_page(ui, &mut p, &mut commands, &mut exit);
+            crate::chrome::diamond(pnt, egui::pos2(r.left() + 280.0, r.center().y), 5.0);
+            ui.add_space(14.0);
+            ui.horizontal(|ui| {
+                ui.add_space(42.0);
+                ui.vertical(|ui| main_page(ui, &mut p, &mut commands, &mut exit));
+            });
         });
-
+    top_right(&ctx, &mut p);
+    bottom_bar(&ctx, &mut p);
     // Sub-pages open as a parchment window on the right, fading in.
     if page == MenuPage::Characters {
         crate::char_manager::window(&ctx, &mut p);
@@ -149,7 +179,7 @@ pub fn menu_ui(
             });
     }
     egui::Area::new("attribution".into())
-        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -8.0))
+        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -50.0))
         .show(&ctx, |ui| {
             ui.label(
                 RichText::new(dnd_rules::SRD_ATTRIBUTION)
@@ -158,6 +188,139 @@ pub fn menu_ui(
             );
         });
     Ok(())
+}
+
+/// Top-right cluster: session status, player name, settings, help.
+fn top_right(ctx: &egui::Context, p: &mut MenuParams) {
+    use crate::chrome;
+    use crate::icons::Icon;
+    egui::Area::new("menu-top-right".into())
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-36.0, 24.0))
+        .show(ctx, |ui| {
+            theme::dark_scope(ui);
+            ui.horizontal(|ui| {
+                let active = p.net.client.is_some();
+                chrome::pill(
+                    ui,
+                    if active {
+                        theme::HEALTH.gamma_multiply(1.6)
+                    } else {
+                        theme::SLATE
+                    },
+                    p.i18n.t(if active {
+                        "menu.session_active"
+                    } else {
+                        "menu.offline"
+                    }),
+                );
+                let name = if p.settings.last_name.trim().is_empty() {
+                    p.i18n.t("menu.adventurer").to_string()
+                } else {
+                    p.settings.last_name.clone()
+                };
+                let r = chrome::bar_button(ui, Some(Icon::Helm), &format!("{name} ⏷"), false);
+                egui::Popup::from_toggle_button_response(&r).show(|ui| {
+                    theme::dark_scope(ui);
+                    ui.label(p.i18n.t("menu.player_name"));
+                    ui.text_edit_singleline(&mut p.settings.last_name);
+                });
+                if chrome::bar_button(ui, Some(Icon::Gear), "", false)
+                    .on_hover_text(p.i18n.t("menu.settings"))
+                    .clicked()
+                {
+                    p.ui.menu = if p.ui.menu == MenuPage::Settings {
+                        MenuPage::Main
+                    } else {
+                        MenuPage::Settings
+                    };
+                }
+                if chrome::bar_button(ui, None, "?", false)
+                    .on_hover_text(p.i18n.t("menu.help"))
+                    .clicked()
+                {
+                    p.ui.menu_info = if p.ui.menu_info == 1 { 0 } else { 1 };
+                }
+            });
+        });
+    // Help / licenses window.
+    if p.ui.menu_info != 0 {
+        let mut open = true;
+        let help = p.ui.menu_info == 1;
+        theme::win(p.i18n.t(if help { "menu.help" } else { "menu.licenses" }))
+            .open(&mut open)
+            .collapsible(false)
+            .default_width(520.0)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                theme::window_bg(ui);
+                egui::ScrollArea::vertical()
+                    .max_height(420.0)
+                    .show(ui, |ui| {
+                        if help {
+                            ui.label(p.i18n.t("menu.help_text"));
+                        } else {
+                            ui.label(RichText::new(dnd_rules::SRD_ATTRIBUTION).small());
+                            ui.add_space(6.0);
+                            ui.label(p.i18n.t("menu.licenses_text"));
+                        }
+                    });
+            });
+        if !open {
+            p.ui.menu_info = 0;
+        }
+    }
+}
+
+/// Bottom strip: version, tagline and links.
+fn bottom_bar(ctx: &egui::Context, p: &mut MenuParams) {
+    let vp = ctx.viewport_rect();
+    let bar = egui::Rect::from_min_max(egui::pos2(vp.left(), vp.bottom() - 40.0), vp.max);
+    let bg = ctx.layer_painter(egui::LayerId::background());
+    bg.rect_filled(
+        bar,
+        0.0,
+        egui::Color32::from_rgba_unmultiplied(14, 10, 8, 235),
+    );
+    bg.hline(
+        bar.x_range(),
+        bar.top(),
+        egui::Stroke::new(1.5, theme::GOLD.gamma_multiply(0.7)),
+    );
+    crate::chrome::diamond(&bg, egui::pos2(bar.center().x, bar.top()), 6.0);
+    egui::Area::new("menu-version".into())
+        .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(60.0, -11.0))
+        .show(ctx, |ui| {
+            ui.label(
+                RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                    .color(theme::PARCHMENT_DARK),
+            );
+        });
+    egui::Area::new("menu-links".into())
+        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -10.0))
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(theme::italic(p.i18n.t("menu.tagline")).color(theme::PARCHMENT));
+                let link = |ui: &mut egui::Ui, text: &str| {
+                    ui.label(RichText::new("|").color(theme::GOLD));
+                    ui.add(
+                        egui::Label::new(RichText::new(text).underline().color(theme::PARCHMENT))
+                            .sense(egui::Sense::click()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                };
+                if link(ui, p.i18n.t("menu.srd_docs")) {
+                    ui.ctx()
+                        .open_url(egui::OpenUrl::new_tab("https://www.dndbeyond.com/srd"));
+                }
+                if link(ui, p.i18n.t("menu.licenses")) {
+                    p.ui.menu_info = 2;
+                }
+                if link(ui, p.i18n.t("menu.support")) {
+                    p.ui.menu_info = 1;
+                }
+            });
+        });
 }
 
 fn page_title(p: &MenuParams, page: MenuPage) -> String {
@@ -196,8 +359,8 @@ fn main_page(
     exit: &mut MessageWriter<AppExit>,
 ) {
     use crate::icons::Icon;
-    let w = 360.0;
-    ui.spacing_mut().item_spacing.y = 10.0;
+    let (w, h) = (470.0, 58.0);
+    ui.spacing_mut().item_spacing.y = 13.0;
     // Continue the most recently played campaign.
     if let Some(last) = p
         .cache
@@ -207,7 +370,10 @@ fn main_page(
         .cloned()
     {
         let label = format!("{} — {}", p.i18n.t("menu.continue"), last.name);
-        if theme::plaque_button(ui, Icon::Book, &label, w).clicked() {
+        if theme::plaque_button_ex(ui, Icon::Book, &label, w, h, true)
+            .on_hover_text(&last.name)
+            .clicked()
+        {
             load_campaign(p, commands, last.id);
         }
     }
@@ -221,7 +387,8 @@ fn main_page(
         (Icon::Door, "menu.exit", None),
     ];
     for (icon, key, target) in items {
-        if theme::plaque_button(ui, icon, p.i18n.t(key), w).clicked() {
+        let open = target.is_some_and(|t| p.ui.menu == t);
+        if theme::plaque_button_ex(ui, icon, p.i18n.t(key), w, h, open).clicked() {
             match (key, target) {
                 ("menu.play", _) => start_hosting(p, commands, demo_campaign(), None),
                 ("menu.exit", _) => {

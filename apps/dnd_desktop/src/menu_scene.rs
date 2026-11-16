@@ -48,6 +48,79 @@ fn mountain_layer(
     p.add(Shape::mesh(mesh));
 }
 
+/// Snow on the high peaks of a mountain layer.
+fn snow(p: &Painter, r: Rect, base_y: f32, amp: f32, seed: f32, offset: f32) {
+    let mut x = r.left();
+    while x < r.right() {
+        let k = ridge(x + offset, seed);
+        if k > 0.72 {
+            let y = base_y - k * amp;
+            let len = (k - 0.72) * amp * 0.55;
+            p.line_segment(
+                [pos2(x, y + 1.0), pos2(x, y + len)],
+                egui::Stroke::new(2.6, Color32::from_rgba_unmultiplied(196, 210, 232, 105)),
+            );
+        }
+        x += 2.0;
+    }
+}
+
+/// Pine silhouette: stacked triangles and a short trunk.
+fn pine(p: &Painter, base: Pos2, h: f32, col: Color32) {
+    let w = h * 0.42;
+    for k in 0..4 {
+        let f = k as f32 / 4.0;
+        let top = base.y - h * (0.35 + f * 0.65);
+        let bottom = base.y - h * (0.05 + f * 0.6);
+        let ww = w * (1.0 - f * 0.7);
+        p.add(Shape::convex_polygon(
+            vec![
+                pos2(base.x, top),
+                pos2(base.x + ww / 2.0, bottom),
+                pos2(base.x - ww / 2.0, bottom),
+            ],
+            col,
+            egui::Stroke::NONE,
+        ));
+    }
+    p.line_segment(
+        [base, pos2(base.x, base.y - h * 0.1)],
+        egui::Stroke::new(h * 0.05, col),
+    );
+}
+
+/// A river winding from the castle valley to the foreground, with moonlit glints.
+fn river(p: &Painter, r: Rect, t: f32) {
+    let (w, h) = (r.width(), r.height());
+    let pts: Vec<Pos2> = (0..=40)
+        .map(|i| {
+            let f = i as f32 / 40.0;
+            pos2(
+                r.left() + w * (0.62 + 0.1 * (f * 7.0).sin() * f + 0.06 * f),
+                r.top() + h * (0.8 + f * 0.2),
+            )
+        })
+        .collect();
+    for (i, pair) in pts.windows(2).enumerate() {
+        let f = i as f32 / 40.0;
+        p.line_segment(
+            [pair[0], pair[1]],
+            egui::Stroke::new(2.0 + f * 30.0, Color32::from_rgb(52, 66, 92)),
+        );
+    }
+    for (i, pair) in pts.windows(2).enumerate() {
+        let f = i as f32 / 40.0;
+        let shimmer = 0.5 + 0.5 * (t * 2.0 + i as f32 * 0.7).sin();
+        p.line_segment(
+            [pair[0], pair[1]],
+            egui::Stroke::new(
+                0.6 + f * 6.0,
+                Color32::from_rgba_unmultiplied(170, 196, 230, (60.0 + 90.0 * shimmer) as u8),
+            ),
+        );
+    }
+}
+
 fn castle(p: &Painter, base: Pos2, s: f32, t: f32) {
     let dark = Color32::from_rgb(14, 12, 14);
     let rect = |x: f32, y: f32, w: f32, h: f32| {
@@ -186,14 +259,14 @@ pub fn paint(p: &Painter, r: Rect, t: f32) {
     theme::paint_gradient(
         p,
         Rect::from_min_max(r.min, pos2(r.right(), horizon)),
-        Color32::from_rgb(9, 11, 18),
-        Color32::from_rgb(46, 36, 38),
+        Color32::from_rgb(8, 12, 26),
+        Color32::from_rgb(40, 54, 82),
     );
     theme::paint_gradient(
         p,
         Rect::from_min_max(pos2(r.left(), horizon), r.max),
-        Color32::from_rgb(46, 36, 38),
-        Color32::from_rgb(20, 16, 15),
+        Color32::from_rgb(40, 54, 82),
+        Color32::from_rgb(12, 14, 20),
     );
     // Stars.
     for i in 0..140u32 {
@@ -258,9 +331,10 @@ pub fn paint(p: &Painter, r: Rect, t: f32) {
         h * 0.32,
         1.3,
         drift * 0.3,
-        Color32::from_rgb(44, 48, 62),
-        Color32::from_rgb(34, 33, 40),
+        Color32::from_rgb(70, 88, 122),
+        Color32::from_rgb(36, 44, 62),
     );
+    snow(p, r, r.top() + h * 0.66, h * 0.32, 1.3, drift * 0.3);
     mountain_layer(
         p,
         r,
@@ -268,9 +342,28 @@ pub fn paint(p: &Painter, r: Rect, t: f32) {
         h * 0.28,
         4.2,
         drift * 0.6,
-        Color32::from_rgb(31, 30, 37),
-        Color32::from_rgb(24, 21, 22),
+        Color32::from_rgb(40, 50, 72),
+        Color32::from_rgb(22, 26, 36),
     );
+    snow(p, r, r.top() + h * 0.74, h * 0.28, 4.2, drift * 0.6);
+    // Pine forests on the slopes and a moonlit river winding out of the valley.
+    for row in 0..3u32 {
+        let y0 = r.top() + h * (0.7 + row as f32 * 0.06);
+        let col = [
+            Color32::from_rgb(28, 36, 48),
+            Color32::from_rgb(20, 26, 34),
+            Color32::from_rgb(13, 17, 22),
+        ][row as usize];
+        for i in 0..70u32 {
+            let fx = h1(i * 3 + row * 211);
+            if (0.38..0.5).contains(&fx) && row == 0 {
+                continue; // keep the castle hill clear
+            }
+            let x = r.left() + fx * w;
+            let ph = h * (0.035 + 0.03 * h1(i + row * 97)) * (1.0 + row as f32 * 0.35);
+            pine(p, pos2(x, y0 + h1(i + 400 + row) * h * 0.05), ph, col);
+        }
+    }
     // Castle on the near ridge.
     castle(
         p,
@@ -285,9 +378,10 @@ pub fn paint(p: &Painter, r: Rect, t: f32) {
         h * 0.2,
         8.7,
         drift,
-        Color32::from_rgb(19, 17, 17),
-        Color32::from_rgb(12, 10, 10),
+        Color32::from_rgb(16, 18, 24),
+        Color32::from_rgb(9, 10, 12),
     );
+    river(p, r, t);
     for (i, fx) in [0.08, 0.52, 0.9].iter().enumerate() {
         let x = r.left() + w * fx;
         dead_tree(
@@ -309,7 +403,7 @@ pub fn paint(p: &Painter, r: Rect, t: f32) {
             p.circle_filled(
                 pos2(x + j as f32 * 40.0, y + (j as f32 * 0.9).sin() * 8.0),
                 50.0 + h1(i * 9 + j) * 30.0,
-                Color32::from_rgba_unmultiplied(120, 120, 135, 7),
+                Color32::from_rgba_unmultiplied(150, 165, 195, 9),
             );
         }
     }

@@ -452,6 +452,12 @@ fn draw_input(
     use crate::state::DrawKind;
     use dnd_session::model::DrawShape;
     let p = to_cells(hover.world);
+    // Snap to half cells (status-bar toggle).
+    let p = if ui.snap {
+        ((p.0 * 2.0).round() / 2.0, (p.1 * 2.0).round() / 2.0)
+    } else {
+        p
+    };
     if buttons.just_pressed(MouseButton::Left) {
         ui.draw_points = vec![p];
         if ui.draw_kind == DrawKind::Text {

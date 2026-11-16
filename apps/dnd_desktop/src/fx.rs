@@ -38,6 +38,8 @@ pub struct Presentation {
     pub chat: Vec<(String, String)>,
     /// Latest narrated message from a scripted event: (serial, speaker, text).
     pub message: Option<(u64, String, String)>,
+    /// Local arrival time (HH:MM) of each adventure-log line, aligned with the view's log.
+    pub log_stamps: Vec<String>,
 }
 
 fn vfx_color(v: Vfx) -> Color {

@@ -295,3 +295,29 @@ mod gpu_tests {
         assert!(explain("Unable to find a GPU adapter").contains("graphics"));
     }
 }
+
+/// Local wall-clock time as "HH:MM" (adventure-log timestamps).
+pub fn local_hhmm() -> String {
+    #[cfg(windows)]
+    {
+        let mut t: windows_sys::Win32::Foundation::SYSTEMTIME = unsafe { std::mem::zeroed() };
+        // SAFETY: GetLocalTime only writes the struct we pass.
+        unsafe { windows_sys::Win32::System::SystemInformation::GetLocalTime(&mut t) };
+        format!("{:02}:{:02}", t.wHour, t.wMinute)
+    }
+    #[cfg(unix)]
+    {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as libc::time_t)
+            .unwrap_or(0);
+        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+        // SAFETY: localtime_r writes into our tm; `now` lives for the call.
+        unsafe { libc::localtime_r(&now, &mut tm) };
+        format!("{:02}:{:02}", tm.tm_hour, tm.tm_min)
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        String::new()
+    }
+}

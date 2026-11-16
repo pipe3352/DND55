@@ -13,6 +13,7 @@ mod audio;
 mod autotest;
 mod char_manager;
 mod character_ui;
+mod chrome;
 mod editor_ui;
 mod fx;
 mod graph_editor;

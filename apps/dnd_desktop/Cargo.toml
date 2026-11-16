@@ -27,7 +27,10 @@ winit = { version = "0.30.13", default-features = false, features = ["rwh_06"] }
 cpal = "0.17.3"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_SystemInformation"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [build-dependencies]
 winresource = "0.1.34"

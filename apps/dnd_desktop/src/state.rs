@@ -192,6 +192,22 @@ pub struct UiState {
     pub layer: LayerKind,
     pub asset: String,
     pub asset_search: String,
+    /// Main-menu info window: 0 none, 1 help, 2 licenses.
+    pub menu_info: u8,
+    /// Top "Character Manager" tab: the right panel shows the party and character sheets.
+    pub show_party: bool,
+    /// Asset browser special lists: 0 = category, 1 = favorites, 2 = recent.
+    pub asset_special: u8,
+    /// Drawing snaps to half cells.
+    pub snap: bool,
+    /// Local view filters (editor status bar): objects 0 all / 1 player-visible / 2 none;
+    /// effects 0 all / 1 lights only (no weather) / 2 none.
+    pub obj_filter: u8,
+    pub fx_filter: u8,
+    /// Audio preview in the room inspector: (music, ambience) overriding the room's tracks locally.
+    pub audio_preview: (Option<String>, Option<String>),
+    /// Room-name field being edited in the inspector.
+    pub room_name_edit: Option<String>,
     /// Asset browser filters: category chip and sub-group chip (first tag, e.g. "tree").
     pub asset_cat: Option<dnd_world::catalog::Category>,
     pub asset_group: Option<String>,
@@ -298,6 +314,14 @@ impl Default for UiState {
             layer: LayerKind::Terrain,
             asset: "stone_floor".into(),
             asset_search: String::new(),
+            menu_info: 0,
+            show_party: false,
+            asset_special: 0,
+            snap: true,
+            obj_filter: 0,
+            fx_filter: 0,
+            audio_preview: (None, None),
+            room_name_edit: None,
             asset_cat: None,
             asset_group: None,
             favorites: vec![

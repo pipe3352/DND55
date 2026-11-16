@@ -596,8 +596,14 @@ pub fn dark_scope(ui: &mut egui::Ui) {
 /// Ornamental section heading: gothic text between gold rules with diamond fleurons.
 pub fn heading(ui: &mut egui::Ui, text: &str) {
     ui.add_space(4.0);
+    // On dark panels (dark_scope) the heading is gold, on parchment dark wood.
+    let ink = if ui.visuals().override_text_color == Some(IVORY) {
+        GOLD_BRIGHT
+    } else {
+        WOOD
+    };
     let font = FontId::new(20.0, gothic_family());
-    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, WOOD);
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, ink);
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(w, galley.size().y + 4.0), egui::Sense::hover());
     let painter = ui.painter();
@@ -633,7 +639,7 @@ pub fn heading(ui: &mut egui::Ui, text: &str) {
             ));
         }
     }
-    painter.galley(text_pos, galley, WOOD);
+    painter.galley(text_pos, galley, ink);
     ui.add_space(4.0);
 }
 
@@ -730,17 +736,29 @@ pub fn plaque_button(
     text: &str,
     width: f32,
 ) -> egui::Response {
-    let height = 48.0;
+    plaque_button_ex(ui, icon, text, width, 48.0, false)
+}
+
+/// Menu plaque: icon in an inset box, label, chevron; `highlight` = glowing gold (primary action).
+pub fn plaque_button_ex(
+    ui: &mut egui::Ui,
+    icon: crate::icons::Icon,
+    text: &str,
+    width: f32,
+    height: f32,
+    highlight: bool,
+) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(width, height), egui::Sense::click());
-    let t = if reduced_motion(ui.ctx()) {
+    let hover = if reduced_motion(ui.ctx()) {
         if resp.hovered() { 1.0 } else { 0.0 }
     } else {
         ui.ctx()
             .animate_bool_with_time(resp.id, resp.hovered(), 0.18)
     };
+    let t = if highlight { hover.max(0.75) } else { hover };
     let p = ui.painter();
     let m = Materials::get(ui.ctx());
-    let r = rect.translate(vec2(4.0 * t, 0.0));
+    let r = rect.translate(vec2(4.0 * hover, 0.0));
     if t > 0.0 {
         p.rect_filled(
             r.expand(4.0 + 3.0 * t),
@@ -772,16 +790,47 @@ pub fn plaque_button(
             p.circle_filled(pos2(x, y), 2.2, GOLD.gamma_multiply(0.8));
         }
     }
-    let icon_rect = Rect::from_center_size(pos2(r.left() + 34.0, r.center().y), vec2(34.0, 34.0));
-    crate::icons::paint(p, icon_rect, icon);
+    if highlight {
+        for k in 1..5 {
+            p.rect_stroke(
+                r.expand(k as f32 * 1.5),
+                6.0,
+                Stroke::new(1.5, GOLD_BRIGHT.gamma_multiply(0.35 / k as f32)),
+                egui::StrokeKind::Outside,
+            );
+        }
+        p.rect_stroke(
+            r,
+            5.0,
+            Stroke::new(2.5, GOLD_BRIGHT),
+            egui::StrokeKind::Inside,
+        );
+    }
+    // Icon in an inset box, then a gold divider.
+    let box_w = height - 8.0;
+    let ib = Rect::from_min_size(
+        pos2(r.left() + 6.0, r.top() + 4.0),
+        vec2(box_w, height - 8.0),
+    );
+    p.rect_filled(ib, 3.0, Color32::from_black_alpha(70));
+    p.vline(
+        ib.right() + 4.0,
+        r.y_range().shrink(8.0),
+        Stroke::new(1.0, GOLD.gamma_multiply(0.6)),
+    );
+    let isz = (height * 0.62).min(38.0);
+    crate::icons::paint(p, Rect::from_center_size(ib.center(), vec2(isz, isz)), icon);
     let color = IVORY.lerp_to_gamma(GOLD_BRIGHT, t);
     p.text(
-        pos2(r.left() + 62.0, r.center().y),
+        pos2(ib.right() + 18.0, r.center().y),
         egui::Align2::LEFT_CENTER,
         text,
-        FontId::new(22.0, gothic_family()),
+        FontId::new(if height > 50.0 { 25.0 } else { 22.0 }, gothic_family()),
         color,
     );
+    let c = pos2(r.right() - 22.0, r.center().y);
+    p.line_segment([c + vec2(-4.0, -7.0), c], Stroke::new(2.0, color));
+    p.line_segment([c, c + vec2(-4.0, 7.0)], Stroke::new(2.0, color));
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }

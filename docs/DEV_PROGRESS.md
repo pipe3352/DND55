@@ -10,6 +10,18 @@
 | 4 | Character Manager resizable/maximizable 3-panel window | ✅ `src/char_manager.rs`; size in `GameSettings.char_window(_max)` |
 | 5 | Full tests, clippy, GUI click test, Windows build | ✅ 172 tests, clippy clean, click + wheel GUI tests pass, Windows cross-build + Wine (Vulkan) |
 
+## UI restyle (dark gothic, per user mockups) — done
+* `src/chrome.rs`: dark panels, gold frames, tile buttons, top tabs, pills, gold buttons, red gem dice,
+  list rows, segmented control, decorations (dragon crest, banner, candle, skull, wax seal, compass, archway).
+* Menu (`menu.rs`, `menu_scene.rs`): crest + title, banner, plaques with chevrons (open page/Continue glow),
+  top-right status/name/settings/help, bottom bar (version, SRD link, licenses, support), moonlit scene.
+* Game (`ui_game.rs`): top bar with view tabs (Campaign / Map Editor / Character Manager → `UiState.show_party`,
+  players → `show_sheet`), room row with room switcher (`ViewRoom`) + editor tools, dark left panel (tile tabs),
+  framed map, dark dice/log panel with local timestamps (`platform::local_hhmm`, `Presentation.log_stamps`).
+* Editor (`editor_ui.rs`): Paint Mode tiles, 2-column asset library (lists | grid + sub-group chips), Room Details
+  inspector (rename, size, ambient segmented, entry, music/ambience with local preview `UiState.audio_preview`),
+  status bar (layer combo with per-layer settings, grid, snap, object/effect view filters), minimap with compass/zoom.
+
 ## Decisions
 * Egui's `is_pointer_over_egui` is wrong for our hand-made background root `Ui`; never use it for map input — use `MapPointer`.
 * Left press is captured by where it started (`press_on_map` Local in `input::map_click`).

@@ -423,6 +423,7 @@ pub fn update_soundscape(
     sources: Option<ResMut<Assets<AudioSource>>>,
     gv: Res<crate::state::GameView>,
     settings: Res<AudioSettings>,
+    ui: Option<Res<crate::state::UiState>>,
     mut sinks: Query<&mut AudioSink>,
 ) {
     let Some(mut sources) = sources else { return };
@@ -443,6 +444,11 @@ pub fn update_soundscape(
             )
         }
         None => (None, None),
+    };
+    // Inspector preview overrides the room's tracks locally.
+    let (want_music, want_amb) = match ui.as_ref().map(|u| u.audio_preview.clone()) {
+        Some((m, a)) => (m.or(want_music), a.or(want_amb)),
+        None => (want_music, want_amb),
     };
     let scape = &mut *scape;
     for (slot, want, vol) in [

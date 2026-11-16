@@ -22,7 +22,7 @@ pub struct GameUi<'w> {
     pub net: ResMut<'w, Net>,
     pub gv: ResMut<'w, GameView>,
     pub i18n: Res<'w, I18n>,
-    pub pres: Res<'w, Presentation>,
+    pub pres: ResMut<'w, Presentation>,
     pub host: Option<Res<'w, HostRuntime>>,
     pub draft: ResMut<'w, CharacterDraft>,
     pub catalog: Res<'w, CatalogRes>,
@@ -73,16 +73,143 @@ pub fn game_ui(
             .max_rect(ctx.viewport_rect()),
     );
 
-    // ---------------- top bar
+    // ---------------- top bar: crest + title, view tabs, session actions
     egui::Panel::top("top")
+        .exact_size(58.0)
         .frame(theme::toolbar_frame())
         .show(&mut root, |ui| {
             theme::wood_bg(ui);
             theme::dark_scope(ui);
-            ui.horizontal(|ui| {
-                ui.label(theme::display(&view.campaign_name, 22.0).color(theme::GOLD_BRIGHT));
+            let full = ui.max_rect();
+            ui.horizontal_centered(|ui| {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(50.0, 48.0), egui::Sense::hover());
+                crate::chrome::dragon(ui.painter(), r);
+                ui.label(theme::display(g.i18n.t("app.title"), 28.0).color(theme::GOLD_BRIGHT));
+                let tabs_w = if dm { 640.0 } else { 440.0 };
+                let tabs_rect =
+                    egui::Rect::from_center_size(full.center(), egui::vec2(tabs_w, 44.0));
+                if full.width() >= 1380.0 {
+                    ui.scope_builder(
+                        egui::UiBuilder::new()
+                            .max_rect(tabs_rect)
+                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                        |ui| view_tabs(ui, &mut g, dm),
+                    );
+                } else {
+                    ui.add_space(12.0);
+                    view_tabs(ui, &mut g, dm);
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    use crate::icons::Icon;
+                    if crate::chrome::bar_button(ui, None, g.i18n.t("game.leave"), true).clicked() {
+                        commands.remove_resource::<HostRuntime>();
+                        g.net.client = None;
+                        g.net.you = None;
+                        g.net.status.clear();
+                        *g.gv = GameView::default();
+                        g.next.set(AppState::MainMenu);
+                    }
+                    if crate::chrome::bar_button(ui, Some(Icon::Gear), "", false)
+                        .on_hover_text(g.i18n.t("menu.settings"))
+                        .clicked()
+                    {
+                        g.ui.show_settings = !g.ui.show_settings;
+                    }
+                    if dm {
+                        let save = crate::chrome::bar_button(
+                            ui,
+                            Some(Icon::Seal),
+                            g.i18n.t("game.save"),
+                            false,
+                        )
+                        .on_hover_text(g.i18n.t("game.save_help"));
+                        if save.clicked() {
+                            let label = std::mem::take(&mut g.ui.save_label);
+                            g.net.save(label);
+                            g.gv.toast(g.i18n.t("game.saving"));
+                        }
+                        save.context_menu(|ui| {
+                            ui.label(g.i18n.t("game.save_label"));
+                            ui.text_edit_singleline(&mut g.ui.save_label);
+                        });
+                        if let Some(h) = &g.host {
+                            let code = h.handle.session_code.clone();
+                            if crate::chrome::bar_button(
+                                ui,
+                                Some(Icon::Link),
+                                g.i18n.t("invite.players"),
+                                false,
+                            )
+                            .on_hover_text(format!("{} {code}", g.i18n.t("game.code")))
+                            .clicked()
+                            {
+                                g.ui.show_invite = !g.ui.show_invite;
+                            }
+                        }
+                    }
+                    // Session status pill (ping in the tooltip) or reconnect.
+                    match (&g.net.client, g.net.rtt_ms) {
+                        (Some(_), ms) => {
+                            let c = match ms {
+                                Some(ms) if ms >= 400 => theme::BLOOD,
+                                Some(ms) if ms >= 120 => theme::GOLD,
+                                _ => egui::Color32::from_rgb(90, 200, 90),
+                            };
+                            crate::chrome::pill(ui, c, g.i18n.t("menu.session_active"))
+                                .on_hover_text(ms.map(|m| format!("{m} ms")).unwrap_or_default());
+                        }
+                        (None, _) => {
+                            if crate::chrome::bar_button(
+                                ui,
+                                None,
+                                g.i18n.t("game.reconnect"),
+                                false,
+                            )
+                            .clicked()
+                            {
+                                crate::hosting::reconnect(&mut g.net);
+                            }
+                            crate::chrome::pill(ui, theme::BLOOD, &g.net.status);
+                        }
+                    }
+                });
+            });
+        });
+
+    let editing = dm && g.ui.dm_tab == DmTab::Editor && view.room.is_some() && !g.ui.show_party;
+    let preview = editing && g.ui.editor_preview;
+
+    // ---------------- second row: banner, campaign – room (DM: room switcher), editor tools
+    egui::Panel::top("room-row")
+        .exact_size(52.0)
+        .frame(theme::toolbar_frame())
+        .show(&mut root, |ui| {
+            theme::wood_bg(ui);
+            theme::dark_scope(ui);
+            ui.horizontal_centered(|ui| {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(36.0, 50.0), egui::Sense::hover());
+                crate::chrome::banner(ui.painter(), r, crate::icons::Icon::Sword);
+                ui.label(theme::display(&view.campaign_name, 25.0).color(theme::GOLD_BRIGHT));
                 if let Some(r) = &view.room {
-                    ui.label(theme::gothic(format!("· {}", r.name), 18.0).color(theme::PARCHMENT));
+                    let room_txt =
+                        theme::gothic(format!("– {} ⏷", r.name), 20.0).color(theme::IVORY);
+                    if dm {
+                        let resp = ui.add(egui::Label::new(room_txt).sense(egui::Sense::click()));
+                        egui::Popup::menu(&resp).show(|ui| {
+                            theme::dark_scope(ui);
+                            for n in view.graph.nodes.values() {
+                                if ui.selectable_label(n.id == r.id, &n.name).clicked() {
+                                    g.net.cmd(Command::Dm(DmCommand::ViewRoom { room: n.id }));
+                                }
+                            }
+                            ui.separator();
+                            if ui.button(g.i18n.t("graph.open")).clicked() {
+                                g.ui.show_graph = true;
+                            }
+                        });
+                    } else {
+                        ui.label(theme::gothic(format!("– {}", r.name), 20.0).color(theme::IVORY));
+                    }
                     if dm && !r.is_party_room {
                         ui.label(
                             theme::italic(g.i18n.t("game.editing_other_room"))
@@ -92,135 +219,114 @@ pub fn game_ui(
                 }
                 if let Some(c) = &view.combat {
                     ui.label(
-                        theme::gothic(format!("⚔ {} {}", g.i18n.t("combat.round"), c.round), 18.0)
+                        theme::gothic(format!("{} {}", g.i18n.t("combat.round"), c.round), 19.0)
                             .color(egui::Color32::from_rgb(240, 120, 100)),
                     );
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(g.i18n.t("game.leave")).clicked() {
-                        commands.remove_resource::<HostRuntime>();
-                        g.net.client = None;
-                        g.net.you = None;
-                        g.net.status.clear();
-                        *g.gv = GameView::default();
-                        g.next.set(AppState::MainMenu);
-                    }
-                    if ui
-                        .button("⚙")
-                        .on_hover_text(g.i18n.t("menu.settings"))
+                ui.add_space(16.0);
+                if editing && !preview {
+                    crate::editor_ui::toolbar(ui, &mut g, &view);
+                } else {
+                    let grid = g.ui.show_grid;
+                    if theme::icon_button(ui, crate::icons::Icon::Grid, grid, g.i18n.t("game.grid"))
                         .clicked()
                     {
-                        g.ui.show_settings = !g.ui.show_settings;
+                        g.ui.show_grid = !grid;
                     }
-                    if g.net.client.is_none() && ui.button(g.i18n.t("game.reconnect")).clicked() {
-                        crate::hosting::reconnect(&mut g.net);
-                    }
-                    if dm {
-                        if ui.button(g.i18n.t("game.save")).clicked() {
-                            let label = std::mem::take(&mut g.ui.save_label);
-                            g.net.save(label);
-                            g.gv.toast(g.i18n.t("game.saving"));
-                        }
-                        ui.add(
-                            egui::TextEdit::singleline(&mut g.ui.save_label)
-                                .hint_text(g.i18n.t("game.save_label"))
-                                .desired_width(120.0),
-                        );
-                        if let Some(h) = &g.host {
-                            ui.label(
-                                RichText::new(format!(
-                                    "{} {}",
-                                    g.i18n.t("game.code"),
-                                    h.handle.session_code
-                                ))
-                                .strong()
-                                .color(theme::GOLD_BRIGHT),
-                            );
-                            if ui
-                                .button(format!("✉ {}", g.i18n.t("invite.button")))
-                                .clicked()
-                            {
-                                g.ui.show_invite = !g.ui.show_invite;
-                            }
-                        }
-                    }
-                    // Connection status: ping, or the reconnect countdown.
-                    match (&g.net.client, g.net.rtt_ms) {
-                        (Some(_), Some(ms)) => {
-                            let c = if ms < 120 {
-                                theme::HEALTH
-                            } else if ms < 400 {
-                                theme::GOLD
-                            } else {
-                                theme::BLOOD
-                            };
-                            ui.label(RichText::new(format!("• {ms} ms")).color(c).small());
-                        }
-                        (Some(_), None) => {
-                            ui.label(RichText::new("•").color(theme::GOLD).small());
-                        }
-                        (None, _) => {
-                            ui.label(RichText::new(&g.net.status).color(theme::BLOOD).small());
-                        }
-                    }
-                    ui.checkbox(&mut g.ui.show_grid, g.i18n.t("game.grid"));
-                });
+                }
             });
         });
 
-    let editing = dm && g.ui.dm_tab == DmTab::Editor && view.room.is_some();
-    let preview = editing && g.ui.editor_preview;
-    if editing && !preview {
-        egui::Panel::top("editor-tools")
-            .frame(theme::toolbar_frame())
-            .show(&mut root, |ui| {
-                theme::wood_bg(ui);
-                theme::dark_scope(ui);
-                crate::editor_ui::toolbar(ui, &mut g, &view);
-            });
-    }
-
-    // ---------------- bottom: dice + log + chat
+    // ---------------- bottom: dice + log + chat (dark), with candle and skull decorations
     egui::Panel::bottom("bottom")
         .resizable(true)
-        .default_size(170.0)
-        .frame(theme::panel_frame())
+        .default_size(205.0)
+        .min_size(170.0)
+        .frame(theme::panel_frame().fill(crate::chrome::DARK))
         .show(&mut root, |ui| {
-            theme::panel_bg(ui);
-            ui.columns(2, |cols| {
-                dice_panel(&mut cols[0], &mut g);
-                log_panel(&mut cols[1], &mut g, &view);
+            crate::chrome::dark_panel_bg(ui);
+            theme::dark_scope(ui);
+            let r = ui.max_rect();
+            let t = ui.input(|i| i.time) as f32;
+            let t = if theme::reduced_motion(ui.ctx()) {
+                1.0
+            } else {
+                t
+            };
+            let deco = ui.ctx().layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("bottom-deco"),
+            ));
+            crate::chrome::candle(
+                &deco,
+                egui::pos2(r.left() + 44.0, r.bottom() + 8.0),
+                0.62,
+                t,
+            );
+            crate::chrome::skull(&deco, egui::pos2(r.right() - 34.0, r.bottom() - 26.0), 0.9);
+            if !theme::reduced_motion(ui.ctx()) {
+                ui.ctx().request_repaint();
+            }
+            ui.horizontal_top(|ui| {
+                ui.add_space(78.0);
+                let w = (ui.available_width() - 92.0) / 2.0;
+                ui.vertical(|ui| {
+                    ui.set_width(w - 12.0);
+                    dice_panel(ui, &mut g);
+                });
+                ui.add_space(12.0);
+                ui.vertical(|ui| {
+                    ui.set_width(w);
+                    log_panel(ui, &mut g, &view);
+                });
             });
         });
     if editing && !preview {
         egui::Panel::bottom("editor-status")
-            .frame(theme::panel_frame().inner_margin(egui::Margin::symmetric(8, 3)))
+            .frame(theme::toolbar_frame().inner_margin(egui::Margin::symmetric(10, 4)))
             .show(&mut root, |ui| {
-                theme::panel_bg(ui);
+                theme::wood_bg(ui);
+                theme::dark_scope(ui);
                 crate::editor_ui::status_bar(ui, &mut g, &view);
             });
     }
 
-    // ---------------- left: DM tools
+    // ---------------- left: DM tools (dark)
     if dm && !preview {
         egui::Panel::left("dm")
             .resizable(true)
-            .default_size(290.0)
-            .frame(theme::panel_frame())
+            .default_size(440.0)
+            .min_size(300.0)
+            .frame(theme::panel_frame().fill(crate::chrome::DARK))
             .show(&mut root, |ui| {
-                theme::panel_bg(ui);
+                crate::chrome::dark_panel_bg(ui);
+                theme::dark_scope(ui);
+                use crate::icons::Icon;
                 ui.horizontal(|ui| {
-                    for (tab, key) in [
-                        (DmTab::Editor, "dm.editor"),
-                        (DmTab::World, "dm.world"),
-                        (DmTab::Monsters, "dm.monsters"),
-                        (DmTab::Events, "dm.events"),
-                        (DmTab::Session, "dm.session"),
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let tw = ((ui.available_width() - 24.0) / 5.0).clamp(54.0, 86.0);
+                    for (tab, key, icon) in [
+                        (DmTab::Editor, "dm.editor", Icon::Hammer),
+                        (DmTab::World, "dm.world", Icon::Map),
+                        (DmTab::Monsters, "dm.monsters", Icon::Skull),
+                        (DmTab::Events, "dm.events", Icon::Scroll),
+                        (DmTab::Session, "dm.session", Icon::Banner),
                     ] {
-                        ui.selectable_value(&mut g.ui.dm_tab, tab, g.i18n.t(key));
+                        if crate::chrome::tile_button(
+                            ui,
+                            icon,
+                            g.i18n.t(key),
+                            g.ui.dm_tab == tab,
+                            egui::vec2(tw, 66.0),
+                        )
+                        .clicked()
+                        {
+                            g.ui.dm_tab = tab;
+                            g.ui.show_party = false;
+                        }
                     }
                 });
-                ui.separator();
+                ui.add_space(8.0);
                 egui::ScrollArea::vertical().show(ui, |ui| match g.ui.dm_tab {
                     DmTab::Editor => crate::editor_ui::palette(ui, &mut g, &view),
                     DmTab::World => world_tab(ui, &mut g, &view),
@@ -248,7 +354,9 @@ pub fn game_ui(
         });
 
     // Whatever the panels left free is the map canvas: only there do wheel/clicks reach the map.
-    *g.map_ptr = crate::pointer::compute(&ctx, root.available_rect_before_wrap());
+    let map_rect = root.available_rect_before_wrap();
+    *g.map_ptr = crate::pointer::compute(&ctx, map_rect);
+    crate::chrome::map_frame(&ctx.layer_painter(egui::LayerId::background()), map_rect);
     overlays(&ctx, &mut g, &view);
     if editing && !preview {
         crate::editor_ui::minimap(&ctx, &mut g, &view);
@@ -291,63 +399,112 @@ pub fn game_ui(
     Ok(())
 }
 
+/// Top-bar view tabs. DM: Campaign · Map Editor · Character Manager; players: Campaign · Character.
+fn view_tabs(ui: &mut Ui, g: &mut GameUi, dm: bool) {
+    use crate::icons::Icon;
+    ui.spacing_mut().item_spacing.x = 4.0;
+    let editor = dm && g.ui.dm_tab == DmTab::Editor && !g.ui.show_party;
+    let chars = if dm { g.ui.show_party } else { g.ui.show_sheet };
+    if crate::chrome::top_tab(ui, Icon::Map, g.i18n.t("tab.campaign"), !editor && !chars).clicked()
+    {
+        g.ui.show_party = false;
+        if dm {
+            if g.ui.dm_tab == DmTab::Editor {
+                g.ui.dm_tab = DmTab::World;
+            }
+            g.ui.tool = crate::state::Tool::Play;
+        } else {
+            g.ui.show_sheet = false;
+        }
+    }
+    if dm && crate::chrome::top_tab(ui, Icon::Scroll, g.i18n.t("tab.map_editor"), editor).clicked()
+    {
+        g.ui.dm_tab = DmTab::Editor;
+        g.ui.show_party = false;
+    }
+    if crate::chrome::top_tab(ui, Icon::Helm, g.i18n.t("tab.characters"), chars).clicked() {
+        if dm {
+            g.ui.show_party = true;
+        } else {
+            g.ui.show_sheet = true;
+        }
+    }
+}
+
 fn dice_panel(ui: &mut Ui, g: &mut GameUi) {
-    theme::heading(ui, g.i18n.t("dice.title"));
-    ui.horizontal_wrapped(|ui| {
-        for s in [4, 6, 8, 10, 12, 20, 100] {
-            if theme::icon_text_button(ui, crate::icons::Icon::D20, &format!("d{s}"), true)
+    crate::chrome::heading(ui, Some(crate::icons::Icon::D20), g.i18n.t("dice.title"));
+    let roll = |g: &mut GameUi, expr: String| {
+        let d20 = expr.ends_with("d20");
+        let (mode, private) = (
+            if d20 {
+                g.ui.dice_mode
+            } else {
+                RollMode::Normal
+            },
+            g.ui.private_roll,
+        );
+        g.net.cmd(Command::RollDice {
+            expr,
+            mode,
+            private,
+            label: String::new(),
+        });
+    };
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        for s in [4, 6, 8, 10, 12, 20] {
+            if crate::chrome::die(ui, s, 54.0)
+                .on_hover_text(format!("1d{s}"))
                 .clicked()
             {
-                let (mode, private) = (
-                    if s == 20 {
-                        g.ui.dice_mode
-                    } else {
-                        RollMode::Normal
-                    },
-                    g.ui.private_roll,
-                );
-                g.net.cmd(Command::RollDice {
-                    expr: format!("1d{s}"),
-                    mode,
-                    private,
-                    label: String::new(),
-                });
+                roll(g, format!("1d{s}"));
             }
+        }
+        if ui.small_button("d100").clicked() {
+            roll(g, "1d100".into());
         }
     });
     ui.horizontal(|ui| {
         let resp = ui.add(
             egui::TextEdit::singleline(&mut g.ui.dice_expr)
-                .desired_width(110.0)
+                .desired_width(150.0)
+                .font(egui::FontId::new(18.0, egui::FontFamily::Proportional))
                 .hint_text("2d6+3"),
         );
         let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        if ui.button(g.i18n.t("dice.roll")).clicked() || enter {
-            let (expr, mode, private) = (g.ui.dice_expr.clone(), g.ui.dice_mode, g.ui.private_roll);
-            g.net.cmd(Command::RollDice {
-                expr,
-                mode,
-                private,
-                label: String::new(),
-            });
+        if crate::chrome::gold_button(
+            ui,
+            Some(crate::icons::Icon::D20),
+            g.i18n.t("dice.roll"),
+            110.0,
+        )
+        .clicked()
+            || enter
+        {
+            let expr = g.ui.dice_expr.clone();
+            roll(g, expr);
         }
     });
     ui.horizontal(|ui| {
-        ui.selectable_value(
-            &mut g.ui.dice_mode,
-            RollMode::Normal,
-            g.i18n.t("dice.normal"),
-        );
-        ui.selectable_value(
-            &mut g.ui.dice_mode,
-            RollMode::Advantage,
-            g.i18n.t("dice.advantage"),
-        );
-        ui.selectable_value(
-            &mut g.ui.dice_mode,
-            RollMode::Disadvantage,
-            g.i18n.t("dice.disadvantage"),
-        );
+        let mut adv = g.ui.dice_mode == RollMode::Advantage;
+        let mut dis = g.ui.dice_mode == RollMode::Disadvantage;
+        if ui.checkbox(&mut adv, g.i18n.t("dice.advantage")).changed() {
+            g.ui.dice_mode = if adv {
+                RollMode::Advantage
+            } else {
+                RollMode::Normal
+            };
+        }
+        if ui
+            .checkbox(&mut dis, g.i18n.t("dice.disadvantage"))
+            .changed()
+        {
+            g.ui.dice_mode = if dis {
+                RollMode::Disadvantage
+            } else {
+                RollMode::Normal
+            };
+        }
         ui.checkbox(
             &mut g.ui.private_roll,
             g.i18n.t(if g.net.is_dm() {
@@ -387,7 +544,7 @@ fn dice_panel(ui: &mut Ui, g: &mut GameUi) {
             let pos = r.center() - galley.size() / 2.0;
             p.add(egui::epaint::TextShape::new(pos, galley, theme::IVORY).with_angle(wobble));
             ui.vertical(|ui| {
-                ui.label(RichText::new(who).strong());
+                ui.label(RichText::new(who).strong().color(theme::GOLD_BRIGHT));
                 ui.label(RichText::new(detail).small());
             });
         });
@@ -395,35 +552,81 @@ fn dice_panel(ui: &mut Ui, g: &mut GameUi) {
 }
 
 fn log_panel(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
-    theme::heading(ui, g.i18n.t("log.title"));
-    egui::ScrollArea::vertical()
-        .stick_to_bottom(true)
-        .max_height(ui.available_height() - 34.0)
-        .show(ui, |ui| {
-            for l in view.log.iter().rev().take(80).rev() {
-                ui.label(RichText::new(theme::glyph_safe(l)).small());
-            }
-            for (from, text) in g.pres.chat.iter().rev().take(20).rev() {
-                ui.label(
-                    RichText::new(format!("💬 {from}: {text}"))
-                        .small()
-                        .color(theme::MANA),
-                );
-            }
-        });
+    crate::chrome::heading(ui, Some(crate::icons::Icon::Book), g.i18n.t("log.title"));
+    // Arrival times: new lines get the current local time; the view's log may drop old lines.
+    let stamps = &mut g.pres.log_stamps;
+    if stamps.len() > view.log.len() {
+        let drop = stamps.len() - view.log.len();
+        stamps.drain(..drop);
+    }
+    while stamps.len() < view.log.len() {
+        stamps.push(crate::platform::local_hhmm());
+    }
+    let frame = egui::Frame::new()
+        .fill(egui::Color32::from_rgb(0x16, 0x11, 0x0E))
+        .stroke(egui::Stroke::new(1.0, theme::BRONZE))
+        .corner_radius(4)
+        .inner_margin(egui::Margin::symmetric(10, 6));
+    frame.show(ui, |ui| {
+        egui::ScrollArea::vertical()
+            .stick_to_bottom(true)
+            .auto_shrink([false, false])
+            .max_height((ui.available_height() - 52.0).max(40.0))
+            .show(ui, |ui| {
+                let n = view.log.len();
+                for (i, l) in view.log.iter().enumerate().skip(n.saturating_sub(80)) {
+                    let stamp = g.pres.log_stamps.get(i).cloned().unwrap_or_default();
+                    log_row(ui, &theme::glyph_safe(l), &stamp, theme::PARCHMENT);
+                }
+                for (from, text) in g.pres.chat.iter().rev().take(20).rev() {
+                    log_row(
+                        ui,
+                        &format!("{from}: {text}"),
+                        "",
+                        egui::Color32::from_rgb(150, 190, 230),
+                    );
+                }
+            });
+    });
+    ui.add_space(4.0);
     ui.horizontal(|ui| {
+        let send_w = 110.0;
+        let (r, _) = ui.allocate_exact_size(egui::vec2(24.0, 30.0), egui::Sense::hover());
+        crate::chrome::bubble(ui.painter(), r.center());
         let resp = ui.add(
             egui::TextEdit::singleline(&mut g.ui.chat)
                 .hint_text(g.i18n.t("chat.hint"))
-                .desired_width(ui.available_width() - 60.0),
+                .font(egui::FontId::new(16.0, egui::FontFamily::Proportional))
+                .desired_width((ui.available_width() - send_w - 18.0).max(80.0)),
         );
-        if (ui.button(g.i18n.t("chat.send")).clicked()
+        if (crate::chrome::gold_button(
+            ui,
+            Some(crate::icons::Icon::Pointer),
+            g.i18n.t("chat.send"),
+            send_w,
+        )
+        .clicked()
             || resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
             && !g.ui.chat.trim().is_empty()
         {
             let text = std::mem::take(&mut g.ui.chat);
             g.net.cmd(Command::Chat { text });
         }
+    });
+}
+
+/// One adventure-log line: bullet, text (truncated, full text on hover) and its time on the right.
+fn log_row(ui: &mut Ui, text: &str, stamp: &str, color: egui::Color32) {
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("•").color(theme::GOLD));
+        let w = (ui.available_width() - 56.0).max(60.0);
+        ui.scope(|ui| {
+            ui.set_max_width(w);
+            ui.add(egui::Label::new(RichText::new(text).color(color)).truncate());
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(RichText::new(stamp).small().color(theme::PARCHMENT_DARK));
+        });
     });
 }
 

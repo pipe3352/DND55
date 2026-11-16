@@ -244,3 +244,9 @@ crisp at any UI scale.
   with `"file": "oak.png"` per object. The game writes `asset_packs/manifest.template.json` listing
   every object id. Packs without a license are ignored; only use art you are allowed to redistribute.
   Packs are local to each PC (other players without the pack see the built-in art).
+
+## Dark gothic interface (current)
+
+Dark wood panels with double gold rules frame the map; parchment is kept for the inspector and sheets.
+Components live in `apps/dnd_desktop/src/chrome.rs`. Screenshots: `screenshots/after/menu.png`,
+`editor.png`, `room-details.png`, `showcase-player.png`.

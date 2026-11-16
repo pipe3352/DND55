@@ -206,6 +206,7 @@ pub fn rebuild_map(
     mut liquids: ResMut<Assets<LiquidMaterial>>,
     catalog: Res<CatalogRes>,
     settings: Res<GameSettings>,
+    ui: Res<crate::state::UiState>,
     mut last_quality: Local<Option<crate::settings::Quality>>,
 ) {
     if *last_quality != Some(settings.quality) {
@@ -414,6 +415,10 @@ pub fn rebuild_map(
 
     // Objects with contact shadows.
     for o in &map.objects {
+        // Local editor filter: hide hidden objects, or all objects.
+        if ui.obj_filter == 2 || ui.obj_filter == 1 && o.hidden {
+            continue;
+        }
         let Some(def) = catalog.0.get(&o.asset_id) else {
             continue;
         };
@@ -709,14 +714,16 @@ pub fn update_fog_and_lights(
 pub fn flicker_lights(
     time: Res<Time>,
     settings: Res<GameSettings>,
+    ui: Res<crate::state::UiState>,
     mut q: Query<(&LightGlow, &mut Sprite)>,
 ) {
-    if settings.reduced_motion {
-        return;
-    }
     let t = time.elapsed_secs();
     for (g, mut s) in &mut q {
-        if g.flicker {
+        if ui.fx_filter == 2 {
+            s.color.set_alpha(0.0);
+        } else if settings.reduced_motion || !g.flicker {
+            s.color.set_alpha(g.base_alpha);
+        } else {
             let f = 1.0 + 0.18 * (t * 9.0 + g.phase).sin() * (t * 3.3 + g.phase * 0.5).cos();
             s.color.set_alpha(g.base_alpha * f);
         }
