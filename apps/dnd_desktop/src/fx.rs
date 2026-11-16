@@ -68,7 +68,11 @@ pub fn process_events(
     net: Res<Net>,
     sfx: Res<SfxBank>,
     audio: Res<AudioSettings>,
+    fxa: Option<Res<crate::vfx::FxAssets>>,
+    settings: Res<crate::settings::GameSettings>,
+    mut shake: ResMut<crate::vfx::CameraShake>,
 ) {
+    let Some(fxa) = fxa else { return };
     if gv.events.is_empty() {
         return;
     }
@@ -105,20 +109,33 @@ pub fn process_events(
                     FloatKind::Condition => (Color::srgb(0.95, 0.85, 0.4), 16.0),
                     FloatKind::Info => (Color::srgb(0.9, 0.9, 0.75), 15.0),
                 };
-                commands.spawn((
-                    FloatText {
-                        vel: Vec2::new(0.0, 46.0),
-                        life: 1.5,
-                        max: 1.5,
-                    },
-                    Text2d::new(text),
-                    TextFont {
-                        font_size: bevy::text::FontSize::Px(size),
-                        ..default()
-                    },
-                    TextColor(color),
-                    Transform::from_xyz(p.x, p.y + CELL * 0.4, 10.0),
-                ));
+                let crit = kind == FloatKind::CriticalDamage;
+                let shown = if crit { format!("{text}!") } else { text };
+                crate::vfx::float_text(
+                    &mut commands,
+                    &fxa,
+                    Vec2::new(p.x, p.y + CELL * 0.45),
+                    shown,
+                    size * 1.15,
+                    color,
+                    if crit { 1.9 } else { 1.5 },
+                    Vec2::new(0.0, 46.0),
+                );
+                match kind {
+                    FloatKind::Damage | FloatKind::Resisted => {
+                        crate::vfx::burst(&mut commands, &fxa, &settings, p, Vfx::Slash, 0.6)
+                    }
+                    FloatKind::CriticalDamage => {
+                        crate::vfx::burst(&mut commands, &fxa, &settings, p, Vfx::Slash, 1.4);
+                        crate::vfx::ring(&mut commands, &fxa, p, Color::srgb(1.0, 0.75, 0.3), 0.45);
+                        shake.t = 0.35;
+                        shake.mag = 7.0;
+                    }
+                    FloatKind::Immune => {
+                        crate::vfx::ring(&mut commands, &fxa, p, Color::srgb(0.75, 0.75, 1.0), 0.4)
+                    }
+                    _ => {}
+                }
                 match kind {
                     FloatKind::Damage | FloatKind::CriticalDamage | FloatKind::Resisted => {
                         anims
@@ -190,6 +207,7 @@ pub fn process_events(
                     sfx.play(&mut commands, Sfx::Bow, &audio);
                 } else {
                     let dir = t - a;
+                    crate::vfx::slash(&mut commands, &fxa, t, dir, false);
                     commands.spawn((
                         Flash {
                             life: 0.22,
@@ -263,10 +281,13 @@ pub fn process_events(
             } => {
                 let color = vfx_color(vfx);
                 let a = pos_of(&anims, &gv, caster).unwrap_or_else(|| cell_to_world(from));
-                // Bolts/rays from the caster to each target.
+                // Bolts/rays from the caster to each target, then a typed burst on arrival.
                 for t in &targets {
                     let to = cell_to_world(*t);
-                    if to.distance(a) > CELL * 0.5 && area.is_empty() {
+                    crate::vfx::burst(&mut commands, &fxa, &settings, to, vfx, 1.0);
+                    if vfx == Vfx::Lightning && to.distance(a) > CELL * 0.5 {
+                        crate::vfx::lightning(&mut commands, &fxa, a, to);
+                    } else if to.distance(a) > CELL * 0.5 && area.is_empty() {
                         let dir = to - a;
                         commands.spawn((
                             Projectile {
@@ -298,9 +319,12 @@ pub fn process_events(
                         Transform::from_xyz(to.x, to.y, 9.0),
                     ));
                 }
-                // Area: each affected cell glows briefly (explosions, cones, lines).
-                for c in &area {
+                // Area: each affected cell glows briefly (explosions, cones, lines) with sparse bursts.
+                for (i, c) in area.iter().enumerate() {
                     let p = cell_to_world(*c);
+                    if i % 3 == 0 {
+                        crate::vfx::burst(&mut commands, &fxa, &settings, p, vfx, 0.5);
+                    }
                     let jitter = ((c.0 * 7 + c.1 * 13).rem_euclid(10)) as f32 * 0.03;
                     commands.spawn((
                         Flash {
@@ -317,6 +341,7 @@ pub fn process_events(
                     ));
                 }
                 if targets.is_empty() && area.is_empty() {
+                    crate::vfx::burst(&mut commands, &fxa, &settings, a, vfx, 1.0);
                     commands.spawn((
                         Flash {
                             life: 0.6,
@@ -332,20 +357,16 @@ pub fn process_events(
                     ));
                 }
                 if !name.is_empty() {
-                    commands.spawn((
-                        FloatText {
-                            vel: Vec2::new(0.0, 30.0),
-                            life: 1.4,
-                            max: 1.4,
-                        },
-                        Text2d::new(name),
-                        TextFont {
-                            font_size: bevy::text::FontSize::Px(16.0),
-                            ..default()
-                        },
-                        TextColor(color),
-                        Transform::from_xyz(a.x, a.y + CELL * 0.7, 10.0),
-                    ));
+                    crate::vfx::float_text(
+                        &mut commands,
+                        &fxa,
+                        Vec2::new(a.x, a.y + CELL * 0.75),
+                        name,
+                        17.0,
+                        color,
+                        1.4,
+                        Vec2::new(0.0, 30.0),
+                    );
                 }
                 let s = if vfx == Vfx::Healing {
                     Sfx::Heal

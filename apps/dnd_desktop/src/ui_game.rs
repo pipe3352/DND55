@@ -42,6 +42,7 @@ pub fn game_ui(
     mut themed: Local<Option<f32>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
+    theme::set_reduced_motion(&ctx, g.settings.reduced_motion);
     if *themed != Some(g.ui.ui_scale) {
         theme::apply(&ctx, g.ui.ui_scale);
         *themed = Some(g.ui.ui_scale);
@@ -420,15 +421,6 @@ fn log_panel(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
             g.net.cmd(Command::Chat { text });
         }
     });
-}
-
-fn tool_button(ui: &mut Ui, g: &mut GameUi, tool: Tool, key: &str) {
-    if ui
-        .selectable_label(g.ui.tool == tool, g.i18n.t(key))
-        .clicked()
-    {
-        g.ui.tool = tool;
-    }
 }
 
 fn world_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
@@ -1029,12 +1021,11 @@ fn overlays(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
         let gsize = galley.size();
         p.galley(pos, galley, theme::GOLD_BRIGHT);
         let half = (gsize.x / 2.0 + 60.0) * fade_in;
-        for dy in [gsize.y / 2.0 + 6.0] {
-            p.line_segment(
-                [c + egui::vec2(-half, dy), c + egui::vec2(half, dy)],
-                egui::Stroke::new(1.5, theme::GOLD.gamma_multiply(a)),
-            );
-        }
+        let dy = gsize.y / 2.0 + 6.0;
+        p.line_segment(
+            [c + egui::vec2(-half, dy), c + egui::vec2(half, dy)],
+            egui::Stroke::new(1.5, theme::GOLD.gamma_multiply(a)),
+        );
         if !theme::reduced_motion(ctx) {
             ctx.request_repaint();
         }

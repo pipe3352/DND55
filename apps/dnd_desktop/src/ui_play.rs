@@ -410,14 +410,8 @@ pub fn sheet_extras(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
             ui.horizontal_wrapped(|ui| {
                 ui.label(g.i18n.t("spell.slots"));
                 for (lvl, left, total) in slots {
-                    ui.label(
-                        RichText::new(format!(
-                            "{lvl}: {}{}",
-                            "•".repeat(left as usize),
-                            "○".repeat((total - left) as usize)
-                        ))
-                        .color(theme::GOLD),
-                    );
+                    ui.label(theme::bold(format!("{lvl}")));
+                    theme::pips(ui, left as u32, total as u32, theme::MANA);
                 }
             });
         }

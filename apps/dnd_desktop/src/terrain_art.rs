@@ -201,9 +201,6 @@ impl Canvas {
             );
         }
     }
-    pub fn get(&self, x: u32, y: u32) -> Rgba {
-        self.px[(y * self.w + x) as usize]
-    }
     pub fn map(&mut self, f: impl Fn(u32, u32, Rgba) -> Rgba) {
         for y in 0..self.h {
             for x in 0..self.w {
@@ -215,8 +212,8 @@ impl Canvas {
     pub fn into_image(self) -> Image {
         let mut data = Vec::with_capacity((self.w * self.h * 4) as usize);
         for p in &self.px {
-            for k in 0..4 {
-                data.push((p[k].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+            for v in p {
+                data.push((v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
             }
         }
         let mut img = Image::new_fill(
@@ -294,7 +291,7 @@ pub fn tile(id: &str, variant: u32, fallback: [u8; 3]) -> Image {
             let blades = if dense { 260 } else { 170 };
             for i in 0..blades {
                 let (x, y) = (hash(i, 1, seed) * 64.0, hash(i, 2, seed) * 64.0);
-                let ang = -1.57 + (hash(i, 3, seed) - 0.5) * 1.0;
+                let ang = -std::f32::consts::FRAC_PI_2 + (hash(i, 3, seed) - 0.5) * 1.0;
                 let len = 3.0 + hash(i, 4, seed) * 4.0;
                 let light = hash(i, 5, seed) > 0.5;
                 let col = if light {
@@ -807,7 +804,7 @@ pub fn decor(kind: Decor) -> Image {
     match kind {
         Decor::Tuft => {
             for i in 0..14 {
-                let a = -1.57 + (hash(i, 1, 3) - 0.5) * 1.6;
+                let a = -std::f32::consts::FRAC_PI_2 + (hash(i, 1, 3) - 0.5) * 1.6;
                 let len = 7.0 + hash(i, 2, 3) * 8.0;
                 let col = mix(c3(60, 90, 40), c3(140, 160, 70), hash(i, 3, 3));
                 c.line(
@@ -854,7 +851,7 @@ pub fn decor(kind: Decor) -> Image {
         Decor::Leaves => {
             for i in 0..5 {
                 let (x, y) = (6.0 + hash(i, 1, 13) * 20.0, 6.0 + hash(i, 2, 13) * 20.0);
-                let a = hash(i, 3, 13) * 6.28;
+                let a = hash(i, 3, 13) * std::f32::consts::TAU;
                 let col = mix(c3(150, 90, 40), c3(190, 140, 50), hash(i, 4, 13));
                 let (dx, dy) = (a.cos() * 3.5, a.sin() * 3.5);
                 c.poly(
@@ -912,7 +909,7 @@ pub fn object(id: &str, w: u8, h: u8, fallback: [u8; 3]) -> Image {
             // Outline pass, then body, then highlights: a clustered canopy.
             for pass in 0..3 {
                 for i in 0..lobes {
-                    let a = i as f32 / lobes as f32 * 6.283 + hash(i, 1, 5) * 0.4;
+                    let a = i as f32 / lobes as f32 * std::f32::consts::TAU + hash(i, 1, 5) * 0.4;
                     let d = r0 * 0.55;
                     let (x, y) = (cx + a.cos() * d, cy + a.sin() * d);
                     let rr = r0 * (0.48 + hash(i, 2, 5) * 0.12);
@@ -944,7 +941,7 @@ pub fn object(id: &str, w: u8, h: u8, fallback: [u8; 3]) -> Image {
             let n = 9;
             let pts: Vec<(f32, f32)> = (0..n)
                 .map(|i| {
-                    let a = i as f32 / n as f32 * 6.283;
+                    let a = i as f32 / n as f32 * std::f32::consts::TAU;
                     let rr = fw * (0.36 + hash(i, 4, 2) * 0.08);
                     (cx + a.cos() * rr, cy + a.sin() * rr)
                 })
@@ -1147,7 +1144,7 @@ pub fn object(id: &str, w: u8, h: u8, fallback: [u8; 3]) -> Image {
         "barrel" => {
             ring(&mut c, cx, cy, fw * 0.4, c3(116, 78, 46));
             for i in 0..8 {
-                let a = i as f32 * 0.785;
+                let a = i as f32 * std::f32::consts::FRAC_PI_4;
                 c.line(
                     (cx, cy),
                     (cx + a.cos() * fw * 0.38, cy + a.sin() * fw * 0.38),
@@ -1158,7 +1155,7 @@ pub fn object(id: &str, w: u8, h: u8, fallback: [u8; 3]) -> Image {
             c.disc(cx, cy, fw * 0.36, [0.0; 4]);
             for rr in [0.4, 0.28] {
                 for k in 0..90 {
-                    let a = k as f32 / 90.0 * 6.283;
+                    let a = k as f32 / 90.0 * std::f32::consts::TAU;
                     c.disc(
                         cx + a.cos() * fw * rr,
                         cy + a.sin() * fw * rr,
@@ -1282,7 +1279,7 @@ pub fn object(id: &str, w: u8, h: u8, fallback: [u8; 3]) -> Image {
         "pillar" => {
             ring(&mut c, cx, cy, fw * 0.4, c3(150, 144, 134));
             for k in 0..12 {
-                let a = k as f32 * 0.5236;
+                let a = k as f32 * std::f32::consts::FRAC_PI_6;
                 c.disc(
                     cx + a.cos() * fw * 0.33,
                     cy + a.sin() * fw * 0.33,
@@ -1327,7 +1324,7 @@ pub fn object(id: &str, w: u8, h: u8, fallback: [u8; 3]) -> Image {
         "rune_circle" => {
             for (r, w, a) in [(0.44, 3.0, 0.9), (0.34, 1.5, 0.7)] {
                 for k in 0..140 {
-                    let ang = k as f32 / 140.0 * 6.283;
+                    let ang = k as f32 / 140.0 * std::f32::consts::TAU;
                     c.disc(
                         cx + ang.cos() * fw * r,
                         cy + ang.sin() * fw * r,
@@ -1337,7 +1334,7 @@ pub fn object(id: &str, w: u8, h: u8, fallback: [u8; 3]) -> Image {
                 }
             }
             for k in 0..8 {
-                let a = k as f32 * 0.785;
+                let a = k as f32 * std::f32::consts::FRAC_PI_4;
                 let (x, y) = (cx + a.cos() * fw * 0.39, cy + a.sin() * fw * 0.39);
                 c.line(
                     (x - 2.0 * s, y - 2.0 * s),
@@ -1431,6 +1428,6 @@ mod tests {
             assert!(center < 0.05, "dir {dir} centre {center}");
         }
         let n = edge_mask(0, 1);
-        assert!(n[(1 * T + 32) as usize] > 0.9);
+        assert!(n[(T + 32) as usize] > 0.9);
     }
 }

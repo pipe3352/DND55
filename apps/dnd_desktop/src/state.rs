@@ -271,18 +271,10 @@ pub struct UiState {
     pub dragging_monster: Option<String>,
     pub custom_monster: Option<dnd_rules::monster::MonsterTemplate>,
     pub show_graph: bool,
-    pub graph_link_from: Option<RoomId>,
-    pub graph_drag: Option<(RoomId, egui_pos::Pos)>,
     pub script_draft: Option<dnd_session::scripts::ScriptedEvent>,
     pub script_pick: Option<ScriptPick>,
     pub xp_award: u32,
     pub container_add: String,
-}
-
-/// Small helper so state.rs doesn't depend on egui types.
-pub mod egui_pos {
-    #[derive(Debug, Clone, Copy, PartialEq, Default)]
-    pub struct Pos(pub f32, pub f32);
 }
 
 /// The script editor is waiting for a map click to fill in a trigger/action field.
@@ -378,8 +370,6 @@ impl Default for UiState {
             dragging_monster: None,
             custom_monster: None,
             show_graph: false,
-            graph_link_from: None,
-            graph_drag: None,
             script_draft: None,
             script_pick: None,
             xp_award: 100,

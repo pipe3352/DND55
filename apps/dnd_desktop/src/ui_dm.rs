@@ -286,57 +286,6 @@ fn object_properties(ui: &mut Ui, g: &mut GameUi, room: RoomId, o: MapObject) {
     });
 }
 
-/// Layer list with visibility, lock and ordering controls.
-pub fn layer_panel(ui: &mut Ui, g: &mut GameUi, room: RoomId) {
-    let Some(map) = g.gv.map.clone() else { return };
-    let n = map.layers.len();
-    for (i, l) in map.layers.iter().enumerate() {
-        ui.horizontal(|ui| {
-            let name = layer_label(g, l.kind);
-            ui.radio_value(&mut g.ui.layer, l.kind, name);
-            let (mut vis, mut lock) = (l.visible, l.locked);
-            let a = ui
-                .checkbox(&mut vis, "👁")
-                .on_hover_text(g.i18n.t("layer.visible"))
-                .changed();
-            let b = ui
-                .checkbox(&mut lock, "🔒")
-                .on_hover_text(g.i18n.t("layer.locked"))
-                .changed();
-            if a || b {
-                g.net.cmd(Command::Dm(DmCommand::SetLayer {
-                    room,
-                    layer: l.kind,
-                    visible: vis,
-                    locked: lock,
-                }));
-            }
-            if ui
-                .add_enabled(i > 0, egui::Button::new("⏶").small())
-                .on_hover_text(g.i18n.t("layer.up"))
-                .clicked()
-            {
-                g.net.cmd(Command::Dm(DmCommand::MoveLayer {
-                    room,
-                    layer: l.kind,
-                    up: true,
-                }));
-            }
-            if ui
-                .add_enabled(i + 1 < n, egui::Button::new("⏷").small())
-                .on_hover_text(g.i18n.t("layer.down"))
-                .clicked()
-            {
-                g.net.cmd(Command::Dm(DmCommand::MoveLayer {
-                    room,
-                    layer: l.kind,
-                    up: false,
-                }));
-            }
-        });
-    }
-}
-
 pub fn layer_label(g: &GameUi, k: LayerKind) -> String {
     let key = match k {
         LayerKind::Terrain => "layer.terrain",

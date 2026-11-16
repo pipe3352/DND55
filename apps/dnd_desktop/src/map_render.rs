@@ -23,7 +23,7 @@ pub struct MapSprite;
 
 /// The fog-of-war overlay (one textured sprite for the whole room).
 #[derive(Component)]
-pub struct FogCell(pub usize);
+pub struct FogCell;
 
 #[derive(Component)]
 pub struct LightGlow {
@@ -447,7 +447,7 @@ pub fn rebuild_map(
     let fog = images.add(fog_image(w as u32, h as u32));
     cache.fog = Some(fog.clone());
     commands.spawn((
-        FogCell(0),
+        FogCell,
         Sprite {
             image: fog,
             custom_size: Some(size),
@@ -654,63 +654,6 @@ pub fn flicker_lights(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn soft_fog_never_uncovers_an_unseen_cell() {
-        // 3×1 room: visible | visible | unseen. Every pixel of the unseen cell must stay opaque.
-        let room = dnd_session::view::RoomView {
-            id: dnd_world::RoomId(1),
-            name: String::new(),
-            description: String::new(),
-            map_rev: 0,
-            map: None,
-            width: 3,
-            height: 1,
-            visible: Some(vec![3, 3, 0]),
-            explored: vec![true, true, false],
-            lights: vec![],
-            entry: (0, 0),
-            is_party_room: true,
-            drawings: vec![],
-            containers: vec![],
-            music: None,
-            ambience: None,
-            weather: Default::default(),
-        };
-        let mut data = vec![0u8; (3 * FOG_PX * FOG_PX * 4) as usize];
-        paint_fog(&mut data, &room, 3, 1, true);
-        let stride = 3 * FOG_PX as usize;
-        for sy in 0..FOG_PX as usize {
-            for sx in 0..FOG_PX as usize {
-                let unseen = data[(sy * stride + 2 * FOG_PX as usize + sx) * 4 + 3];
-                assert_eq!(unseen, 255, "unseen cell pixel {sx},{sy} is not opaque");
-            }
-            // The visible cell next to it darkens towards the edge but its far side stays clear.
-            let near = data[(sy * stride + 2 * FOG_PX as usize - 1) * 4 + 3];
-            let far = data[(sy * stride + FOG_PX as usize) * 4 + 3];
-            assert!(near > 100 && far < 10, "near {near} far {far}");
-        }
-    }
-
-    #[test]
-    fn transitions_follow_priorities() {
-        assert!(spread_priority("grass") > spread_priority("dirt"));
-        assert_eq!(
-            spread_priority("stone_floor"),
-            None,
-            "structured floors never spread"
-        );
-        assert_eq!(
-            spread_priority("water_deep"),
-            None,
-            "liquids are drawn by the shader"
-        );
-    }
-}
-
 /// Translucent preview of the asset that the Pencil/Rect/Fill/Object tool would place under the cursor.
 #[derive(Component)]
 pub struct PlacementGhost;
@@ -773,5 +716,62 @@ pub fn placement_ghost(
                 Transform::from_translation(center.extend(2.9)),
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn soft_fog_never_uncovers_an_unseen_cell() {
+        // 3×1 room: visible | visible | unseen. Every pixel of the unseen cell must stay opaque.
+        let room = dnd_session::view::RoomView {
+            id: dnd_world::RoomId(1),
+            name: String::new(),
+            description: String::new(),
+            map_rev: 0,
+            map: None,
+            width: 3,
+            height: 1,
+            visible: Some(vec![3, 3, 0]),
+            explored: vec![true, true, false],
+            lights: vec![],
+            entry: (0, 0),
+            is_party_room: true,
+            drawings: vec![],
+            containers: vec![],
+            music: None,
+            ambience: None,
+            weather: Default::default(),
+        };
+        let mut data = vec![0u8; (3 * FOG_PX * FOG_PX * 4) as usize];
+        paint_fog(&mut data, &room, 3, 1, true);
+        let stride = 3 * FOG_PX as usize;
+        for sy in 0..FOG_PX as usize {
+            for sx in 0..FOG_PX as usize {
+                let unseen = data[(sy * stride + 2 * FOG_PX as usize + sx) * 4 + 3];
+                assert_eq!(unseen, 255, "unseen cell pixel {sx},{sy} is not opaque");
+            }
+            // The visible cell next to it darkens towards the edge but its far side stays clear.
+            let near = data[(sy * stride + 2 * FOG_PX as usize - 1) * 4 + 3];
+            let far = data[(sy * stride + FOG_PX as usize) * 4 + 3];
+            assert!(near > 100 && far < 10, "near {near} far {far}");
+        }
+    }
+
+    #[test]
+    fn transitions_follow_priorities() {
+        assert!(spread_priority("grass") > spread_priority("dirt"));
+        assert_eq!(
+            spread_priority("stone_floor"),
+            None,
+            "structured floors never spread"
+        );
+        assert_eq!(
+            spread_priority("water_deep"),
+            None,
+            "liquids are drawn by the shader"
+        );
     }
 }

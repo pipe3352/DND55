@@ -231,7 +231,7 @@ mod tests {
         let lights = collect_lights(&m, &[]);
         assert_eq!(lights.len(), 1);
         let lv = light_map(&m, &lights);
-        let at = |x: i32| lv[(1 * m.width + x) as usize];
+        let at = |x: i32| lv[(m.width + x) as usize];
         assert_eq!(at(1), LightLevel::Bright, "the lava cell itself");
         assert_eq!(at(2), LightLevel::Bright, "5 ft away: bright");
         assert_eq!(at(4), LightLevel::Dim, "15 ft away: dim");

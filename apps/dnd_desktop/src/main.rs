@@ -33,6 +33,7 @@ mod tokens;
 mod ui_dm;
 mod ui_game;
 mod ui_play;
+mod vfx;
 mod weather;
 
 use bevy::prelude::*;
@@ -85,7 +86,11 @@ fn main() {
         )
         .add_systems(Last, settings::frame_limiter)
         .add_plugins(EguiPlugin::default())
-        .insert_resource(ClearColor(Color::srgb(0.07, 0.055, 0.045)))
+        .insert_resource(ClearColor(Color::srgb_u8(
+            theme::BG.r(),
+            theme::BG.g(),
+            theme::BG.b(),
+        )))
         .init_state::<AppState>()
         .init_resource::<Net>()
         .init_resource::<GameView>()
@@ -95,6 +100,7 @@ fn main() {
         .init_resource::<textures::TextureCache>()
         .init_resource::<map_render::ArtCache>()
         .init_resource::<weather::WeatherSprites>()
+        .init_resource::<vfx::CameraShake>()
         .init_resource::<tokens::TokenAnims>()
         .init_resource::<fx::Presentation>()
         .init_resource::<input::Hover>()
@@ -112,7 +118,12 @@ fn main() {
         .init_resource::<autotest::AutoState>()
         .add_systems(
             Startup,
-            (setup_camera, audio::build_bank, autotest::auto_start),
+            (
+                setup_camera,
+                audio::build_bank,
+                autotest::auto_start,
+                vfx::setup_fx,
+            ),
         )
         .add_systems(Update, autotest::auto_script.after(net_sync::poll_network))
         .add_systems(
@@ -135,12 +146,14 @@ fn main() {
                     .chain(),
                 fx::process_events,
                 weather::update_weather,
+                vfx::animate_particles,
                 (
                     tokens::animate_tokens,
                     fx::animate_fx,
                     map_render::flicker_lights,
                 ),
                 (
+                    vfx::apply_shake,
                     input::camera_controls,
                     input::track_hover,
                     input::editor_keys,
@@ -176,6 +189,7 @@ fn cleanup_world(
             With<tokens::Token>,
             With<fx::FloatText>,
             With<weather::Particle>,
+            With<vfx::FxParticle>,
             With<map_render::PlacementGhost>,
             With<input::DrawingLabel>,
         )>,

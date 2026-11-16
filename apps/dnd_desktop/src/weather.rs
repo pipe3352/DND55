@@ -271,7 +271,7 @@ pub fn update_weather(
                 ),
                 WeatherKind::None => continue,
             };
-            let phase = sprites.rand() * 6.28;
+            let phase = sprites.rand() * std::f32::consts::TAU;
             let life = life * (0.6 + 0.8 * sprites.rand());
             let angle = if weather.kind == WeatherKind::Rain {
                 (vel.x / vel.y).atan()
@@ -331,7 +331,7 @@ pub fn update_weather(
             let p = cell_to_world(c)
                 + Vec2::new((sprites.rand() - 0.5) * CELL, (sprites.rand() - 0.5) * CELL);
             let life = 1.2 + sprites.rand() * 1.6;
-            let phase = sprites.rand() * 6.28;
+            let phase = sprites.rand() * std::f32::consts::TAU;
             commands.spawn((
                 Particle {
                     vel: Vec2::new((sprites.rand() - 0.5) * 20.0, 30.0 + sprites.rand() * 40.0),

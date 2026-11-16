@@ -8,6 +8,8 @@
 use crate::theme::*;
 use bevy_egui::egui::{self, Color32, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
 
+/// Every icon of the set; some are reserved for upcoming screens.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
     // menu & HUD
@@ -806,7 +808,15 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon) {
                 &[(0.16, 0.34), (0.7, 0.34), (0.64, 0.9), (0.22, 0.9)],
                 STEEL,
             );
-            k.arc(0.43, 0.34, 0.27, 3.14, 6.28, 0.05, IRON);
+            k.arc(
+                0.43,
+                0.34,
+                0.27,
+                std::f32::consts::PI,
+                std::f32::consts::TAU,
+                0.05,
+                IRON,
+            );
             k.poly(&[(0.7, 0.36), (0.9, 0.6), (0.86, 0.86), (0.74, 0.62)], MANA);
             k.line(&[(0.2, 0.5), (0.68, 0.5)], 0.04, STEEL_D);
         }
@@ -887,8 +897,24 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon) {
             k.ring(0.64, 0.5, 0.2, 0.07, BRONZE);
         }
         Lock => {
-            k.arc(0.5, 0.42, 0.22, 3.14, 6.28, 0.14, OUT);
-            k.arc(0.5, 0.42, 0.22, 3.14, 6.28, 0.07, STEEL);
+            k.arc(
+                0.5,
+                0.42,
+                0.22,
+                std::f32::consts::PI,
+                std::f32::consts::TAU,
+                0.14,
+                OUT,
+            );
+            k.arc(
+                0.5,
+                0.42,
+                0.22,
+                std::f32::consts::PI,
+                std::f32::consts::TAU,
+                0.07,
+                STEEL,
+            );
             k.poly(
                 &[(0.18, 0.42), (0.82, 0.42), (0.82, 0.92), (0.18, 0.92)],
                 GOLD,
@@ -1210,31 +1236,8 @@ pub fn emblem(painter: &Painter, rect: Rect, icon: Icon, field: Color32) {
     paint(painter, inner, icon);
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_icon_paints_without_panicking() {
-        let ctx = egui::Context::default();
-        crate::theme::apply(&ctx, 1.0);
-        ctx.begin_pass(egui::RawInput::default());
-        ctx.end_pass().textures_delta.clear(); // fonts become active on the next pass
-        ctx.begin_pass(egui::RawInput::default());
-        let painter = ctx.layer_painter(egui::LayerId::background());
-        for (i, icon) in ALL.iter().enumerate() {
-            let r = Rect::from_min_size(
-                pos2((i % 10) as f32 * 40.0, (i / 10) as f32 * 40.0),
-                vec2(36.0, 36.0),
-            );
-            paint(&painter, r, *icon);
-            emblem(&painter, r, *icon, BURGUNDY);
-        }
-        ctx.end_pass().textures_delta.clear();
-    }
-}
-
 /// Every icon (for tests and the icon gallery).
+#[cfg_attr(not(test), allow(dead_code))]
 pub const ALL: &[Icon] = &[
     Icon::Book,
     Icon::D20,
@@ -1292,3 +1295,27 @@ pub const ALL: &[Icon] = &[
     Icon::Hammer,
     Icon::Feather,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_icon_paints_without_panicking() {
+        let ctx = egui::Context::default();
+        crate::theme::apply(&ctx, 1.0);
+        ctx.begin_pass(egui::RawInput::default());
+        ctx.end_pass().textures_delta.clear(); // fonts become active on the next pass
+        ctx.begin_pass(egui::RawInput::default());
+        let painter = ctx.layer_painter(egui::LayerId::background());
+        for (i, icon) in ALL.iter().enumerate() {
+            let r = Rect::from_min_size(
+                pos2((i % 10) as f32 * 40.0, (i / 10) as f32 * 40.0),
+                vec2(36.0, 36.0),
+            );
+            paint(&painter, r, *icon);
+            emblem(&painter, r, *icon, BURGUNDY);
+        }
+        ctx.end_pass().textures_delta.clear();
+    }
+}

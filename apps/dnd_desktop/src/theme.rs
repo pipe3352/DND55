@@ -21,7 +21,7 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color32 {
 }
 
 // ---------------------------------------------------------------- palette (design tokens)
-/// Deep background behind everything.
+/// Deep background behind everything (used by the Bevy clear color).
 pub const BG: Color32 = rgb(0x17, 0x17, 0x15);
 /// Dark carved wood (frames, toolbars).
 pub const WOOD: Color32 = rgb(0x35, 0x25, 0x1D);
@@ -674,7 +674,9 @@ pub fn bar(ui: &mut egui::Ui, label: &str, cur: i32, max: i32, color: Color32) {
 }
 
 pub fn paint_bar(painter: &egui::Painter, rect: Rect, frac: f32, color: Color32) {
-    painter.rect_filled(rect, 3.0, IRON);
+    // Forged-iron frame (procedural iron texture).
+    let m = Materials::get(painter.ctx());
+    paint_material(&painter.with_clip_rect(rect), rect, &m.iron, Color32::WHITE);
     let trough = rect.shrink(2.0);
     painter.rect_filled(trough, 2.0, rgb(0x1E, 0x18, 0x14));
     if frac > 0.0 {
@@ -838,7 +840,7 @@ pub fn banner(painter: &egui::Painter, center: Pos2, text: &str, size: f32, alph
         } else {
             rect.right()
         };
-        let tail = vec![
+        let tail = [
             pos2(x, rect.top()),
             pos2(x + side * size * 0.9, rect.top()),
             pos2(x + side * size * 0.45, rect.center().y),
@@ -872,43 +874,6 @@ pub fn glyph_safe(text: &str) -> std::borrow::Cow<'_, str> {
         std::borrow::Cow::Owned(text.replace('→', "»"))
     } else {
         std::borrow::Cow::Borrowed(text)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn noise_tiles_seamlessly() {
-        // Left/right and top/bottom edges must match for tileable materials.
-        for i in 0..64 {
-            let a = super::fbm(0, i * 4, 256, 4, 3, 1);
-            let b = super::fbm(256, i * 4, 256, 4, 3, 1);
-            assert!((a - b).abs() < 1e-4, "{a} vs {b}");
-        }
-    }
-
-    #[test]
-    fn fonts_cover_italian_and_ui_symbols() {
-        // Every embedded font must contain the Italian accented letters.
-        for (name, bytes) in [
-            (
-                "UnifrakturCook",
-                &include_bytes!("../assets/fonts/UnifrakturCook-Bold.ttf")[..],
-            ),
-            (
-                "GrenzeGotisch",
-                &include_bytes!("../assets/fonts/GrenzeGotisch.ttf")[..],
-            ),
-            (
-                "CrimsonText",
-                &include_bytes!("../assets/fonts/CrimsonText-Regular.ttf")[..],
-            ),
-        ] {
-            let face = ttf_parser::Face::parse(bytes, 0).expect(name);
-            for c in "àèéìòùÀÈÉÌÒÙ’—«»".chars() {
-                assert!(face.glyph_index(c).is_some(), "{name} lacks {c}");
-            }
-        }
     }
 }
 
@@ -1066,4 +1031,41 @@ pub fn stat_chip(ui: &mut egui::Ui, icon: crate::icons::Icon, value: &str, toolt
         INK,
     );
     resp.on_hover_text(tooltip);
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn noise_tiles_seamlessly() {
+        // Left/right and top/bottom edges must match for tileable materials.
+        for i in 0..64 {
+            let a = super::fbm(0, i * 4, 256, 4, 3, 1);
+            let b = super::fbm(256, i * 4, 256, 4, 3, 1);
+            assert!((a - b).abs() < 1e-4, "{a} vs {b}");
+        }
+    }
+
+    #[test]
+    fn fonts_cover_italian_and_ui_symbols() {
+        // Every embedded font must contain the Italian accented letters.
+        for (name, bytes) in [
+            (
+                "UnifrakturCook",
+                &include_bytes!("../assets/fonts/UnifrakturCook-Bold.ttf")[..],
+            ),
+            (
+                "GrenzeGotisch",
+                &include_bytes!("../assets/fonts/GrenzeGotisch.ttf")[..],
+            ),
+            (
+                "CrimsonText",
+                &include_bytes!("../assets/fonts/CrimsonText-Regular.ttf")[..],
+            ),
+        ] {
+            let face = ttf_parser::Face::parse(bytes, 0).expect(name);
+            for c in "àèéìòùÀÈÉÌÒÙ’—«»".chars() {
+                assert!(face.glyph_index(c).is_some(), "{name} lacks {c}");
+            }
+        }
+    }
 }

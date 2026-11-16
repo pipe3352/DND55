@@ -52,6 +52,7 @@ pub fn menu_ui(
     mut themed: Local<Option<f32>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
+    theme::set_reduced_motion(&ctx, p.settings.reduced_motion);
     if *themed != Some(p.ui.ui_scale) {
         theme::apply(&ctx, p.ui.ui_scale);
         *themed = Some(p.ui.ui_scale);

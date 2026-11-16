@@ -390,6 +390,20 @@ pub fn open_folder(path: &std::path::Path) {
     let _ = std::process::Command::new("xdg-open").arg(path).spawn();
 }
 
+/// Simple frame limiter for the FPS cap setting (sleeps out the rest of the frame budget).
+pub fn frame_limiter(settings: Res<GameSettings>, mut last: Local<Option<std::time::Instant>>) {
+    if settings.fps_cap > 0 {
+        let budget = std::time::Duration::from_secs_f64(1.0 / settings.fps_cap as f64);
+        if let Some(prev) = *last {
+            let spent = prev.elapsed();
+            if spent < budget {
+                std::thread::sleep(budget - spent);
+            }
+        }
+    }
+    *last = Some(std::time::Instant::now());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,18 +431,4 @@ mod tests {
         assert_eq!(s.language, "it");
         assert_eq!(s.resolution, (1600, 900));
     }
-}
-
-/// Simple frame limiter for the FPS cap setting (sleeps out the rest of the frame budget).
-pub fn frame_limiter(settings: Res<GameSettings>, mut last: Local<Option<std::time::Instant>>) {
-    if settings.fps_cap > 0 {
-        let budget = std::time::Duration::from_secs_f64(1.0 / settings.fps_cap as f64);
-        if let Some(prev) = *last {
-            let spent = prev.elapsed();
-            if spent < budget {
-                std::thread::sleep(budget - spent);
-            }
-        }
-    }
-    *last = Some(std::time::Instant::now());
 }
