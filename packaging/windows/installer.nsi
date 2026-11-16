@@ -67,9 +67,9 @@ Section "DND55 (required)" SecMain
   SetShellVarContext all
   CreateDirectory "$SMPROGRAMS\DND55"
   CreateShortcut "$SMPROGRAMS\DND55\DND55.lnk" "$INSTDIR\DND55.exe" "" "$INSTDIR\DND55.exe" 0
+  WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateShortcut "$SMPROGRAMS\DND55\Uninstall DND55.lnk" "$INSTDIR\Uninstall.exe"
   WriteRegStr HKLM "Software\DND55" "InstallDir" "$INSTDIR"
-  WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\DND55" "DisplayName" "DND55"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\DND55" "DisplayVersion" "${VERSION}"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\DND55" "Publisher" "DND55 project"
