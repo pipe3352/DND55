@@ -1,0 +1,17 @@
+[Unit]
+Description=DND55 relay server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/dnd55-relay --bind 0.0.0.0:7979
+User=dnd55relay
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

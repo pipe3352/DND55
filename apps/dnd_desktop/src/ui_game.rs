@@ -895,6 +895,23 @@ fn right_panel(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
             );
         }
     }
+    if !g.net.is_dm() && !view.session_started {
+        // Lobby: tell the DM you're ready.
+        let me = view
+            .players
+            .iter()
+            .find(|p| Some(Principal::Player(p.id)) == g.net.you);
+        if let Some(p) = me {
+            let mut ready = p.ready;
+            if ui
+                .toggle_value(&mut ready, RichText::new(g.i18n.t("lobby.ready")).strong())
+                .on_hover_text(g.i18n.t("lobby.ready_help"))
+                .changed()
+            {
+                g.net.cmd(Command::SetReady(ready));
+            }
+        }
+    }
     if !g.net.is_dm() {
         if let Some((id, sheet)) = view.my_characters.first().cloned() {
             g.ui.selected.get_or_insert(id);

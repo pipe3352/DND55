@@ -12,7 +12,18 @@ pub fn data_dir() -> PathBuf {
 }
 
 pub fn open_store() -> Result<Store, String> {
-    Store::open(&data_dir().join("campaigns.db")).map_err(|e| e.to_string())
+    let path = data_dir().join("campaigns.db");
+    // Once per run, before anything touches the database: keep the previous state as
+    // campaigns.db.bak (recovery copy if a save or a migration ever goes wrong).
+    static BACKUP: std::sync::Once = std::sync::Once::new();
+    BACKUP.call_once(|| {
+        if path.exists() {
+            if let Err(e) = std::fs::copy(&path, path.with_extension("db.bak")) {
+                bevy::log::warn!("could not back up {}: {e}", path.display());
+            }
+        }
+    });
+    Store::open(&path).map_err(|e| e.to_string())
 }
 
 /// Starts hosting `session` on `port` and connects the DM's own client to it.

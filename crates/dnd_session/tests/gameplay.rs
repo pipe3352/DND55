@@ -763,9 +763,23 @@ fn rests_restore_resources() {
             delta: -3,
         },
     );
+    s.state
+        .creatures
+        .get_mut(&w)
+        .unwrap()
+        .resources
+        .hit_dice_used = 1;
     dm(&mut s, DmCommand::Rest { long: true });
     assert_eq!(s.state.creatures[&w].resources.slots_used[0], 0);
     assert_eq!(hp(&s, w), s.state.creatures[&w].hp.max);
+    // SRD 5.2.1: a Long Rest restores all spent Hit Point Dice…
+    assert_eq!(s.state.creatures[&w].resources.hit_dice_used, 0);
+    // …but "to start a Long Rest, you must have at least 1 Hit Point".
+    s.state.creatures.get_mut(&w).unwrap().hp.current = 0;
+    s.state.creatures.get_mut(&w).unwrap().resources.slots_used[0] = 2;
+    dm(&mut s, DmCommand::Rest { long: true });
+    assert_eq!(hp(&s, w), 0);
+    assert_eq!(s.state.creatures[&w].resources.slots_used[0], 2);
 }
 
 #[test]

@@ -1,63 +1,51 @@
 # Roadmap & Progress
 
-## Vertical slice (First Playable Milestone) — status
+## How things were verified
 
-"Verified" says *how* each item was checked. "Headless run" = two real app processes (DM host + player)
-on a virtual X display with software Vulkan, connected over TCP, scripted via `DND55_AUTO` (see
-`apps/dnd_desktop/src/autotest.rs`); screenshots in `docs/screenshots/`. Mouse-driven UI flows could not
-be clicked in this environment and are marked accordingly.
+| Method | What it means |
+|---|---|
+| **Unit/integration tests** | `cargo test --workspace`: 150+ tests (rules, world, session, persistence, real TCP multiplayer, relay, client logic, i18n coverage). |
+| **Headless run** | Two real app processes (DM host and player) on virtual X displays with software Vulkan, connected over TCP and driven by `DND55_AUTO` (see `apps/dnd_desktop/src/autotest.rs`). Screenshots are in `docs/screenshots/`. |
+| **Click test** | `scripts/gui-click-test.sh`: real mouse events (xdotool) in two game windows. The player casts Fire Bolt from the spellbook at a goblin, and the DM drags a monster from the bestiary onto the map. It asserts on the adventure log. |
+| **Wine** | The Windows `.exe` started under Wine on Linux (not real Windows). |
+| **Manual (Windows)** | Not done yet. Use [`WINDOWS_ACCEPTANCE_CHECKLIST.md`](WINDOWS_ACCEPTANCE_CHECKLIST.md). |
 
-| # | Requirement | Status | Verified by |
-|---|---|---|---|
-| 1 | DM launches the desktop app | ✅ | Headless run |
-| 2 | DM creates a campaign | ✅ | `Store::create_campaign` tests; menu button implemented (not clicked headless) |
-| 3 | Two connected rooms | ✅ | Demo campaign + `CreateRoom`/`ConnectRooms` session tests; World tab UI implemented |
-| 4 | Customize a room with tiles & objects | ✅ | Paint/fill/rect/object/undo session tests; editor UI implemented (not clicked headless) |
-| 5 | Player connects | ✅ | TCP integration tests + headless run |
-| 6 | Player creates a basic character | ✅ | Rules validation tests; host rejects invalid sheets; creator UI implemented (not clicked headless) |
-| 7 | Player uploads a PNG portrait | ✅ | Upload/validate/re-encode tests; portrait token visible in headless run |
-| 8 | Token appears on the map | ✅ | Headless run |
-| 9 | Player moves on the grid | ✅ | Session tests (speed, Dash, OA) + headless run |
-| 10 | DM spawns a monster | ✅ | Session tests + headless run |
-| 11 | Both roll dice | ✅ | Session/TCP tests; player roll shown in DM and player dice trays in headless run |
-| 12 | DM starts a combat encounter | ✅ | Session tests + headless run (initiative tracker) |
-| 13 | Basic attack with 2024 rules | ✅ | Rules + session tests (hit/miss/crit/Sap/Vex/Graze/auto-crit) |
-| 14 | Floating damage text | ✅ | Headless run ("-4" over the goblin) |
-| 15 | DM authorizes movement to the connected room | ✅ | Session tests (players can't) + headless run |
-| 16 | Campaign saves and loads | ✅ | Persistence tests; autosave on room transition observed in headless run's DB |
+## Milestone 2 — "Complete game + Windows release" (this release)
 
-**Not verified here:** audio output (container has no sound device; WAV generation is tested), real
-GPU rendering (software renderer used), a running Windows build (the code compiles for Windows; see
-README), mouse-driven flows listed above.
-
-## Phases
-
-| Phase | Scope | Status |
+| Area | Status | Verified by |
 |---|---|---|
-| 1 Research & architecture | SRD 5.2.1 study, stack, architecture, data models, legal | ✅ (this repo's docs) |
-| 2 Core desktop engine | Workspace, Bevy app, menu, grid, camera, input, loop | ✅ |
-| 3 Map editor | Tiles, library, layers, collision, tools, serialization | 🟡 core tools done; multi-select/transform/copy/templates/test-play ⏳ |
-| 4 Campaign graph | Rooms, edges, transitions, room state | 🟡 logic done; visual node-graph canvas ⏳ (list UI today) |
-| 5 Multiplayer | Hosting, lobby, join, sync, authority, reconnect | 🟡 done for LAN/port-forward/VPN; relay ⏳; ready-check lobby screen ⏳ |
-| 6 Character system | Creation, sheets, portraits, progression, inventory | 🟡 level-1 creation & sheet; leveling, inventory management ⏳ |
-| 7 Rules & combat | Dice, initiative, actions, reactions, conditions, spells | 🟡 see RULES_COVERAGE; spells ⏳ |
-| 8 Lighting & graphics | Fog, LOS, lights, VFX, damage feedback | 🟡 done for lights/darkvision/fog; spell VFX library ⏳ |
-| 9 Audio & atmosphere | Music, ambience, SFX, polish | 🟡 synthesized SFX + volumes; music/ambience import ⏳ |
-| 10 Persistence & systems | Saves ✅; quests, scripted events, encounters, import/export | 🟡 saves/export done; events/quests ⏳ |
-| 11 Quality & release | Profiling, installer, docs | ⏳ |
+| A. Spellcasting (339 SRD spells; 31 fully + 61 partly automated; slots, prepared spells, concentration, AoE, upcasting, light spells, reactions) | ✅ | Gameplay tests (light in a dark cave, Fireball, Magic Missile, Hold Person concentration, Shield) + click test + screenshots |
+| B. Class features, subclasses, level 1–20 progression, rests, XP | ✅ (see RULES_COVERAGE for per-class gaps) | Gameplay tests (Rage, Sneak Attack, Extra Attack/Surge/Second Wind, leveling, rests) |
+| C. Bestiary: 328 SRD monsters, search/filters/stat blocks, drag-to-map, custom monster editor, save actions with recharge | ✅ | Dragon breath test + click test (drag-to-map) + screenshots |
+| D. Map editor: select, box/Shift multi-select, drag-move, copy/paste/duplicate, rotate, delete, properties panel, container loot, layer order/visibility/lock, undo/redo, drawing tools | ✅ | Editor multi-object/undo test; screenshots. Drag-move and shortcuts not exercised by the click test. |
+| E. Visual campaign graph (drag rooms, connect, delete edges, travel, delete room, new room) | ✅ | Screenshot; session tests for edges/transitions. Canvas interactions not click-tested. |
+| F. Online multiplayer: relay server + invites, LAN/direct invites, UPnP, auto-reconnect, ping, friendly errors | ✅ relay/LAN; 🟡 UPnP | Relay integration test (join, bad invite, rejoin). UPnP untested (no router available). |
+| G. Scripted events editor (traps, levers, chest rewards, boss defeat, dialogue with choices, skill checks) | ✅ | Scripts test; screenshot of the editor |
+| Inventory/loot, potions, music/ambience, spell VFX | ✅ | Tests (potions, chests, give); synthesized music/ambience unit test; VFX seen in screenshots |
+| Windows: DND55.exe, installer, portable zip, data dirs, crash reports, GPU backend fallback, no-audio fallback | 🟡 | Built and Wine-tested; **not run on real Windows** |
 
-## Next milestones (proposed order)
+## Earlier milestone — First playable vertical slice
 
-1. **Spellcasting core** — spell data model, slots, save DCs, spell attacks, concentration; first
-   spells: *Light*, *Fire Bolt*, *Cure Wounds*, *Magic Missile*, *Shield* (reaction prompt). Light
-   spells create light sources (engine already supports them).
-2. **Class features L1–5** for all 12 classes (Rage, Sneak Attack, Second Wind, Action Surge, Extra
-   Attack, Bonus Actions) + level-up flow and rests.
-3. **Bestiary as data** — load SRD monsters from JSON packs with a checker against `reference/`.
-4. **Editor 2.0** — selection, move/rotate/duplicate, copy/paste, map templates, test-play mode,
-   visual graph canvas.
-5. **Relay + QUIC** — join by code without port forwarding; reconnect across IP changes.
-6. **Event system** — triggers (enter area, interact, creature defeated) → conditions → actions
-   (open door, reveal, spawn, dialogue, award item), editable without code.
-7. **Inventory & loot**, **DM drawing tools**, **music/ambience packs**.
-8. **Windows installer** (WiX/MSI or Inno Setup), crash reporting, performance profiling on large maps.
+All 16 requirements are done: hosting, joining, character creation with a portrait, map editing,
+movement, monsters, dice, initiative, 2024 attack rules, floating damage, DM-controlled travel, and
+saving/loading. Tests and headless runs cover them.
+
+## Known limitations
+
+* No real-Windows test yet (see the checklist). No code signing, so SmartScreen warns on first run.
+* Network traffic isn't encrypted (TLS ⏳). No public relay is provided.
+* About 250 spells and many higher-level class features are "DM adjudicates" (the text is shown and the DM resolves them).
+* Large creatures occupy one cell for movement and targeting.
+* Music and ambience are simple procedural loops; importing audio packs is ⏳.
+* The UI's rule texts (spell and monster descriptions) are in English only. The SRD is English.
+* Audio output and real-GPU rendering weren't observed in the development environment (no sound
+  device, software renderer only).
+
+## Next milestones
+
+1. **Windows acceptance pass** on 2–3 real PCs (NVIDIA/AMD/Intel), fix what it finds, sign the installer.
+2. **TLS for game traffic** (rustls) and relay authentication; optionally a hosted relay.
+3. **More automation**: Counterspell, Turn Undead, Wild Shape, Metamagic, Cunning Strike, Help/Hide/Grapple/Shove actions, cover.
+4. **Large creatures** (multi-cell footprint), map templates and test-play mode in the editor.
+5. **Audio packs** (import OGG/WAV with license metadata) and a richer music system.
+6. **Quests and journal**, shops and magic items.

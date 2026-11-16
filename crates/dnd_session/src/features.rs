@@ -602,6 +602,17 @@ impl Session {
                 continue;
             };
             let lvl = sheet.level;
+            if long && c.hp.current <= 0 {
+                // "To start a Long Rest, you must have at least 1 Hit Point."
+                self.log(
+                    Audience::All,
+                    format!(
+                        "{} is at 0 HP and gains no benefit from the Long Rest.",
+                        c.name
+                    ),
+                );
+                continue;
+            }
             let cm = self.creature_mut(*id);
             let r = &mut cm.resources;
             // Short-rest recoveries (also part of a Long Rest).

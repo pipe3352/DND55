@@ -1,76 +1,90 @@
-# D&D 5.5 — Multiplayer Desktop RPG Engine
+# DND55 — Multiplayer Desktop Tabletop RPG (5e 2024 rules, SRD 5.2.1)
 
-A Rust desktop app for playing **fifth edition with the 2024 revised rules (SRD 5.2.1)** with friends.
-The DM builds rooms on a grid, links them into a campaign graph and hosts a live session. Players join
-over the network with their own characters, explore under real light and darkness, and fight
-turn-based battles with animated feedback.
+A Rust desktop game for playing **fifth edition with the 2024 revised rules (SRD 5.2.1)** with friends.
+The DM builds rooms on a grid, links them into a campaign map and hosts a live session. Players join
+from their own PCs, on the same network or over the internet through a relay, with their own
+characters. They explore under real light and darkness, cast spells and fight turn-based battles with
+animated feedback.
 
-![DM view](docs/screenshots/dm-guard-room-combat.png)
+**Windows users: start with [`WINDOWS_INSTALLATION_GUIDE.md`](WINDOWS_INSTALLATION_GUIDE.md).**
 
-| Player in a dark crypt (Dwarf darkvision, pillar shadows, brazier light) | Player character sheet & dice |
+![DM view with the bestiary](docs/screenshots/dm-bestiary.png)
+
+| Player casts Fire Bolt (clicked with real mouse input) | Spellbook (Wizard) |
 |---|---|
-| ![crypt](docs/screenshots/player-crypt-darkvision.png) | ![player](docs/screenshots/player-guard-room.png) |
+| ![fire bolt](docs/screenshots/player-fire-bolt.png) | ![spellbook](docs/screenshots/player-spellbook.png) |
+| **Campaign map & event editor (DM)** | **Invites, selection & object properties (DM)** |
+| ![graph](docs/screenshots/dm-graph-events.png) | ![invite](docs/screenshots/dm-invite-select.png) |
 
-## Status
+## What's in it
 
-This is the **first playable vertical slice**. Hosting, joining, character creation with a PNG
-portrait, the map editor, monsters, dice, initiative, 2024 attack rules, opportunity attacks,
-lighting/darkvision/fog of war, room travel and saving all work end to end. Spells, most class
-features and many editor conveniences are still to come. See:
+* **Rules:** 339 SRD spells (31 fully and 61 partly automated, the rest DM-adjudicated with full text);
+  slots, Pact Magic, concentration, area templates, upcasting and reactions. Class features for all 12
+  classes and the SRD subclasses, levels 1–20, rests and XP. 2024 combat: Weapon Mastery, opportunity
+  attacks, conditions, death saves. See [`docs/RULES_COVERAGE.md`](docs/RULES_COVERAGE.md).
+* **Bestiary:** 328 SRD monsters with search, filters, stat blocks, breath weapons with recharge, drag
+  onto the map, and a homebrew monster editor.
+* **Map editor:** tiles, objects and layers, selection with copy/paste/duplicate/rotate, a properties
+  panel, chest loot, lights, undo/redo, and drawing tools.
+* **Campaign map:** a visual room graph. Only the DM moves the party.
+* **Scripted events without code:** traps, levers, chest rewards, boss-defeat unlocks, NPC dialogue
+  with choices, skill checks.
+* **Multiplayer:** authoritative host on the DM's PC. Hidden information never reaches players. Invite
+  links work on LAN, via the `dnd55-relay` server, or with direct port forwarding/UPnP.
+  Auto-reconnect.
+* **Presentation:** dynamic lighting, darkvision, fog of war, spell VFX, floating damage, synthesized
+  SFX, music and ambience, an EN/IT interface, and a medieval UI theme.
+* **Windows:** `DND55.exe`, an installer and a portable zip. Saves go in `%APPDATA%\DND55`, with crash
+  reports and automatic GPU-backend and no-audio fallbacks.
 
-* [`docs/DESIGN.md`](docs/DESIGN.md): architecture and technical design
-* [`docs/RULES_COVERAGE.md`](docs/RULES_COVERAGE.md): what's implemented, partial or pending
-* [`docs/ROADMAP.md`](docs/ROADMAP.md): milestone checklist (and how each item was verified) and next steps
-* [`docs/LEGAL.md`](docs/LEGAL.md): SRD attribution and asset licensing
+## Documentation
 
-## Build & run
+| Document | For |
+|---|---|
+| [`WINDOWS_INSTALLATION_GUIDE.md`](WINDOWS_INSTALLATION_GUIDE.md) | Installing/playing on Windows, building from source, multiplayer setup |
+| [`docs/RELAY.md`](docs/RELAY.md) | Running a relay server (VPS/systemd/Docker), cost, security |
+| [`docs/RULES_COVERAGE.md`](docs/RULES_COVERAGE.md) | What's automated, partial or DM-adjudicated |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Status, how each item was verified, known limitations, next steps |
+| [`docs/WINDOWS_ACCEPTANCE_CHECKLIST.md`](docs/WINDOWS_ACCEPTANCE_CHECKLIST.md) | Manual test pass on real Windows |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | Architecture |
+| [`docs/LEGAL.md`](docs/LEGAL.md) | SRD attribution and asset licensing |
 
-Requirements: Rust (the pinned toolchain in `rust-toolchain.toml` installs automatically with rustup).
-On Linux you also need `libasound2-dev libudev-dev libxkbcommon-dev` (plus Vulkan drivers).
+## Build & run (developers)
+
+Requirements: Rust (the pinned toolchain in `rust-toolchain.toml` installs automatically via rustup).
+Windows needs the MSVC build tools (see the guide, Method B). Linux needs
+`libasound2-dev libudev-dev libxkbcommon-dev` and Vulkan drivers.
 
 ```bash
-cargo run --release -p dnd_desktop
+cargo run --release -p dnd_desktop        # the game
+cargo run --release -p dnd_relay          # a relay server on 0.0.0.0:7979
 ```
 
-* **Play — Quick Demo** hosts a two-room demo campaign (Guard Room → Sunken Crypt).
-* **Create Campaign** hosts a blank campaign on the chosen port (default 7878).
-* Players use **Join Campaign** with `DM-IP:7878` and the 6-letter code shown in the DM's top bar.
-  Over the internet, use port forwarding or a private network such as Tailscale (a relay is planned).
-* Saves live in `%APPDATA%\dnd55\campaigns.db` (Windows) or `~/.local/share/dnd55/` (Linux).
-
-Controls: WASD/arrows pan · mouse wheel zooms · middle-drag pans · left-click selects your token, then
-click a cell to move or a door to open it · in combat, pick an attack in the action bar, then click a
-target · right-click cancels or returns to Play · DM: Shift+click teleports the selected creature.
-
-### Windows build
-
-The release build cross-compiles and links for `x86_64-pc-windows-gnu` (MinGW); it has not yet been run on a Windows machine. On Windows, `cargo build --release -p dnd_desktop`
-produces `target\release\dnd55.exe` (no console window in release builds). An installer is on the roadmap.
+Windows packages from Linux (MinGW + NSIS): `scripts/build-windows-from-linux.sh`. On Windows: `scripts\build-windows.ps1`.
 
 ## Tests
 
 ```bash
-cargo test --workspace          # 103 tests: rules, world, session, persistence, real-TCP multiplayer, client
-cargo clippy --workspace --all-targets
+cargo test --workspace                     # 150+ tests
+cargo clippy --workspace --all-targets     # clean
+scripts/gui-click-test.sh                  # Linux: real mouse input in two game windows (Xvfb + xdotool)
 ```
 
-Headless smoke run (two processes, screenshots):
-
-```bash
-DND55_AUTO=host DND55_SESSION_CODE=TEST42 DND55_SCREENSHOT=dm.png cargo run -p dnd_desktop &
-DND55_AUTO=join DND55_SESSION_CODE=TEST42 DND55_SCREENSHOT=player.png cargo run -p dnd_desktop
-```
+The GUI harness (`DND55_AUTO=host|join`, `DND55_AUTO_OPEN=bestiary,spellbook,…`,
+`DND55_SCREENSHOT=…`) is documented in `apps/dnd_desktop/src/autotest.rs`.
 
 ## Workspace
 
 | Crate | Purpose |
 |---|---|
-| `crates/dnd_rules` | Pure SRD 5.2.1 rules engine (no graphics/IO) |
+| `crates/dnd_rules` | Pure SRD 5.2.1 rules engine: abilities, combat, spells, classes, monsters, items (no graphics/IO) |
 | `crates/dnd_world` | Maps, layers, asset catalog, pathfinding, line of sight, lighting, room graph |
-| `crates/dnd_session` | Authoritative session: command validation, combat, per-player hidden-info views |
+| `crates/dnd_session` | Authoritative session: command validation, combat, spells, features, scripts, per-player views |
 | `crates/dnd_persist` | SQLite saves with checksums, migrations, autosave, backup, export/import |
-| `crates/dnd_net` | TCP host/client: session codes, DM secret, resume tokens, rate limiting |
-| `apps/dnd_desktop` | Bevy + egui desktop client (menus, editor, HUD, rendering, audio, i18n EN/IT) |
+| `crates/dnd_net` | TCP host/client, invites, relay client, UPnP, session codes, resume tokens, rate limiting |
+| `crates/dnd_relay` | `dnd55-relay`: rendezvous + byte relay for internet play without port forwarding |
+| `apps/dnd_desktop` | Bevy + egui client (`DND55.exe`): menus, editor, HUD, rendering, audio, i18n EN/IT |
+| `content/`, `tools/` | SRD data (spells, monsters, class tables/features) and the scripts that extract/validate it from the SRD PDF |
 
 ---
 
