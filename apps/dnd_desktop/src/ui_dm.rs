@@ -2,7 +2,7 @@
 //! (search, filters, stat blocks, drag-to-map, custom monsters), the visual room graph, scripted
 //! events, rests/XP and room audio. None of these are shown to players.
 
-use crate::state::{DrawKind, ScriptPick, Tool, egui_pos};
+use crate::state::{DrawKind, ScriptPick, Tool};
 use crate::theme;
 use crate::ui_game::GameUi;
 use bevy_egui::egui::{self, Color32, RichText, Ui};
@@ -292,7 +292,7 @@ pub fn layer_panel(ui: &mut Ui, g: &mut GameUi, room: RoomId) {
     let n = map.layers.len();
     for (i, l) in map.layers.iter().enumerate() {
         ui.horizontal(|ui| {
-            let name = layer_name(g, l.kind);
+            let name = layer_label(g, l.kind);
             ui.radio_value(&mut g.ui.layer, l.kind, name);
             let (mut vis, mut lock) = (l.visible, l.locked);
             let a = ui
@@ -337,7 +337,7 @@ pub fn layer_panel(ui: &mut Ui, g: &mut GameUi, room: RoomId) {
     }
 }
 
-fn layer_name(g: &GameUi, k: LayerKind) -> String {
+pub fn layer_label(g: &GameUi, k: LayerKind) -> String {
     let key = match k {
         LayerKind::Terrain => "layer.terrain",
         LayerKind::FloorDecoration => "layer.floor",

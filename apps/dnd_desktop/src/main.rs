@@ -11,6 +11,7 @@
 mod audio;
 mod autotest;
 mod character_ui;
+mod editor_ui;
 mod fx;
 mod graph_editor;
 mod hosting;
@@ -99,6 +100,7 @@ fn main() {
         .init_resource::<input::Hover>()
         .init_resource::<input::CameraFit>()
         .init_resource::<graph_editor::GraphEditor>()
+        .init_resource::<editor_ui::PaletteThumbs>()
         .init_resource::<menu::MenuCache>()
         .init_resource::<character_ui::CharacterDraft>()
         .init_resource::<audio::SfxBank>()
@@ -145,7 +147,11 @@ fn main() {
                     input::map_click,
                 )
                     .chain(),
-                (input::draw_overlays, input::sync_drawing_labels),
+                (
+                    input::draw_overlays,
+                    input::sync_drawing_labels,
+                    map_render::placement_ghost,
+                ),
             )
                 .chain()
                 .after(net_sync::poll_network)
@@ -170,6 +176,7 @@ fn cleanup_world(
             With<tokens::Token>,
             With<fx::FloatText>,
             With<weather::Particle>,
+            With<map_render::PlacementGhost>,
             With<input::DrawingLabel>,
         )>,
     >,

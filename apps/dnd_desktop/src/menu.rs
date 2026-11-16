@@ -7,8 +7,8 @@ use crate::state::{HostRuntime, MenuPage, Net, UiState};
 use crate::theme;
 use bevy::app::AppExit;
 use bevy::prelude::*;
+use bevy_egui::EguiContexts;
 use bevy_egui::egui::{self, RichText};
-use bevy_egui::{EguiContexts, egui::Ui};
 use dnd_session::Session;
 use dnd_session::demo::demo_campaign;
 

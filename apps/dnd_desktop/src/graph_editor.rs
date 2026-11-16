@@ -1090,6 +1090,15 @@ fn canvas(
     });
 }
 
+/// Map thumbnail texture for a room card (shared with the editor minimap).
+pub fn thumbnail_tex(
+    ge: &mut GraphEditor,
+    ctx: &egui::Context,
+    c: &RoomCard,
+) -> egui::TextureHandle {
+    thumbnail(&mut ge.thumbs, ctx, c).clone()
+}
+
 fn thumbnail<'a>(
     cache: &'a mut HashMap<RoomId, (u64, egui::TextureHandle)>,
     ctx: &egui::Context,

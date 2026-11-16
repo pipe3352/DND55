@@ -19,6 +19,10 @@ pub struct Hover {
 #[derive(Resource, Default)]
 pub struct CameraFit {
     pub request: bool,
+    /// Centre the camera on this world point (minimap clicks).
+    pub goto: Option<(f32, f32)>,
+    /// Visible world rectangle (left, top, right, bottom) for the minimap.
+    pub camera_view: Option<(f32, f32, f32, f32)>,
     /// Smooth-zoom target (orthographic scale).
     pub target_scale: Option<f32>,
     last_room: Option<dnd_world::RoomId>,
@@ -97,6 +101,17 @@ pub fn camera_controls(
             t.translation.y += motion.delta.y * o.scale;
         }
     }
+    if let Some((x, y)) = fit.goto.take() {
+        t.translation.x = x;
+        t.translation.y = y;
+    }
+    let half = Vec2::new(window.width(), window.height()) * o.scale / 2.0;
+    fit.camera_view = Some((
+        t.translation.x - half.x,
+        t.translation.y + half.y,
+        t.translation.x + half.x,
+        t.translation.y - half.y,
+    ));
     // Smooth zoom towards the target.
     if let Some(target) = fit.target_scale {
         let k = (time.delta_secs() * 12.0).min(1.0);
@@ -136,7 +151,22 @@ pub fn map_click(
     mut ui: ResMut<UiState>,
     mut net: ResMut<Net>,
     gv: Res<GameView>,
+    window: Single<&Window>,
 ) {
+    // Right-click on an object with the Select tool opens its context menu.
+    if buttons.just_pressed(MouseButton::Right)
+        && !keys.pressed(KeyCode::Space)
+        && ui.tool == Tool::Select
+        && net.is_dm()
+        && !egui.wants_any_pointer_input()
+        && let (Some(cell), Some(map), Some(cursor)) =
+            (hover.cell, &gv.map, window.cursor_position())
+        && let Some(o) = map.objects.iter().rev().find(|o| o.covers(cell))
+    {
+        let k = ui.ui_scale.max(0.1);
+        ui.map_context = Some(((cursor.x / k, cursor.y / k), o.id));
+        return;
+    }
     if buttons.just_pressed(MouseButton::Right) && !keys.pressed(KeyCode::Space) {
         ui.targeting = None;
         ui.rect_start = None;
@@ -489,6 +519,36 @@ pub fn editor_keys(
     let ctrl = keys.pressed(KeyCode::ControlLeft)
         || keys.pressed(KeyCode::ControlRight)
         || keys.pressed(KeyCode::SuperLeft);
+    // Tool hotkeys (number row) and Ctrl+S.
+    if !ctrl {
+        for (key, tool) in [
+            (KeyCode::Digit1, Tool::Select),
+            (KeyCode::Digit2, Tool::Pencil),
+            (KeyCode::Digit3, Tool::Eraser),
+            (KeyCode::Digit4, Tool::Rect),
+            (KeyCode::Digit5, Tool::Fill),
+            (KeyCode::Digit6, Tool::Object),
+            (KeyCode::Digit7, Tool::RemoveObject),
+            (KeyCode::Digit8, Tool::Entry),
+            (KeyCode::Digit9, Tool::Light),
+            (KeyCode::Digit0, Tool::Draw),
+        ] {
+            if keys.just_pressed(key) {
+                ui.tool = tool;
+                return;
+            }
+        }
+        if keys.just_pressed(KeyCode::Escape) && ui.sel_objects.is_empty() && ui.tool != Tool::Play
+        {
+            ui.tool = Tool::Play;
+            return;
+        }
+    }
+    if ctrl && keys.just_pressed(KeyCode::KeyS) {
+        net.save(String::new());
+        gv.toast("Saving…");
+        return;
+    }
     if ctrl && keys.just_pressed(KeyCode::KeyZ) {
         net.cmd(Command::Dm(DmCommand::Undo { room }));
         return;
@@ -885,6 +945,52 @@ pub fn draw_overlays(
                 center,
                 Vec2::new((x1 - x0 + 1) as f32 * CELL, (y1 - y0 + 1) as f32 * CELL),
                 Color::srgb(1.0, 0.3, 0.8),
+            );
+        }
+    }
+    // Editor overlays: collision (movement/sight/difficult) and light radii.
+    if net.is_dm() && ui.show_collision {
+        for y in 0..map.height {
+            for x in 0..map.width {
+                let f = map.flags((x, y));
+                let c = cell_to_world((x, y));
+                let s = CELL * 0.42;
+                if f.blocks_movement {
+                    gizmos.line_2d(
+                        c + Vec2::new(-s, -s),
+                        c + Vec2::new(s, s),
+                        Color::srgb(0.9, 0.2, 0.15),
+                    );
+                    gizmos.line_2d(
+                        c + Vec2::new(-s, s),
+                        c + Vec2::new(s, -s),
+                        Color::srgb(0.9, 0.2, 0.15),
+                    );
+                }
+                if f.blocks_sight {
+                    gizmos.rect_2d(c, Vec2::splat(CELL * 0.7), Color::srgb(0.3, 0.5, 1.0));
+                }
+                if f.difficult {
+                    gizmos.circle_2d(c, CELL * 0.12, Color::srgb(1.0, 0.85, 0.2));
+                }
+            }
+        }
+    }
+    if net.is_dm()
+        && ui.show_light_radii
+        && let Some(r) = &view.room
+    {
+        for l in &r.lights {
+            let c = cell_to_world(l.cell);
+            gizmos.circle_2d(
+                c,
+                (l.bright_ft as f32 / 5.0 + 0.5) * CELL,
+                Color::srgb(1.0, 0.85, 0.35),
+            );
+            gizmos.circle_2d(
+                c,
+                ((l.bright_ft + l.dim_ft) as f32 / 5.0 + 0.5) * CELL,
+                Color::srgba(1.0, 0.7, 0.3, 0.5),
             );
         }
     }

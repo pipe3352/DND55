@@ -240,6 +240,13 @@ pub struct UiState {
     pub show_levelup: bool,
     pub levelup: dnd_session::command::LevelUpChoices,
     pub show_settings: bool,
+    pub recent_assets: Vec<String>,
+    pub show_collision: bool,
+    pub show_light_radii: bool,
+    /// Editor preview: hide the editor chrome to see the map as it plays.
+    pub editor_preview: bool,
+    /// Object context menu on the map: screen position (egui points) and object.
+    pub map_context: Option<((f32, f32), dnd_world::ObjectId)>,
     pub show_invite: bool,
     pub dismissed_message: u64,
     // ---- DM editor
@@ -346,6 +353,11 @@ impl Default for UiState {
             show_levelup: false,
             levelup: Default::default(),
             show_settings: false,
+            recent_assets: vec![],
+            show_collision: false,
+            show_light_radii: false,
+            editor_preview: false,
+            map_context: None,
             show_invite: false,
             dismissed_message: 0,
             sel_objects: vec![],

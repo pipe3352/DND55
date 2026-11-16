@@ -710,3 +710,68 @@ mod tests {
         );
     }
 }
+
+/// Translucent preview of the asset that the Pencil/Rect/Fill/Object tool would place under the cursor.
+#[derive(Component)]
+pub struct PlacementGhost;
+
+#[allow(clippy::too_many_arguments)]
+pub fn placement_ghost(
+    mut commands: Commands,
+    ui: Res<crate::state::UiState>,
+    hover: Res<crate::input::Hover>,
+    net: Res<Net>,
+    catalog: Res<CatalogRes>,
+    mut cache: ResMut<ArtCache>,
+    mut images: ResMut<Assets<Image>>,
+    mut ghost: Query<(Entity, &mut Sprite, &mut Transform), With<PlacementGhost>>,
+) {
+    use crate::state::Tool;
+    let placing = net.is_dm()
+        && matches!(
+            ui.tool,
+            Tool::Pencil | Tool::Rect | Tool::Fill | Tool::Object
+        );
+    let def = catalog.0.get(&ui.asset).cloned();
+    let (Some(cell), true, Some(def)) = (hover.cell, placing, def) else {
+        for (e, ..) in &ghost {
+            commands.entity(e).despawn();
+        }
+        return;
+    };
+    let (w, h) = if def.is_object {
+        (def.size.0, def.size.1)
+    } else {
+        (1, 1)
+    };
+    let center = cell_to_world(cell)
+        + Vec2::new(
+            (w as f32 - 1.0) * CELL / 2.0,
+            -(h as f32 - 1.0) * CELL / 2.0,
+        );
+    let image = if def.is_object {
+        cache.object(&def.id, w, h, def.color, &mut images)
+    } else {
+        cache.tile(&def.id, 0, def.color, &mut images)
+    };
+    let size = Vec2::new(w as f32 * CELL, h as f32 * CELL);
+    match ghost.single_mut() {
+        Ok((_, mut s, mut t)) => {
+            s.image = image;
+            s.custom_size = Some(size);
+            t.translation = center.extend(2.9);
+        }
+        Err(_) => {
+            commands.spawn((
+                PlacementGhost,
+                Sprite {
+                    image,
+                    custom_size: Some(size),
+                    color: Color::srgba(1.0, 1.0, 1.0, 0.55),
+                    ..default()
+                },
+                Transform::from_translation(center.extend(2.9)),
+            ));
+        }
+    }
+}

@@ -14,8 +14,7 @@ use dnd_rules::d20::RollMode;
 use dnd_session::command::{Command, DmCommand};
 use dnd_session::model::Principal;
 use dnd_session::view::{ClientView, HpView};
-use dnd_world::catalog::Category;
-use dnd_world::map::{AmbientLight, LayerKind};
+use dnd_world::map::AmbientLight;
 
 #[derive(SystemParam)]
 pub struct GameUi<'w> {
@@ -30,6 +29,8 @@ pub struct GameUi<'w> {
     pub next: ResMut<'w, NextState<AppState>>,
     pub hover: Res<'w, crate::input::Hover>,
     pub graph: ResMut<'w, crate::graph_editor::GraphEditor>,
+    pub thumbs: ResMut<'w, crate::editor_ui::PaletteThumbs>,
+    pub fit: ResMut<'w, crate::input::CameraFit>,
     pub settings: ResMut<'w, crate::settings::GameSettings>,
     pub audio: Option<Res<'w, crate::audio::AudioStatus>>,
 }
@@ -164,6 +165,18 @@ pub fn game_ui(
             });
         });
 
+    let editing = dm && g.ui.dm_tab == DmTab::Editor && view.room.is_some();
+    let preview = editing && g.ui.editor_preview;
+    if editing && !preview {
+        egui::Panel::top("editor-tools")
+            .frame(theme::toolbar_frame())
+            .show(&mut root, |ui| {
+                theme::wood_bg(ui);
+                theme::dark_scope(ui);
+                crate::editor_ui::toolbar(ui, &mut g, &view);
+            });
+    }
+
     // ---------------- bottom: dice + log + chat
     egui::Panel::bottom("bottom")
         .resizable(true)
@@ -176,9 +189,17 @@ pub fn game_ui(
                 log_panel(&mut cols[1], &mut g, &view);
             });
         });
+    if editing && !preview {
+        egui::Panel::bottom("editor-status")
+            .frame(theme::panel_frame().inner_margin(egui::Margin::symmetric(8, 3)))
+            .show(&mut root, |ui| {
+                theme::panel_bg(ui);
+                crate::editor_ui::status_bar(ui, &mut g, &view);
+            });
+    }
 
     // ---------------- left: DM tools
-    if dm {
+    if dm && !preview {
         egui::Panel::left("dm")
             .resizable(true)
             .default_size(290.0)
@@ -198,7 +219,7 @@ pub fn game_ui(
                 });
                 ui.separator();
                 egui::ScrollArea::vertical().show(ui, |ui| match g.ui.dm_tab {
-                    DmTab::Editor => editor_tab(ui, &mut g, &view),
+                    DmTab::Editor => crate::editor_ui::palette(ui, &mut g, &view),
                     DmTab::World => world_tab(ui, &mut g, &view),
                     DmTab::Monsters => monsters_tab(ui, &mut g, &view),
                     DmTab::Events => crate::ui_dm::events_tab(ui, &mut g, &view),
@@ -214,10 +235,36 @@ pub fn game_ui(
         .frame(theme::panel_frame())
         .show(&mut root, |ui| {
             theme::panel_bg(ui);
-            egui::ScrollArea::vertical().show(ui, |ui| right_panel(ui, &mut g, &view));
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                if editing && !preview {
+                    crate::editor_ui::inspector(ui, &mut g, &view);
+                } else {
+                    right_panel(ui, &mut g, &view);
+                }
+            });
         });
 
     overlays(&ctx, &mut g, &view);
+    if editing && !preview {
+        crate::editor_ui::minimap(&ctx, &mut g, &view);
+        crate::editor_ui::context_menu(&ctx, &mut g, &view);
+    }
+    if preview {
+        egui::Area::new("exit-preview".into())
+            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 48.0))
+            .show(&ctx, |ui| {
+                if theme::plaque_button(
+                    ui,
+                    crate::icons::Icon::Brush,
+                    g.i18n.t("editor.exit_preview"),
+                    260.0,
+                )
+                .clicked()
+                {
+                    g.ui.editor_preview = false;
+                }
+            });
+    }
     if g.ui.show_invite {
         invite_window(&ctx, &mut g);
     }
@@ -363,155 +410,6 @@ fn tool_button(ui: &mut Ui, g: &mut GameUi, tool: Tool, key: &str) {
         .clicked()
     {
         g.ui.tool = tool;
-    }
-}
-
-fn editor_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
-    let Some(room) = &view.room else { return };
-    let room_id = room.id;
-    theme::heading(ui, g.i18n.t("editor.tools"));
-    ui.horizontal_wrapped(|ui| {
-        tool_button(ui, g, Tool::Play, "tool.play");
-        tool_button(ui, g, Tool::Select, "tool.select");
-        tool_button(ui, g, Tool::Draw, "tool.draw");
-        tool_button(ui, g, Tool::Pencil, "tool.pencil");
-        tool_button(ui, g, Tool::Eraser, "tool.eraser");
-        tool_button(ui, g, Tool::Rect, "tool.rect");
-        tool_button(ui, g, Tool::Fill, "tool.fill");
-        tool_button(ui, g, Tool::Object, "tool.object");
-        tool_button(ui, g, Tool::RemoveObject, "tool.remove_object");
-        tool_button(ui, g, Tool::Entry, "tool.entry");
-        tool_button(ui, g, Tool::Light, "tool.light");
-    });
-    ui.horizontal(|ui| {
-        if ui.button(g.i18n.t("editor.undo")).clicked() {
-            g.net.cmd(Command::Dm(DmCommand::Undo { room: room_id }));
-        }
-        if ui.button(g.i18n.t("editor.redo")).clicked() {
-            g.net.cmd(Command::Dm(DmCommand::Redo { room: room_id }));
-        }
-    });
-    theme::heading(ui, g.i18n.t("editor.layers"));
-    crate::ui_dm::layer_panel(ui, g, room_id);
-    if let Some(map) = g.gv.map.clone() {
-        ui.horizontal(|ui| {
-            ui.label(g.i18n.t("editor.ambient"));
-            for (amb, key) in [
-                (AmbientLight::Bright, "light.bright"),
-                (AmbientLight::Dim, "light.dim"),
-                (AmbientLight::Darkness, "light.dark"),
-            ] {
-                if ui
-                    .selectable_label(map.ambient == amb, g.i18n.t(key))
-                    .clicked()
-                {
-                    g.net.cmd(Command::Dm(DmCommand::SetAmbient {
-                        room: room_id,
-                        ambient: amb,
-                    }));
-                }
-            }
-        });
-    }
-    if g.ui.tool == Tool::Light {
-        ui.add(
-            egui::Slider::new(&mut g.ui.light_bright, 0..=60)
-                .step_by(5.0)
-                .text(g.i18n.t("light.bright_ft")),
-        );
-        ui.add(
-            egui::Slider::new(&mut g.ui.light_dim, 0..=60)
-                .step_by(5.0)
-                .text(g.i18n.t("light.dim_ft")),
-        );
-        if ui.button(g.i18n.t("light.clear")).clicked() {
-            g.net
-                .cmd(Command::Dm(DmCommand::ClearLights { room: room_id }));
-        }
-    }
-    if g.ui.tool == Tool::Object {
-        ui.checkbox(&mut g.ui.object_hidden, g.i18n.t("editor.hidden_object"));
-    }
-    if g.ui.tool == Tool::Select {
-        crate::ui_dm::selection_panel(ui, g, room_id);
-    }
-    if g.ui.tool == Tool::Draw {
-        crate::ui_dm::draw_options(ui, g, room_id, true);
-    }
-    theme::heading(ui, g.i18n.t("editor.assets"));
-    ui.add(egui::TextEdit::singleline(&mut g.ui.asset_search).hint_text(g.i18n.t("editor.search")));
-    let favorites = g.ui.favorites.clone();
-    ui.horizontal_wrapped(|ui| {
-        ui.label("★");
-        for f in &favorites {
-            if let Some(a) = g.catalog.0.get(f)
-                && ui.selectable_label(g.ui.asset == a.id, &a.name).clicked()
-            {
-                select_asset(g, a.id.clone(), a.is_object);
-            }
-        }
-    });
-    let search = g.ui.asset_search.clone();
-    for cat in [
-        Category::Terrain,
-        Category::Architecture,
-        Category::Vegetation,
-        Category::Furniture,
-        Category::Natural,
-        Category::Dungeon,
-        Category::Fantasy,
-    ] {
-        let items: Vec<_> = g.catalog.0.search(&search, Some(cat)).cloned().collect();
-        if items.is_empty() {
-            continue;
-        }
-        egui::CollapsingHeader::new(format!("{cat:?} ({})", items.len()))
-            .default_open(!search.is_empty())
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    for a in items {
-                        let [r, gg, b] = a.color;
-                        let resp = ui.add(
-                            egui::Button::new(RichText::new(&a.name).color(Color32::WHITE))
-                                .fill(Color32::from_rgb(r, gg, b))
-                                .selected(g.ui.asset == a.id),
-                        );
-                        if resp.clicked() {
-                            select_asset(g, a.id.clone(), a.is_object);
-                        }
-                        if resp.secondary_clicked() {
-                            if g.ui.favorites.contains(&a.id) {
-                                g.ui.favorites.retain(|f| *f != a.id);
-                            } else {
-                                g.ui.favorites.push(a.id.clone());
-                            }
-                        }
-                    }
-                });
-            });
-    }
-    ui.label(RichText::new(g.i18n.t("editor.favorites_help")).small());
-}
-
-fn select_asset(g: &mut GameUi, id: String, is_object: bool) {
-    g.ui.asset = id;
-    if is_object {
-        g.ui.tool = Tool::Object;
-    } else if matches!(
-        g.ui.tool,
-        Tool::Play
-            | Tool::Object
-            | Tool::RemoveObject
-            | Tool::Spawn
-            | Tool::Entry
-            | Tool::Light
-            | Tool::Select
-            | Tool::Draw
-    ) {
-        g.ui.tool = Tool::Pencil;
-    }
-    if !is_object && g.ui.layer == LayerKind::Furniture {
-        g.ui.layer = LayerKind::Terrain;
     }
 }
 
@@ -1104,7 +1002,7 @@ fn overlays(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
                 );
             });
     }
-    if g.net.you == Some(Principal::Dm) && g.ui.tool != Tool::Play {
+    if g.net.you == Some(Principal::Dm) && g.ui.tool != Tool::Play && g.ui.dm_tab != DmTab::Editor {
         egui::Area::new("tool-hint".into())
             .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 36.0))
             .interactable(false)
