@@ -802,11 +802,13 @@ fn monsters_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
     if let Some(dm) = &view.dm {
         for m in &dm.bestiary {
             ui.horizontal(|ui| {
+                let sel = g.ui.tool == Tool::Spawn && g.ui.monster == m.id;
+                // White names on the dark panel (ink on the gold highlight when selected).
+                let name = RichText::new(&m.name)
+                    .strong()
+                    .color(if sel { theme::INK } else { egui::Color32::WHITE });
                 if ui
-                    .selectable_label(
-                        g.ui.tool == Tool::Spawn && g.ui.monster == m.id,
-                        RichText::new(&m.name).strong(),
-                    )
+                    .selectable_label(sel, name)
                     .clicked()
                 {
                     g.ui.monster = m.id.clone();
