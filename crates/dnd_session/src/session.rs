@@ -93,6 +93,7 @@ impl Session {
             effects: vec![],
             scripts: vec![],
             pending_dialogue: None,
+            hp_undo: Vec::new(),
         };
         Self::from_state(
             state,
@@ -2596,6 +2597,130 @@ impl Session {
                     .unwrap_or(0);
                 self.log(Audience::All, "The DM reorders the initiative.");
             }
+            SetInitiative { entity, total } => {
+                let name = self.creature(entity)?.name.clone();
+                let cb = self.combat_mut()?;
+                let e = cb
+                    .order
+                    .iter_mut()
+                    .find(|e| e.entity == entity)
+                    .ok_or_else(|| CommandError::Invalid("not in the initiative order".into()))?;
+                let old = e.total;
+                e.total = total;
+                self.resort_initiative_keep_active();
+                self.log(
+                    Audience::DmOnly,
+                    format!("DM sets {name}'s initiative {old} → {total}."),
+                );
+            }
+            RerollInitiative { entity } => {
+                let ids: Vec<EntityId> = match entity {
+                    Some(id) => {
+                        if !self.combat_mut()?.order.iter().any(|e| e.entity == id) {
+                            return invalid("not in the initiative order");
+                        }
+                        vec![id]
+                    }
+                    None => self.combat_mut()?.order.iter().map(|e| e.entity).collect(),
+                };
+                for id in ids {
+                    let e = self.initiative_roll(id, false);
+                    let c = &self.state.creatures[&id];
+                    let (aud, text) = (
+                        if c.hidden {
+                            Audience::DmOnly
+                        } else {
+                            Audience::All
+                        },
+                        format!("{} rerolls Initiative: {}", c.name, e.roll.breakdown()),
+                    );
+                    if let Some(slot) = self.combat_mut()?.order.iter_mut().find(|x| x.entity == id)
+                    {
+                        *slot = e;
+                    }
+                    self.log(aud, text);
+                }
+                self.resort_initiative_keep_active();
+            }
+            SetActiveCombatant { entity } => {
+                let cb = self.combat_mut()?;
+                let pos = cb
+                    .order
+                    .iter()
+                    .position(|e| e.entity == entity)
+                    .ok_or_else(|| CommandError::Invalid("not in the initiative order".into()))?;
+                let current = cb.turn.entity;
+                if current != entity {
+                    self.end_of_turn(current);
+                    let cb = self.combat_mut()?;
+                    cb.pending = None;
+                    cb.pending_hit = None;
+                    cb.index = pos;
+                    let name = self.state.creatures[&entity].name.clone();
+                    self.log(Audience::DmOnly, format!("DM gives the turn to {name}."));
+                    self.start_turn(entity);
+                }
+            }
+            AddToCombat { entity, total } => {
+                let c = self.creature(entity)?;
+                if !c.is_alive() {
+                    return rules("the creature is dead");
+                }
+                let room = c.room;
+                let cb = self.combat_mut()?;
+                if cb.room != room {
+                    return rules("the creature is not in the combat's room");
+                }
+                if cb.order.iter().any(|e| e.entity == entity) {
+                    return invalid("already in the initiative order");
+                }
+                match total {
+                    None => self.roll_into_initiative(entity, false),
+                    Some(t) => {
+                        let mut e = self.initiative_roll(entity, false);
+                        e.total = t;
+                        self.combat_mut()?.order.push(e);
+                        self.resort_initiative_keep_active();
+                        let name = self.state.creatures[&entity].name.clone();
+                        self.log(
+                            Audience::DmOnly,
+                            format!("DM adds {name} to combat at initiative {t}."),
+                        );
+                    }
+                }
+            }
+            RemoveFromCombat { entity } => {
+                let name = self.creature(entity)?.name.clone();
+                if !self.combat_mut()?.order.iter().any(|e| e.entity == entity) {
+                    return invalid("not in the initiative order");
+                }
+                self.log(Audience::DmOnly, format!("DM removes {name} from combat."));
+                self.remove_from_initiative(entity);
+            }
+            ManualHp { entity, op } => self.manual_hp(entity, op)?,
+            UndoHp => {
+                let u = self
+                    .state
+                    .hp_undo
+                    .pop()
+                    .ok_or_else(|| CommandError::Rules("nothing to undo".into()))?;
+                let Some(c) = self.state.creatures.get_mut(&u.entity) else {
+                    return invalid("that creature no longer exists");
+                };
+                let name = c.name.clone();
+                c.hp = u.hp;
+                c.conditions = u.conditions;
+                if let (Some(entry), Some(cb)) = (u.initiative, self.state.combat.as_mut())
+                    && !cb.order.iter().any(|e| e.entity == u.entity)
+                {
+                    cb.order.push(entry);
+                    self.resort_initiative_keep_active();
+                }
+                self.log(
+                    Audience::DmOnly,
+                    format!("DM undoes the last HP change on {name}."),
+                );
+            }
             TransitionParty { to, override_rules } => self.transition(to, override_rules)?,
             RevealRoom { room, explored } => {
                 let r = self
@@ -2947,6 +3072,190 @@ impl Session {
             },
             format!("{name} rolls Initiative: {}", e.roll.breakdown()),
         );
+    }
+
+    fn combat_mut(&mut self) -> Res<&mut Combat> {
+        self.state
+            .combat
+            .as_mut()
+            .ok_or_else(|| CommandError::Rules("not in combat".into()))
+    }
+
+    /// Re-sorts by total (highest first). The sort is stable, so tied combatants keep the order the
+    /// DM gave them (2024: the GM decides ties). The active combatant keeps its turn.
+    fn resort_initiative_keep_active(&mut self) {
+        if let Some(cb) = self.state.combat.as_mut() {
+            let active = cb.turn.entity;
+            cb.order.sort_by_key(|e| std::cmp::Reverse(e.total));
+            cb.index = cb
+                .order
+                .iter()
+                .position(|e| e.entity == active)
+                .unwrap_or(0);
+        }
+    }
+
+    /// Sets current HP (clamped to 0..=max) through the normal state transitions: reaching 0 uses the
+    /// damage path (Unconscious, monsters die, Concentration ends) without Temporary HP or Massive
+    /// Damage; rising from 0 ends Unconscious (the creature stays Prone) and resets death saves.
+    fn set_current_hp(&mut self, entity: EntityId, value: i32) {
+        let (cur, max, dead) = {
+            let h = &self.state.creatures[&entity].hp;
+            (h.current, h.max, h.dead)
+        };
+        let value = value.clamp(0, max);
+        if value < cur {
+            let temp = std::mem::take(&mut self.creature_mut(entity).hp.temp);
+            self.apply_damage(entity, cur - value, false);
+            if let Some(c) = self.state.creatures.get_mut(&entity) {
+                c.hp.temp = temp;
+            }
+        } else if value > cur || dead && value > 0 {
+            let c = self.creature_mut(entity);
+            c.hp.dead = false;
+            c.hp.death_saves = Default::default();
+            c.hp.current = value;
+            if cur == 0 {
+                c.conditions.remove(Condition::Unconscious);
+                c.conditions.add(Condition::Prone);
+            }
+        }
+    }
+
+    fn manual_hp(&mut self, entity: EntityId, op: crate::command::HpOp) -> Res<()> {
+        use crate::command::HpOp::*;
+        let c = self.creature(entity)?;
+        let (name, hidden, before) = (c.name.clone(), c.hidden, c.hp);
+        let positive = |v: i32| {
+            if v > 0 {
+                Ok(v)
+            } else {
+                invalid("enter a positive amount")
+            }
+        };
+        match op {
+            Damage { amount, .. } | Heal { amount } => {
+                positive(amount)?;
+            }
+            SetMax(v) if v < 1 => return invalid("maximum HP must be at least 1"),
+            SetTemp(v) if v < 0 => return invalid("temporary HP can't be negative"),
+            _ => {}
+        }
+        if let Heal { .. } = op
+            && before.dead
+        {
+            return rules("the dead can't be healed: use Set HP to revive");
+        }
+        let initiative = self
+            .state
+            .combat
+            .as_ref()
+            .and_then(|cb| cb.order.iter().find(|e| e.entity == entity).cloned());
+        self.state.hp_undo.push(HpUndo {
+            entity,
+            hp: before,
+            conditions: self.state.creatures[&entity].conditions.clone(),
+            initiative,
+        });
+        if self.state.hp_undo.len() > HP_UNDO_CAP {
+            self.state.hp_undo.remove(0);
+        }
+        let float = |s: &mut Self, text: String, kind: FloatKind| {
+            s.emit(Audience::All, Event::Floating { entity, text, kind });
+        };
+        let action = match op {
+            Damage {
+                amount,
+                rules: true,
+                damage_type,
+            } => {
+                let mut amt = amount;
+                let mut note = String::new();
+                if let Some(t) = damage_type {
+                    let o = self.state.creatures[&entity].defenses.apply(t, amount, 0);
+                    amt = o.final_amount;
+                    if o.immune {
+                        float(self, "Immune".into(), FloatKind::Immune);
+                        note = " (immune)".into();
+                    } else if o.resisted {
+                        float(self, "Resisted".into(), FloatKind::Resisted);
+                        note = " (resisted)".into();
+                    } else if o.vulnerable {
+                        note = " (vulnerable)".into();
+                    }
+                }
+                if amt > 0 {
+                    float(self, format!("-{amt}"), FloatKind::Damage);
+                }
+                self.apply_damage(entity, amt, false);
+                let ty = damage_type.map(|t| format!(" {t:?}")).unwrap_or_default();
+                format!("takes {amt}{ty} damage{note}")
+            }
+            Damage {
+                amount,
+                rules: false,
+                ..
+            } => {
+                float(self, format!("-{amount}"), FloatKind::Damage);
+                self.set_current_hp(entity, before.current - amount);
+                format!("loses {amount} HP (direct)")
+            }
+            Heal { amount } => {
+                let gained = (before.current + amount).min(before.max) - before.current;
+                self.set_current_hp(entity, before.current + amount);
+                float(self, format!("+{gained}"), FloatKind::Healing);
+                format!("regains {gained} HP")
+            }
+            SetCurrent(v) => {
+                self.set_current_hp(entity, v);
+                let now = self.state.creatures[&entity].hp.current;
+                float(self, format!("HP {now}"), FloatKind::Condition);
+                format!("has HP set to {now}")
+            }
+            SetMax(v) => {
+                let c = self.creature_mut(entity);
+                c.hp.max = v;
+                c.hp.current = c.hp.current.min(v);
+                format!("has maximum HP set to {v}")
+            }
+            SetTemp(v) => {
+                self.creature_mut(entity).hp.temp = v;
+                if v > 0 {
+                    float(self, format!("+{v} temp"), FloatKind::TempHp);
+                }
+                format!("has {v} Temporary HP")
+            }
+            Restore => {
+                self.set_current_hp(entity, before.max);
+                float(
+                    self,
+                    format!("+{}", before.max - before.current),
+                    FloatKind::Healing,
+                );
+                "is restored to full HP".into()
+            }
+            Zero => {
+                self.set_current_hp(entity, 0);
+                "is reduced to 0 HP".into()
+            }
+        };
+        let after = self.state.creatures[&entity].hp;
+        self.log(
+            if hidden {
+                Audience::DmOnly
+            } else {
+                Audience::All
+            },
+            format!("{name} {action} (DM)."),
+        );
+        self.log(
+            Audience::DmOnly,
+            format!(
+                "Manual HP: {name} {}/{} +{} temp → {}/{} +{} temp.",
+                before.current, before.max, before.temp, after.current, after.max, after.temp
+            ),
+        );
+        Ok(())
     }
 
     pub(crate) fn start_combat(&mut self, surprised: Vec<EntityId>) -> Res<()> {

@@ -406,6 +406,36 @@ pub enum DmCommand {
     ReorderInitiative {
         order: Vec<EntityId>,
     },
+    /// DM override: sets one combatant's initiative total (any integer, negatives included). The
+    /// tracker re-sorts by total, keeping the current relative order of ties and the active turn.
+    SetInitiative {
+        entity: EntityId,
+        total: i32,
+    },
+    /// Rerolls initiative for one combatant, or for every combatant (`None`). Turn and round stay.
+    RerollInitiative {
+        entity: Option<EntityId>,
+    },
+    /// Makes `entity` the active combatant: the current turn ends and its turn starts now. The
+    /// round number is unchanged.
+    SetActiveCombatant {
+        entity: EntityId,
+    },
+    /// Adds a creature to the running combat with a fixed total, or rolls for it (`None`).
+    AddToCombat {
+        entity: EntityId,
+        total: Option<i32>,
+    },
+    RemoveFromCombat {
+        entity: EntityId,
+    },
+    /// Manual Hit Point change (DM override; logged, shown to the table and undoable).
+    ManualHp {
+        entity: EntityId,
+        op: HpOp,
+    },
+    /// Reverts the most recent `ManualHp` change.
+    UndoHp,
     TransitionParty {
         to: RoomId,
         override_rules: bool,
@@ -443,4 +473,31 @@ impl Command {
             _ => None,
         }
     }
+}
+
+/// A manual Hit Point operation by the DM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HpOp {
+    /// `rules = true`: normal damage rules — Temporary Hit Points absorb first, the creature's
+    /// Resistance/Vulnerability/Immunity to `damage_type` apply, then the 0 HP rules (Unconscious,
+    /// death saves, Massive Damage, monsters die). `rules = false` (override): the amount comes
+    /// straight off current HP, ignoring Temporary HP and defenses (0 HP still makes the creature
+    /// Unconscious, or kills a monster).
+    Damage {
+        amount: i32,
+        rules: bool,
+        damage_type: Option<dnd_rules::damage::DamageType>,
+    },
+    /// Ordinary healing: never above the maximum; can't revive the dead (use `SetCurrent`).
+    Heal { amount: i32 },
+    /// Sets current HP (clamped to 0..=max). Above 0 also revives a dead creature (DM override).
+    SetCurrent(i32),
+    /// Sets maximum HP (at least 1); current HP is lowered if it exceeds the new maximum.
+    SetMax(i32),
+    /// Sets Temporary Hit Points (0 removes them).
+    SetTemp(i32),
+    /// Current HP to maximum.
+    Restore,
+    /// Current HP to 0.
+    Zero,
 }

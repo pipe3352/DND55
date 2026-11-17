@@ -346,6 +346,10 @@ pub fn game_ui(
             theme::panel_bg(ui);
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if editing && !preview {
+                    // In combat the tracker and HP panel stay on top while editing.
+                    if view.combat.is_some() {
+                        combat_tracker(ui, &mut g, &view);
+                    }
                     crate::editor_ui::inspector(ui, &mut g, &view);
                 } else {
                     right_panel(ui, &mut g, &view);
@@ -400,6 +404,151 @@ pub fn game_ui(
 }
 
 /// Top-bar view tabs. DM: Campaign · Map Editor · Character Manager; players: Campaign · Character.
+/// Initiative tracker (all) with DM controls, and the DM's HP panel for the selected creature.
+fn combat_tracker(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
+    if let Some(c) = &view.combat {
+        theme::heading(
+            ui,
+            &format!(
+                "{} · {} {}",
+                g.i18n.t("combat.initiative"),
+                g.i18n.t("combat.round"),
+                c.round
+            ),
+        );
+        let dm = g.net.is_dm();
+        let mut reorder: Option<(usize, usize)> = None;
+        for (i, e) in c.order.iter().enumerate() {
+            let active = c.active == Some(e.entity);
+            let cv = view.creatures.iter().find(|x| x.id == e.entity);
+            let selected = g.ui.selected == Some(e.entity);
+            let resp = initiative_card(ui, e, cv, active, selected, dm);
+            if !dm {
+                continue;
+            }
+            // Click selects (HP panel below); drag a card onto another to reorder.
+            if resp.clicked() {
+                g.ui.selected = Some(e.entity);
+            }
+            resp.dnd_set_drag_payload(i);
+            if let Some(from) = resp.dnd_release_payload::<usize>()
+                && *from != i
+            {
+                reorder = Some((*from, i));
+            }
+            if resp.dnd_hover_payload::<usize>().is_some() {
+                ui.painter().hline(
+                    resp.rect.x_range(),
+                    resp.rect.top() - 1.0,
+                    egui::Stroke::new(2.0, theme::GOLD_BRIGHT),
+                );
+            }
+            // Initiative score: click/drag to edit, applied when the edit ends (no per-frame spam).
+            let seal = egui::Rect::from_center_size(
+                egui::pos2(resp.rect.right() - 22.0, resp.rect.center().y),
+                egui::vec2(38.0, 24.0),
+            );
+            let mut v = match g.ui.init_edit {
+                Some((id, v)) if id == e.entity => v,
+                _ => e.total,
+            };
+            let dv = ui.put(
+                seal,
+                egui::DragValue::new(&mut v).range(-99..=99).speed(0.1),
+            );
+            if dv.changed() {
+                g.ui.init_edit = Some((e.entity, v));
+            }
+            if (dv.drag_stopped() || dv.lost_focus())
+                && let Some((id, nv)) = g.ui.init_edit.take()
+                && id == e.entity
+                && nv != e.total
+            {
+                g.net.cmd(Command::Dm(DmCommand::SetInitiative {
+                    entity: id,
+                    total: nv,
+                }));
+            }
+            dv.on_hover_text(g.i18n.t("combat.init_edit_help"));
+            resp.context_menu(|ui| {
+                theme::dark_scope(ui);
+                if ui.button(g.i18n.t("combat.give_turn")).clicked() {
+                    g.net.cmd(Command::Dm(DmCommand::SetActiveCombatant {
+                        entity: e.entity,
+                    }));
+                    ui.close();
+                }
+                if ui.button(g.i18n.t("combat.reroll_one")).clicked() {
+                    g.net.cmd(Command::Dm(DmCommand::RerollInitiative {
+                        entity: Some(e.entity),
+                    }));
+                    ui.close();
+                }
+                if ui.button(g.i18n.t("combat.remove")).clicked() {
+                    g.net.cmd(Command::Dm(DmCommand::RemoveFromCombat {
+                        entity: e.entity,
+                    }));
+                    ui.close();
+                }
+            });
+        }
+        if let Some((from, to)) = reorder {
+            let mut ids: Vec<_> = c.order.iter().map(|e| e.entity).collect();
+            let moved = ids.remove(from);
+            ids.insert(to, moved);
+            g.net
+                .cmd(Command::Dm(DmCommand::ReorderInitiative { order: ids }));
+        }
+        if dm {
+            ui.horizontal_wrapped(|ui| {
+                let sel = g.ui.selected;
+                let in_combat = sel.is_some_and(|id| c.order.iter().any(|e| e.entity == id));
+                if let Some(id) = sel {
+                    if in_combat {
+                        if c.active != Some(id)
+                            && ui.small_button(g.i18n.t("combat.give_turn")).clicked()
+                        {
+                            g.net
+                                .cmd(Command::Dm(DmCommand::SetActiveCombatant { entity: id }));
+                        }
+                        if ui.small_button(g.i18n.t("combat.reroll_one")).clicked() {
+                            g.net.cmd(Command::Dm(DmCommand::RerollInitiative {
+                                entity: Some(id),
+                            }));
+                        }
+                        if ui.small_button(g.i18n.t("combat.remove")).clicked() {
+                            g.net
+                                .cmd(Command::Dm(DmCommand::RemoveFromCombat { entity: id }));
+                        }
+                    } else if ui.small_button(g.i18n.t("combat.add_selected")).clicked() {
+                        g.net.cmd(Command::Dm(DmCommand::AddToCombat {
+                            entity: id,
+                            total: None,
+                        }));
+                    }
+                }
+                if ui.small_button(g.i18n.t("combat.reroll_all")).clicked() {
+                    g.net
+                        .cmd(Command::Dm(DmCommand::RerollInitiative { entity: None }));
+                }
+            });
+            ui.label(
+                RichText::new(g.i18n.t("combat.tracker_help"))
+                    .small()
+                    .italics(),
+            );
+        }
+        if c.waiting_on_reaction {
+            ui.label(RichText::new(g.i18n.t("combat.waiting_reaction")).italics());
+        }
+    }
+    if g.net.is_dm()
+        && let Some(id) = g.ui.selected
+    {
+        crate::ui_dm::hp_panel(ui, g, view, id);
+    }
+}
+
 fn view_tabs(ui: &mut Ui, g: &mut GameUi, dm: bool) {
     use crate::icons::Icon;
     ui.spacing_mut().item_spacing.x = 4.0;
@@ -804,13 +953,12 @@ fn monsters_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
             ui.horizontal(|ui| {
                 let sel = g.ui.tool == Tool::Spawn && g.ui.monster == m.id;
                 // White names on the dark panel (ink on the gold highlight when selected).
-                let name = RichText::new(&m.name)
-                    .strong()
-                    .color(if sel { theme::INK } else { egui::Color32::WHITE });
-                if ui
-                    .selectable_label(sel, name)
-                    .clicked()
-                {
+                let name = RichText::new(&m.name).strong().color(if sel {
+                    theme::INK
+                } else {
+                    egui::Color32::WHITE
+                });
+                if ui.selectable_label(sel, name).clicked() {
                     g.ui.monster = m.id.clone();
                     g.ui.tool = Tool::Spawn;
                 }
@@ -916,17 +1064,7 @@ fn session_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
             .and_then(|id| view.creatures.iter().find(|c| c.id == id))
             .cloned()
     {
-        ui.label(RichText::new(&c.name).strong());
-        ui.horizontal(|ui| {
-            for d in [-5, -1, 1, 5] {
-                if ui.button(format!("{d:+} HP")).clicked() {
-                    g.net.cmd(Command::Dm(DmCommand::AdjustHp {
-                        entity: c.id,
-                        delta: d,
-                    }));
-                }
-            }
-        });
+        crate::ui_dm::hp_panel(ui, g, view, c.id);
         ui.horizontal_wrapped(|ui| {
             use dnd_rules::conditions::Condition::*;
             for cond in [
@@ -977,25 +1115,7 @@ fn session_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
 }
 
 fn right_panel(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
-    if let Some(c) = &view.combat {
-        theme::heading(
-            ui,
-            &format!(
-                "{} · {} {}",
-                g.i18n.t("combat.initiative"),
-                g.i18n.t("combat.round"),
-                c.round
-            ),
-        );
-        for e in &c.order {
-            let active = c.active == Some(e.entity);
-            let cv = view.creatures.iter().find(|x| x.id == e.entity);
-            initiative_card(ui, e, cv, active);
-        }
-        if c.waiting_on_reaction {
-            ui.label(RichText::new(g.i18n.t("combat.waiting_reaction")).italics());
-        }
-    }
+    combat_tracker(ui, g, view);
     theme::heading(ui, g.i18n.t("party.title"));
     for c in view
         .creatures
@@ -1408,9 +1528,15 @@ fn initiative_card(
     e: &dnd_session::view::InitiativeView,
     c: Option<&dnd_session::view::CreatureView>,
     active: bool,
-) {
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 38.0), egui::Sense::hover());
+    selected: bool,
+    dm: bool,
+) -> egui::Response {
+    let sense = if dm {
+        egui::Sense::click_and_drag()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 38.0), sense);
     let p = ui.painter();
     let t = if theme::reduced_motion(ui.ctx()) {
         0.0
@@ -1488,10 +1614,21 @@ fn initiative_card(
     if let Some(c) = c {
         let bar = egui::Rect::from_min_size(
             egui::pos2(rect.left() + 42.0, rect.top() + 23.0),
-            egui::vec2((rect.width() - 100.0).max(40.0), 7.0),
+            egui::vec2((rect.width() - 150.0).max(40.0), 7.0),
         );
         match c.hp {
-            HpView::Exact { current, max, .. } => {
+            HpView::Exact { current, max, temp } => {
+                p.text(
+                    egui::pos2(bar.right() + 6.0, bar.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    if temp > 0 {
+                        format!("{current}/{max} +{temp}")
+                    } else {
+                        format!("{current}/{max}")
+                    },
+                    egui::FontId::new(12.5, theme::bold_family()),
+                    theme::INK,
+                );
                 let frac = if max > 0 {
                     current.max(0) as f32 / max as f32
                 } else {
@@ -1519,16 +1656,27 @@ fn initiative_card(
             }
         }
     }
-    let seal = egui::pos2(rect.right() - 20.0, rect.center().y);
-    p.circle_filled(seal, 14.0, theme::WOOD);
-    p.circle_stroke(seal, 14.0, egui::Stroke::new(1.0, theme::GOLD));
-    p.text(
-        seal,
-        egui::Align2::CENTER_CENTER,
-        e.total.to_string(),
-        egui::FontId::new(14.0, theme::bold_family()),
-        theme::GOLD_BRIGHT,
-    );
+    if selected {
+        p.rect_stroke(
+            rect.expand(1.0),
+            4.0,
+            egui::Stroke::new(2.0, theme::GOLD_BRIGHT),
+            egui::StrokeKind::Outside,
+        );
+    }
+    // The DM gets an editable value in the same place (drawn by the caller).
+    if !dm {
+        let seal = egui::pos2(rect.right() - 20.0, rect.center().y);
+        p.circle_filled(seal, 14.0, theme::WOOD);
+        p.circle_stroke(seal, 14.0, egui::Stroke::new(1.0, theme::GOLD));
+        p.text(
+            seal,
+            egui::Align2::CENTER_CENTER,
+            e.total.to_string(),
+            egui::FontId::new(14.0, theme::bold_family()),
+            theme::GOLD_BRIGHT,
+        );
+    }
     if active {
         let m = egui::pos2(rect.left() - 2.0, rect.center().y);
         p.add(egui::Shape::convex_polygon(
@@ -1541,4 +1689,5 @@ fn initiative_card(
             egui::Stroke::NONE,
         ));
     }
+    resp
 }

@@ -162,6 +162,9 @@ pub struct DmExtras {
     /// Graph-editor cards for every room (DM only).
     #[serde(default)]
     pub room_cards: Vec<RoomCard>,
+    /// Name of the creature whose last manual HP change can be undone.
+    #[serde(default)]
+    pub hp_undo: Option<String>,
 }
 
 /// What the campaign-graph editor shows on a room's node (DM only; never sent to players).
@@ -595,6 +598,11 @@ impl Session {
                 .keys()
                 .filter_map(|id| self.room_card(*id))
                 .collect(),
+            hp_undo: s
+                .hp_undo
+                .last()
+                .and_then(|u| s.creatures.get(&u.entity))
+                .map(|c| c.name.clone()),
         });
         let effects = s
             .effects

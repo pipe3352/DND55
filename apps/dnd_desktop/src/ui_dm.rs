@@ -1867,3 +1867,197 @@ pub fn session_tools(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
     }
     room_audio(ui, g, view);
 }
+
+/// DM Hit Point panel for one creature: bar, amount field, Damage / Heal / Set HP, damage mode,
+/// maximum and temporary HP, restore, set to 0 (confirmed), undo. Everything goes through
+/// host-validated DM commands (`ManualHp`, `UndoHp`).
+pub fn hp_panel(ui: &mut Ui, g: &mut GameUi, view: &ClientView, id: dnd_world::EntityId) {
+    use dnd_session::command::HpOp;
+    let Some(c) = view.creatures.iter().find(|c| c.id == id) else {
+        return;
+    };
+    let dnd_session::view::HpView::Exact { current, max, temp } = c.hp else {
+        return;
+    };
+    theme::heading(ui, &format!("{} · {}", g.i18n.t("hp.title"), c.name));
+    let frac = if max > 0 {
+        current as f32 / max as f32
+    } else {
+        0.0
+    };
+    theme::bar(
+        ui,
+        g.i18n.t("sheet.hp"),
+        current,
+        max,
+        if frac <= 0.5 {
+            theme::BURGUNDY
+        } else {
+            theme::HEALTH
+        },
+    );
+    if temp > 0 {
+        ui.label(
+            RichText::new(format!("{}: {temp}", g.i18n.t("sheet.temp_hp")))
+                .color(theme::MANA)
+                .strong(),
+        );
+    }
+    let send = |g: &mut GameUi, op: HpOp| {
+        g.net
+            .cmd(Command::Dm(DmCommand::ManualHp { entity: id, op }));
+    };
+    // Amount field: Enter applies damage; the field clears after every action so nothing is applied twice.
+    let amount: Option<i32> = g.ui.hp_input.trim().parse().ok().filter(|v: &i32| *v > 0);
+    let mut fire: Option<u8> = None;
+    ui.horizontal(|ui| {
+        let r = ui.add(
+            egui::TextEdit::singleline(&mut g.ui.hp_input)
+                .desired_width(70.0)
+                .hint_text("0")
+                .font(egui::FontId::new(18.0, egui::FontFamily::Proportional)),
+        );
+        if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && amount.is_some() {
+            fire = Some(0);
+        }
+        ui.add_enabled_ui(amount.is_some(), |ui| {
+            if ui
+                .button(
+                    RichText::new(format!("− {}", g.i18n.t("hp.damage")))
+                        .color(egui::Color32::from_rgb(170, 40, 40))
+                        .strong(),
+                )
+                .clicked()
+            {
+                fire = Some(0);
+            }
+            if ui
+                .button(
+                    RichText::new(format!("+ {}", g.i18n.t("hp.heal")))
+                        .color(theme::HEALTH)
+                        .strong(),
+                )
+                .clicked()
+            {
+                fire = Some(1);
+            }
+        });
+        if ui
+            .add_enabled(
+                g.ui.hp_input.trim().parse::<i32>().is_ok(),
+                egui::Button::new(g.i18n.t("hp.set")),
+            )
+            .clicked()
+        {
+            fire = Some(2);
+        }
+    });
+    // Damage mode: rules (temp HP first, resistances) vs direct override.
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new(g.i18n.t("hp.mode")).small());
+        ui.selectable_value(&mut g.ui.hp_rules, true, g.i18n.t("hp.mode_rules"))
+            .on_hover_text(g.i18n.t("hp.mode_rules_help"));
+        ui.selectable_value(&mut g.ui.hp_rules, false, g.i18n.t("hp.mode_direct"))
+            .on_hover_text(g.i18n.t("hp.mode_direct_help"));
+        if g.ui.hp_rules {
+            egui::ComboBox::from_id_salt("hp-type")
+                .width(100.0)
+                .selected_text(
+                    g.ui.hp_type
+                        .map(|t| format!("{t:?}"))
+                        .unwrap_or_else(|| g.i18n.t("hp.untyped").to_string()),
+                )
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut g.ui.hp_type, None, g.i18n.t("hp.untyped"));
+                    for t in dnd_rules::damage::DamageType::ALL {
+                        ui.selectable_value(&mut g.ui.hp_type, Some(t), format!("{t:?}"));
+                    }
+                });
+        }
+    });
+    let typed: Option<i32> = g.ui.hp_input.trim().parse().ok();
+    match (fire, amount, typed) {
+        (Some(0), Some(a), _) => send(
+            g,
+            HpOp::Damage {
+                amount: a,
+                rules: g.ui.hp_rules,
+                damage_type: if g.ui.hp_rules { g.ui.hp_type } else { None },
+            },
+        ),
+        (Some(1), Some(a), _) => send(g, HpOp::Heal { amount: a }),
+        (Some(2), _, Some(v)) => send(g, HpOp::SetCurrent(v)),
+        _ => {}
+    }
+    if fire.is_some() {
+        g.ui.hp_input.clear();
+    }
+    // Maximum and temporary HP, restore, zero, undo.
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .add_enabled(
+                typed.is_some_and(|v| v >= 1),
+                egui::Button::new(g.i18n.t("hp.set_max")),
+            )
+            .on_hover_text(g.i18n.t("hp.uses_field"))
+            .clicked()
+        {
+            send(g, HpOp::SetMax(typed.unwrap_or(1)));
+            g.ui.hp_input.clear();
+        }
+        if ui
+            .add_enabled(amount.is_some(), egui::Button::new(g.i18n.t("hp.add_temp")))
+            .on_hover_text(g.i18n.t("hp.uses_field"))
+            .clicked()
+        {
+            send(g, HpOp::SetTemp(temp + amount.unwrap_or(0)));
+            g.ui.hp_input.clear();
+        }
+        if ui
+            .add_enabled(
+                typed.is_some_and(|v| v >= 0),
+                egui::Button::new(g.i18n.t("hp.set_temp")),
+            )
+            .on_hover_text(g.i18n.t("hp.uses_field"))
+            .clicked()
+        {
+            send(g, HpOp::SetTemp(typed.unwrap_or(0)));
+            g.ui.hp_input.clear();
+        }
+        if temp > 0 && ui.button(g.i18n.t("hp.clear_temp")).clicked() {
+            send(g, HpOp::SetTemp(0));
+        }
+    });
+    ui.horizontal_wrapped(|ui| {
+        if current < max && ui.button(g.i18n.t("hp.restore")).clicked() {
+            send(g, HpOp::Restore);
+        }
+        if current > 0 {
+            if g.ui.hp_confirm_zero == Some(id) {
+                if ui
+                    .button(
+                        RichText::new(g.i18n.t("hp.zero_confirm"))
+                            .color(egui::Color32::from_rgb(170, 40, 40))
+                            .strong(),
+                    )
+                    .clicked()
+                {
+                    send(g, HpOp::Zero);
+                    g.ui.hp_confirm_zero = None;
+                }
+                if ui.small_button(g.i18n.t("cast.cancel")).clicked() {
+                    g.ui.hp_confirm_zero = None;
+                }
+            } else if ui.button(g.i18n.t("hp.zero")).clicked() {
+                g.ui.hp_confirm_zero = Some(id);
+            }
+        }
+        if let Some(name) = view.dm.as_ref().and_then(|d| d.hp_undo.clone())
+            && ui
+                .button(format!("{} ({name})", g.i18n.t("hp.undo")))
+                .clicked()
+        {
+            g.net.cmd(Command::Dm(DmCommand::UndoHp));
+        }
+    });
+}

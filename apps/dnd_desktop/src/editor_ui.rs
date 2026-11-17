@@ -652,14 +652,12 @@ pub fn inspector(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
             .small()
             .italics(),
     );
-    let seal = egui::pos2(panel.right() - 30.0, panel.bottom() - 46.0);
+    // Wax seal after the content (never over it).
+    let (sr, _) = ui.allocate_exact_size(vec2(ui.available_width(), 64.0), egui::Sense::hover());
     crate::chrome::wax_seal(
-        &ui.ctx().layer_painter(egui::LayerId::new(
-            egui::Order::Middle,
-            egui::Id::new("seal"),
-        )),
-        seal,
-        24.0,
+        ui.painter(),
+        egui::pos2(sr.right() - 30.0, sr.top() + 26.0),
+        22.0,
     );
 }
 

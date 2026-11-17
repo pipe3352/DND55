@@ -632,6 +632,21 @@ pub struct GameState {
     pub scripts: Vec<crate::scripts::ScriptedEvent>,
     #[serde(default)]
     pub pending_dialogue: Option<crate::scripts::PendingDialogue>,
+    /// Snapshots for undoing manual DM Hit Point changes (newest last, at most `HP_UNDO_CAP`).
+    #[serde(default)]
+    pub hp_undo: Vec<HpUndo>,
+}
+
+pub const HP_UNDO_CAP: usize = 20;
+
+/// State of one creature before a manual HP change.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HpUndo {
+    pub entity: EntityId,
+    pub hp: dnd_rules::hp::HitPoints,
+    pub conditions: ConditionSet,
+    /// Its initiative entry, if it was in combat (restored if the change removed it, e.g. a death).
+    pub initiative: Option<InitiativeEntry>,
 }
 
 pub const LOG_CAP: usize = 1000;

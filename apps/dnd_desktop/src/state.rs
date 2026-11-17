@@ -216,6 +216,13 @@ pub struct UiState {
     pub spawn_hidden: bool,
     pub object_hidden: bool,
     pub selected: Option<EntityId>,
+    /// DM combat controls: initiative value being edited, HP amount field, damage mode
+    /// (true = rules: temp HP + defenses), damage type, pending "set to 0" confirmation.
+    pub init_edit: Option<(EntityId, i32)>,
+    pub hp_input: String,
+    pub hp_rules: bool,
+    pub hp_type: Option<dnd_rules::damage::DamageType>,
+    pub hp_confirm_zero: Option<EntityId>,
     /// Attack index chosen; next click on a creature attacks it.
     pub targeting: Option<usize>,
     pub dice_expr: String,
@@ -335,6 +342,11 @@ impl Default for UiState {
             spawn_hidden: false,
             object_hidden: false,
             selected: None,
+            init_edit: None,
+            hp_input: String::new(),
+            hp_rules: true,
+            hp_type: None,
+            hp_confirm_zero: None,
             targeting: None,
             dice_expr: "1d20".into(),
             dice_mode: RollMode::Normal,

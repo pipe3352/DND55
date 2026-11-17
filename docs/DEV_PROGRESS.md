@@ -37,3 +37,12 @@ tokens for Large creatures, real-Windows acceptance pass.
 * `scripts/gui-wheel-test.sh` — real wheel events (needs Xvfb, xdotool, ImageMagick).
 * `DND55_ART_SHEET=… cargo test dump_contact_sheet -- --ignored`, `DND55_TOKEN_SHEET=… cargo test dump_token_sheet -- --ignored` — raw RGBA contact sheets.
 * `DND55_SEED_DB=<data>/campaigns.db cargo test seed_demo_characters -- --ignored` — two demo characters.
+
+## DM combat controls (initiative & HP) — done
+* Session (`dnd_session`): `DmCommand::{SetInitiative, RerollInitiative, SetActiveCombatant, AddToCombat,
+  RemoveFromCombat, ManualHp{op: HpOp}, UndoHp}`; `GameState.hp_undo` (serde default, cap 20) restores
+  HP, conditions and the initiative entry. Re-sort is stable by total (DM's tie order kept), the active
+  turn/round are never changed except by `SetActiveCombatant`. Tests: `tests/dm_combat_controls.rs`.
+* Client: `ui_game::combat_tracker` (click = select, drag cards = reorder, DragValue = edit initiative,
+  right-click menu) shown also in the Map Editor during combat; `ui_dm::hp_panel` (Damage rules/direct,
+  Heal, Set HP, max, temp, restore, set 0 with confirm, undo).

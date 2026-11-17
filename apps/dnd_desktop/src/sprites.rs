@@ -1542,7 +1542,11 @@ fn monster(ty: &str, n: &str) -> Pix {
             hair: Some(BLACK_HAIR),
             face: Face::Tusks,
             ears: true,
-            head: if h.is_multiple_of(2) { Head::Horned } else { Head::None },
+            head: if h.is_multiple_of(2) {
+                Head::Horned
+            } else {
+                Head::None
+            },
             hat: IRON,
             kind: Body::Bare,
             legs: ramp(110, 76, 50),
