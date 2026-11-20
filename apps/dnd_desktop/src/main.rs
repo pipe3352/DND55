@@ -21,6 +21,7 @@ mod hosting;
 mod i18n;
 mod icons;
 mod input;
+mod journal_ui;
 mod liquid;
 mod map_render;
 mod menu;

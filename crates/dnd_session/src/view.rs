@@ -277,6 +277,12 @@ pub struct ClientView {
     /// NPC dialogue waiting for a choice.
     pub dialogue: Option<(String, String, Vec<String>)>,
     pub players_can_draw: bool,
+    /// Journal entries: everything for the DM, shared ones for players.
+    #[serde(default)]
+    pub journal: Vec<crate::model::JournalEntry>,
+    /// Quests: everything for the DM; revealed ones (no hidden objectives, no notes) for players.
+    #[serde(default)]
+    pub quests: Vec<crate::model::Quest>,
 }
 
 pub fn audience_includes(a: Audience, who: Principal) -> bool {
@@ -649,6 +655,23 @@ impl Session {
             effects,
             dialogue,
             players_can_draw: s.settings.players_can_draw,
+            journal: s
+                .journal
+                .iter()
+                .filter(|e| who == Principal::Dm || e.shared)
+                .cloned()
+                .collect(),
+            quests: s
+                .quests
+                .iter()
+                .filter_map(|q| {
+                    if who == Principal::Dm {
+                        Some(q.clone())
+                    } else {
+                        q.player_copy()
+                    }
+                })
+                .collect(),
         }
     }
 }

@@ -364,12 +364,24 @@ pub fn map_click(
                 net.cmd(Command::Dm(DmCommand::Teleport { entity: me, cell }));
                 return;
             }
-            let interactable = gv.map.as_ref().and_then(|m| {
-                m.objects
-                    .iter()
-                    .find(|o| o.interactable && !o.hidden && o.covers(cell))
+            let target = gv.map.as_ref().and_then(|m| {
+                m.objects.iter().rev().find(|o| {
+                    !o.hidden
+                        && o.covers(cell)
+                        && (o.interactable
+                            || o.lock.is_some()
+                            || o.break_dc.is_some()
+                            || !o.description.is_empty())
+                })
             });
-            match interactable {
+            match target {
+                // Locked, breakable or described objects open the action menu (Inspect, key, pick…).
+                Some(o) if o.is_locked() || !o.interactable || o.break_dc.is_some() && !o.open => {
+                    if let Some(cur) = window.cursor_position() {
+                        let k = ui.ui_scale.max(0.1);
+                        ui.object_menu = Some((o.id, me, (cur.x / k + 8.0, cur.y / k + 8.0)));
+                    }
+                }
                 Some(o) => {
                     net.cmd(Command::Interact {
                         entity: me,

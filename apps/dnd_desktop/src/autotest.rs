@@ -5,7 +5,7 @@
 //!   bringing a ready-made level-1 fighter with a generated portrait.
 //! * `DND55_AUTO_SCENARIO=calm` — like the default host script but without starting combat.
 //! * `DND55_AUTO_CLASS=wizard` — the auto-joining player brings a level-1 Wizard instead.
-//! * `DND55_AUTO_OPEN=bestiary,graph,events,invite,settings,spellbook,prepare,inventory,select,draw,cast`
+//! * `DND55_AUTO_OPEN=bestiary,graph,events,invite,settings,spellbook,prepare,inventory,select,draw,cast,journal,eraser`
 //!   — open those windows/tools shortly before the screenshot (GUI smoke tests).
 //! * `DND55_SCREENSHOT=<path>` + `DND55_SCREENSHOT_AFTER=<secs>` — save a screenshot, then exit.
 
@@ -376,6 +376,12 @@ fn open_windows(list: &str, ui: &mut crate::state::UiState, gv: &GameView) {
                 }
             }
             "draw" => ui.tool = Tool::Draw,
+            "journal" => ui.show_journal = true,
+            "eraser" => {
+                ui.dm_tab = DmTab::Editor;
+                ui.tool = Tool::Eraser;
+                ui.erase_brush = 3;
+            }
             "creator" => ui.show_creator = true,
             "cast" => {
                 if let Some((id, sheet)) = view.and_then(|v| v.my_characters.first().cloned())

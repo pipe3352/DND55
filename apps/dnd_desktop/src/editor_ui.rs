@@ -694,6 +694,7 @@ pub fn inspector(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
         }
     });
     resize_section(ui, g, room);
+    crate::journal_ui::room_notes(ui, g, view, room);
     ui.add_space(10.0);
     crate::chrome::center_heading(ui, g.i18n.t("audio.room"), theme::WOOD);
     room_audio_rows(ui, g, view);

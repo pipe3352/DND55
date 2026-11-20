@@ -95,6 +95,18 @@ pub enum ScriptAction {
     AwardXp {
         xp: u32,
     },
+    /// Sets a quest's status and/or ticks an objective (index, done).
+    UpdateQuest {
+        quest: u64,
+        status: Option<crate::model::QuestStatus>,
+        objective: Option<(usize, bool)>,
+    },
+    /// Locks or unlocks a door/chest/gate.
+    SetObjectLocked {
+        room: RoomId,
+        object: ObjectId,
+        locked: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -158,6 +170,14 @@ impl ScriptAction {
             ScriptAction::Dialogue { speaker, .. } => format!("Dialogue: {speaker}"),
             ScriptAction::SetAmbient { ambient, .. } => format!("Light → {ambient:?}"),
             ScriptAction::AwardXp { xp } => format!("Award {xp} XP"),
+            ScriptAction::UpdateQuest { .. } => "Update quest".into(),
+            ScriptAction::SetObjectLocked { locked, .. } => {
+                if *locked {
+                    "Lock object".into()
+                } else {
+                    "Unlock object".into()
+                }
+            }
         }
     }
 }
@@ -388,6 +408,36 @@ impl Session {
                 ScriptAction::SetAmbient { room, ambient } => {
                     if let Some(rs) = self.state.rooms.get_mut(room) {
                         rs.map.ambient = *ambient;
+                        rs.map_rev += 1;
+                    }
+                }
+                ScriptAction::UpdateQuest {
+                    quest,
+                    status,
+                    objective,
+                } => {
+                    if let Some(q) = self.state.quests.iter().find(|q| q.id == *quest).cloned() {
+                        let mut q2 = q.clone();
+                        if let Some(st) = status {
+                            q2.status = *st;
+                        }
+                        if let Some((i, done)) = objective
+                            && let Some(o) = q2.objectives.get_mut(*i)
+                        {
+                            o.done = *done;
+                        }
+                        self.store_quest(q2);
+                    }
+                }
+                ScriptAction::SetObjectLocked {
+                    room,
+                    object,
+                    locked,
+                } => {
+                    if let Some(rs) = self.state.rooms.get_mut(room)
+                        && let Some(o) = rs.map.object_mut(*object)
+                    {
+                        o.lock.get_or_insert_with(Default::default).locked = *locked;
                         rs.map_rev += 1;
                     }
                 }

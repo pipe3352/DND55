@@ -51,7 +51,10 @@ fn rules<T>(s: impl Into<String>) -> Res<T> {
 }
 
 /// Creatures of a room and the arrival cells of its edges (deep undo).
-type WorldSnap = (Vec<Creature>, Vec<(dnd_world::EdgeId, Option<Cell>, Option<Cell>)>);
+type WorldSnap = (
+    Vec<Creature>,
+    Vec<(dnd_world::EdgeId, Option<Cell>, Option<Cell>)>,
+);
 
 /// Undo state of one room. `world` is only captured for edits that move or remove more than map
 /// content (resize, eraser): creatures in the room and the edges' arrival cells.
@@ -108,6 +111,8 @@ impl Session {
             scripts: vec![],
             pending_dialogue: None,
             hp_undo: Vec::new(),
+            journal: Vec::new(),
+            quests: Vec::new(),
         };
         Self::from_state(
             state,
@@ -439,6 +444,11 @@ impl Session {
             Command::EndTurn => self.cmd_end_turn(who),
             Command::ReactionDecision { accept, attack } => self.cmd_reaction(who, accept, attack),
             Command::Interact { entity, object } => self.cmd_interact(who, entity, object),
+            Command::ObjectAction {
+                entity,
+                object,
+                action,
+            } => self.cmd_object_action(who, entity, object, action),
             Command::CastSpell {
                 caster,
                 spell,
@@ -2054,6 +2064,9 @@ impl Session {
         if !o.footprint().any(|f| grid_distance_ft(f, pos) <= 5) {
             return rules("too far away: move next to it");
         }
+        if o.is_locked() && !o.open {
+            return rules("it's locked");
+        }
         let closing = o.open;
         if closing
             && dnd_world::map::is_door(&o.asset_id)
@@ -2098,6 +2111,219 @@ impl Session {
             Some(entity),
         );
         Ok(())
+    }
+
+    /// Inspect / key / pick / force / break. Checks are rolled by the host; in combat they use the
+    /// creature's action (the 2024 Utilize action), Inspect is free.
+    pub(crate) fn cmd_object_action(
+        &mut self,
+        who: Principal,
+        entity: EntityId,
+        object: ObjectId,
+        action: crate::command::ObjectAction,
+    ) -> Res<()> {
+        use crate::command::ObjectAction as A;
+        use dnd_rules::ability::Skill;
+        let c = self.creature(entity)?;
+        if !Self::controls(who, c) {
+            return Err(CommandError::NotAuthorized);
+        }
+        if !c.conditions.can_act() {
+            return rules("Incapacitated");
+        }
+        let (room, pos, name) = (c.room, c.pos, c.name.clone());
+        let o = self
+            .room(room)?
+            .map
+            .object(object)
+            .filter(|o| !o.hidden)
+            .cloned()
+            .ok_or_else(|| CommandError::NotFound("object".into()))?;
+        let label = self
+            .catalog
+            .get(&o.asset_id)
+            .map(|a| a.name.clone())
+            .unwrap_or_default();
+        let label = if o.label.is_empty() {
+            label
+        } else {
+            o.label.clone()
+        };
+        let reach = if action == A::Inspect { 30 } else { 5 };
+        if !o.footprint().any(|f| grid_distance_ft(f, pos) <= reach) {
+            return rules("too far away: move next to it");
+        }
+        let in_combat = self.combat_in(room).is_some();
+        if in_combat && action != A::Inspect {
+            self.active_turn_check(who, entity)?;
+            if self
+                .state
+                .combat
+                .as_ref()
+                .is_some_and(|cb| cb.turn.action_used)
+            {
+                return rules("no action left this turn");
+            }
+        }
+        let player_aud = match who {
+            Principal::Player(p) => Audience::DmAnd(p),
+            Principal::Dm => Audience::DmOnly,
+        };
+        let check = |s: &mut Self, skill: Skill, dc: i32| -> bool {
+            let cr = s.state.creatures[&entity].clone();
+            let bonus = cr
+                .sheet()
+                .map(|sh| sh.skill_bonus(skill))
+                .unwrap_or(cr.mods[skill.ability().index()]);
+            let roll = D20Roll::roll(
+                s.rng.as_mut(),
+                RollMode::Normal,
+                bonus,
+                cr.conditions.exhaustion,
+            );
+            let ok = roll.total >= dc;
+            s.log(
+                Audience::All,
+                format!(
+                    "{name} tries the {} ({skill:?}): {} → {}",
+                    label.to_lowercase(),
+                    roll.breakdown(),
+                    if ok { "success" } else { "failure" }
+                ),
+            );
+            ok
+        };
+        let mut used_action = true;
+        match action {
+            A::Inspect => {
+                used_action = false;
+                let mut state = vec![];
+                if o.destroyed {
+                    state.push("broken");
+                } else if o.is_locked() {
+                    state.push("locked");
+                } else if o.interactable {
+                    state.push(if o.open { "open" } else { "closed" });
+                }
+                let desc = if o.description.trim().is_empty() {
+                    "Nothing special catches your eye."
+                } else {
+                    o.description.trim()
+                };
+                let extra = if state.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", state.join(", "))
+                };
+                self.log(player_aud, format!("{label}{extra}: {desc}"));
+            }
+            A::UseKey => {
+                let Some(lock) = o.lock.clone().filter(|_| o.is_locked()) else {
+                    return rules("it isn't locked");
+                };
+                let has = lock.key.as_ref().is_some_and(|k| {
+                    self.state.creatures[&entity]
+                        .sheet()
+                        .is_some_and(|s| s.inventory.iter().any(|i| &i.id == k && i.quantity > 0))
+                });
+                if !has {
+                    return rules("you don't have the key");
+                }
+                used_action = false;
+                self.set_locked(room, object, false);
+                self.log(
+                    Audience::All,
+                    format!("{name} unlocks the {} with a key.", label.to_lowercase()),
+                );
+            }
+            A::PickLock | A::ForceLock => {
+                let Some(lock) = o.lock.clone().filter(|_| o.is_locked()) else {
+                    return rules("it isn't locked");
+                };
+                let skill = if action == A::PickLock {
+                    Skill::SleightOfHand
+                } else {
+                    Skill::Athletics
+                };
+                if check(self, skill, lock.dc) {
+                    self.set_locked(room, object, false);
+                    self.log(
+                        Audience::All,
+                        format!("The {} is unlocked.", label.to_lowercase()),
+                    );
+                }
+            }
+            A::Break => {
+                if o.destroyed {
+                    return rules("it's already broken");
+                }
+                let Some(dc) = o.break_dc else {
+                    return rules("it can't be broken");
+                };
+                if check(self, Skill::Athletics, dc) {
+                    let rs = self.state.rooms.get_mut(&room).expect("checked");
+                    let ob = rs.map.object_mut(object).expect("checked");
+                    ob.destroyed = true;
+                    ob.open = true;
+                    rs.map_rev += 1;
+                    self.log(
+                        Audience::All,
+                        format!("{name} breaks the {}!", label.to_lowercase()),
+                    );
+                    self.fire_scripts_for(
+                        crate::scripts::Trigger::Interact { room, object },
+                        Some(entity),
+                    );
+                }
+            }
+        }
+        if in_combat
+            && used_action
+            && let Some(cb) = self.state.combat.as_mut()
+        {
+            cb.turn.action_used = true;
+        }
+        Ok(())
+    }
+
+    /// Inserts or replaces a quest and announces visible progress to the table.
+    pub(crate) fn store_quest(&mut self, q: Quest) {
+        let old = self.state.quests.iter().find(|x| x.id == q.id).cloned();
+        let title = q.title.clone();
+        let announce = match (&old, q.status) {
+            (_, QuestStatus::Undiscovered) => None,
+            (Some(o), st) if o.status == st => {
+                let newly_done: Vec<&str> = q
+                    .objectives
+                    .iter()
+                    .zip(o.objectives.iter().map(Some).chain(std::iter::repeat(None)))
+                    .filter(|(n, old)| n.done && !n.hidden && !old.is_some_and(|o| o.done))
+                    .map(|(n, _)| n.text.as_str())
+                    .collect();
+                (!newly_done.is_empty())
+                    .then(|| format!("Quest \"{title}\": {} done.", newly_done.join(", ")))
+            }
+            (_, QuestStatus::Active) => Some(format!("New quest: {title}")),
+            (_, QuestStatus::Completed) => Some(format!("Quest completed: {title}")),
+            (_, QuestStatus::Failed) => Some(format!("Quest failed: {title}")),
+        };
+        match self.state.quests.iter_mut().find(|x| x.id == q.id) {
+            Some(slot) => *slot = q,
+            None => self.state.quests.push(q),
+        }
+        if let Some(text) = announce {
+            self.log(Audience::All, text);
+        }
+    }
+
+    fn set_locked(&mut self, room: RoomId, object: ObjectId, locked: bool) {
+        if let Some(rs) = self.state.rooms.get_mut(&room)
+            && let Some(o) = rs.map.object_mut(object)
+            && let Some(l) = &mut o.lock
+        {
+            l.locked = locked;
+            rs.map_rev += 1;
+        }
     }
 
     pub(crate) fn cmd_add_drawing(
@@ -2731,6 +2957,63 @@ impl Session {
                 self.remove_from_initiative(entity);
             }
             ManualHp { entity, op } => self.manual_hp(entity, op)?,
+            SaveJournalEntry { mut entry } => {
+                entry.title = entry.title.trim().chars().take(120).collect();
+                entry.body = entry.body.chars().take(20_000).collect();
+                if entry.title.is_empty() {
+                    return invalid("give the entry a title");
+                }
+                if entry.id == 0 {
+                    entry.id = self.next_id();
+                    self.state.journal.push(entry);
+                } else {
+                    let e = self
+                        .state
+                        .journal
+                        .iter_mut()
+                        .find(|e| e.id == entry.id)
+                        .ok_or_else(|| CommandError::NotFound("journal entry".into()))?;
+                    *e = entry;
+                }
+            }
+            DeleteJournalEntry { id } => {
+                let n = self.state.journal.len();
+                self.state.journal.retain(|e| e.id != id);
+                if n == self.state.journal.len() {
+                    return Err(CommandError::NotFound("journal entry".into()));
+                }
+            }
+            SaveQuest { mut quest } => {
+                quest.title = quest.title.trim().chars().take(120).collect();
+                if quest.title.is_empty() {
+                    return invalid("give the quest a title");
+                }
+                if quest.objectives.len() > 50 {
+                    return invalid("too many objectives");
+                }
+                if quest.id == 0 {
+                    quest.id = self.next_id();
+                } else if !self.state.quests.iter().any(|q| q.id == quest.id) {
+                    return Err(CommandError::NotFound("quest".into()));
+                }
+                self.store_quest(quest);
+            }
+            DeleteQuest { id } => {
+                let n = self.state.quests.len();
+                self.state.quests.retain(|q| q.id != id);
+                if n == self.state.quests.len() {
+                    return Err(CommandError::NotFound("quest".into()));
+                }
+            }
+            SetRoomNotes { room, notes } => {
+                let n = self
+                    .state
+                    .graph
+                    .nodes
+                    .get_mut(&room)
+                    .ok_or_else(|| CommandError::NotFound("room".into()))?;
+                n.dm_notes = notes.chars().take(20_000).collect();
+            }
             UndoHp => {
                 let u = self
                     .state

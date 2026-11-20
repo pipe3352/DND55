@@ -119,6 +119,33 @@ pub struct MapObject {
     /// Draw layer (older saves default to Standard).
     #[serde(default)]
     pub layer: ObjectLayer,
+    /// Lock (doors, chests, gates). Players never see the DC or the key.
+    #[serde(default)]
+    pub lock: Option<Lock>,
+    /// Strength (Athletics) DC to break it; `None` = not breakable.
+    #[serde(default)]
+    pub break_dc: Option<i32>,
+    /// Broken objects stop blocking movement and sight.
+    #[serde(default)]
+    pub destroyed: bool,
+    /// Text shown to a player who inspects it.
+    #[serde(default)]
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Lock {
+    pub locked: bool,
+    /// DC to pick (Dexterity, Sleight of Hand / thieves' tools) or force (Strength, Athletics).
+    pub dc: i32,
+    /// Item id of the key that opens it.
+    pub key: Option<String>,
+}
+
+impl MapObject {
+    pub fn is_locked(&self) -> bool {
+        self.lock.as_ref().is_some_and(|l| l.locked) && !self.destroyed
+    }
 }
 
 impl MapObject {
@@ -150,6 +177,10 @@ impl MapObject {
             label: String::new(),
             dm_notes: String::new(),
             layer: ObjectLayer::default_for(&a.id),
+            lock: None,
+            break_dc: None,
+            destroyed: false,
+            description: String::new(),
         }
     }
 
@@ -165,10 +196,10 @@ impl MapObject {
         self.footprint().any(|f| f == c)
     }
     fn effective_blocks_movement(&self) -> bool {
-        self.blocks_movement && !(self.open && is_door(&self.asset_id))
+        self.blocks_movement && !self.destroyed && !(self.open && is_door(&self.asset_id))
     }
     fn effective_blocks_sight(&self) -> bool {
-        self.blocks_sight && !(self.open && is_door(&self.asset_id))
+        self.blocks_sight && !self.destroyed && !(self.open && is_door(&self.asset_id))
     }
 }
 
@@ -529,6 +560,11 @@ impl GridMap {
         m.objects.retain(|o| !o.hidden);
         for o in &mut m.objects {
             o.dm_notes.clear();
+            if let Some(l) = &mut o.lock {
+                l.dc = 0;
+                l.key = None;
+            }
+            o.break_dc = o.break_dc.map(|_| 0);
         }
         m
     }

@@ -640,6 +640,103 @@ pub struct GameState {
     /// Snapshots for undoing manual DM Hit Point changes (newest last, at most `HP_UNDO_CAP`).
     #[serde(default)]
     pub hp_undo: Vec<HpUndo>,
+    /// DM journal (entries can be shared with players).
+    #[serde(default)]
+    pub journal: Vec<JournalEntry>,
+    #[serde(default)]
+    pub quests: Vec<Quest>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum JournalSection {
+    #[default]
+    Overview,
+    Chapters,
+    Locations,
+    Npcs,
+    Encounters,
+    SessionNotes,
+    Secrets,
+    Events,
+}
+
+impl JournalSection {
+    pub const ALL: [JournalSection; 8] = [
+        JournalSection::Overview,
+        JournalSection::Chapters,
+        JournalSection::Locations,
+        JournalSection::Npcs,
+        JournalSection::Encounters,
+        JournalSection::SessionNotes,
+        JournalSection::Secrets,
+        JournalSection::Events,
+    ];
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct JournalEntry {
+    /// 0 = new (the host assigns an id).
+    pub id: u64,
+    pub section: JournalSection,
+    pub title: String,
+    pub body: String,
+    /// Visible to players.
+    pub shared: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum QuestStatus {
+    #[default]
+    Undiscovered,
+    Active,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum QuestKind {
+    #[default]
+    Main,
+    Side,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Objective {
+    pub text: String,
+    pub done: bool,
+    /// Not shown to players until the DM unhides it.
+    pub hidden: bool,
+    pub optional: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Quest {
+    /// 0 = new (the host assigns an id).
+    pub id: u64,
+    pub title: String,
+    pub description: String,
+    pub kind: QuestKind,
+    pub status: QuestStatus,
+    pub objectives: Vec<Objective>,
+    pub rewards: String,
+    pub npcs: String,
+    pub rooms: Vec<RoomId>,
+    /// Never sent to players.
+    pub dm_notes: String,
+}
+
+impl Quest {
+    /// What players may see: revealed quests only, without hidden objectives or DM notes.
+    pub fn player_copy(&self) -> Option<Quest> {
+        if self.status == QuestStatus::Undiscovered {
+            return None;
+        }
+        let mut q = self.clone();
+        q.objectives.retain(|o| !o.hidden);
+        q.dm_notes.clear();
+        q.rooms.clear();
+        Some(q)
+    }
 }
 
 pub const HP_UNDO_CAP: usize = 20;

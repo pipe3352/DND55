@@ -109,6 +109,16 @@ pub fn game_ui(
                         *g.gv = GameView::default();
                         g.next.set(AppState::MainMenu);
                     }
+                    if crate::chrome::bar_button(
+                        ui,
+                        Some(Icon::Book),
+                        g.i18n.t("journal.title"),
+                        false,
+                    )
+                    .clicked()
+                    {
+                        g.ui.show_journal = !g.ui.show_journal;
+                    }
                     if crate::chrome::bar_button(ui, Some(Icon::Gear), "", false)
                         .on_hover_text(g.i18n.t("menu.settings"))
                         .clicked()
@@ -1199,6 +1209,8 @@ fn right_panel(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
 }
 
 fn overlays(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
+    crate::journal_ui::journal_window(ctx, g, view);
+    crate::journal_ui::object_menu(ctx, g);
     crate::ui_play::action_bar(ctx, g, view);
     crate::ui_play::reaction_prompts(ctx, g, view);
     crate::ui_play::targeting_window(ctx, g, view);

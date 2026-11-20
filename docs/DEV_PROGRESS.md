@@ -46,3 +46,20 @@ tokens for Large creatures, real-Windows acceptance pass.
 * Client: `ui_game::combat_tracker` (click = select, drag cards = reorder, DragValue = edit initiative,
   right-click menu) shown also in the Map Editor during combat; `ui_dm::hp_panel` (Damage rules/direct,
   Heal, Set HP, max, temp, restore, set 0 with confirm, undo).
+
+## Big expansion request (map editor + RPG systems) — status
+| Phase | Item | State |
+|---|---|---|
+| 1 | Resize map (anchor, loss report/confirm, creatures never removed, deep undo) | ✅ `GridMap::resized`, `DmCommand::ResizeMap`, inspector "Resize map" |
+| 1 | Universal eraser (layer/category/objects/creatures/lights/drawings/all, brush, drag preview, protect, locks, undo) | ✅ `DmCommand::EraseArea`, `UiState::erase_*` |
+| 1 | Rotation: R/Shift+R, pre-placement rotation + rotated ghost, reset, creature facing (mirror + N/S pip) | ✅ (fixed old w/h swap bug) |
+| 1 | +11 native pixel terrains (`pixel_tiles.rs`), +17 pixel objects | ✅ |
+| 2 | Locks/keys/pick/force/break/inspect, player object menu, DM lock/break/description props, script SetObjectLocked | ✅ `Command::ObjectAction` |
+| 2 | Levers/triggers | ✅ existed (scripts WHEN/IF(skill check)/THEN, depth-guarded); + lock/quest actions |
+| 3 | DM journal (8 sections, share), quests (main/side, status, objectives hidden/optional, rewards, NPCs, DM notes), room notes | ✅ `journal_ui.rs`, `DmCommand::{SaveJournalEntry,…,SetRoomNotes}`, `ScriptAction::UpdateQuest` |
+| 3 | Campaign graph improvements | existing graph editor kept (thumbnails, regions, search, drag, notes in DM data) |
+| 4 | Inventory slots/trading UI, merchants/shops, targeting previews, condition icons/durations | ⏳ not started |
+| 5 | NPC dialogue (exists via scripts), campaign time & rests UI, weather (exists), templates/prefabs, elevation/roofs | ⏳ time/prefabs/templates/elevation not started |
+
+Next step: Phase 4 — merchants (`Merchant` model + shop window), then campaign clock.
+Tests: `tests/editor_tools.rs`, `tests/interactions_and_journal.rs`.

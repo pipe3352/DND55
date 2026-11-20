@@ -185,6 +185,51 @@ fn object_properties(ui: &mut Ui, g: &mut GameUi, room: RoomId, o: MapObject) {
         ui.checkbox(&mut e.blocks_sight, g.i18n.t("props.blocks_sight"));
         ui.checkbox(&mut e.difficult, g.i18n.t("props.difficult"));
     });
+    // Lock, durability, description (interactive object system).
+    ui.horizontal_wrapped(|ui| {
+        let mut has_lock = e.lock.is_some();
+        if ui.checkbox(&mut has_lock, g.i18n.t("props.lock")).changed() {
+            e.lock = has_lock.then_some(dnd_world::map::Lock {
+                locked: true,
+                dc: 15,
+                key: None,
+            });
+        }
+        if let Some(l) = &mut e.lock {
+            ui.checkbox(&mut l.locked, g.i18n.t("props.locked"));
+            ui.add(egui::DragValue::new(&mut l.dc).range(1..=30).prefix("DC "));
+            let mut key = l.key.clone().unwrap_or_default();
+            if ui
+                .add(
+                    egui::TextEdit::singleline(&mut key)
+                        .hint_text(g.i18n.t("props.key_hint"))
+                        .desired_width(90.0),
+                )
+                .changed()
+            {
+                l.key = (!key.trim().is_empty()).then(|| key.trim().to_string());
+            }
+        }
+    });
+    ui.horizontal_wrapped(|ui| {
+        let mut breakable = e.break_dc.is_some();
+        if ui
+            .checkbox(&mut breakable, g.i18n.t("props.breakable"))
+            .changed()
+        {
+            e.break_dc = breakable.then_some(15);
+        }
+        if let Some(dc) = &mut e.break_dc {
+            ui.add(egui::DragValue::new(dc).range(1..=30).prefix("DC "));
+        }
+        ui.checkbox(&mut e.destroyed, g.i18n.t("props.destroyed"));
+    });
+    ui.label(g.i18n.t("props.description"));
+    ui.add(
+        egui::TextEdit::singleline(&mut e.description)
+            .hint_text(g.i18n.t("props.description_hint"))
+            .desired_width(f32::INFINITY),
+    );
     // Size (scaling in whole cells), rotation and draw layer.
     ui.horizontal_wrapped(|ui| {
         ui.label(g.i18n.t("props.size"));
@@ -1441,6 +1486,27 @@ fn action_list(
                     },
                 ),
                 ("events.act_xp", ScriptAction::AwardXp { xp: 100 }),
+                (
+                    "events.act_lock",
+                    ScriptAction::SetObjectLocked {
+                        room,
+                        object: g
+                            .ui
+                            .sel_objects
+                            .first()
+                            .copied()
+                            .unwrap_or(dnd_world::ObjectId(0)),
+                        locked: false,
+                    },
+                ),
+                (
+                    "events.act_quest",
+                    ScriptAction::UpdateQuest {
+                        quest: view.quests.first().map(|q| q.id).unwrap_or(0),
+                        status: None,
+                        objective: Some((0, true)),
+                    },
+                ),
             ];
             for (key, a) in opts {
                 if ui.button(g.i18n.t(key)).clicked() {
@@ -1699,6 +1765,59 @@ fn action_fields(
         }
         ScriptAction::AwardXp { xp } => {
             ui.add(egui::DragValue::new(xp).range(0..=100000).suffix(" XP"));
+        }
+        ScriptAction::SetObjectLocked { object, locked, .. } => {
+            ui.horizontal(|ui| {
+                ui.label(format!("#{}", object.0));
+                if ui.button(g.i18n.t("events.use_selected_object")).clicked()
+                    && let Some(o) = g.ui.sel_objects.first()
+                {
+                    *object = *o;
+                }
+                ui.selectable_value(locked, false, g.i18n.t("events.unlock"));
+                ui.selectable_value(locked, true, g.i18n.t("events.lock"));
+            });
+        }
+        ScriptAction::UpdateQuest {
+            quest,
+            status,
+            objective,
+        } => {
+            egui::ComboBox::from_id_salt(format!("{id}-quest"))
+                .selected_text(
+                    view.quests
+                        .iter()
+                        .find(|q| q.id == *quest)
+                        .map(|q| q.title.clone())
+                        .unwrap_or_else(|| "—".into()),
+                )
+                .show_ui(ui, |ui| {
+                    for q in &view.quests {
+                        ui.selectable_value(quest, q.id, &q.title);
+                    }
+                });
+            ui.horizontal_wrapped(|ui| {
+                use dnd_session::model::QuestStatus as Q;
+                ui.selectable_value(status, None, g.i18n.t("events.quest_keep_status"));
+                for (st, key) in [
+                    (Q::Active, "quest.active"),
+                    (Q::Completed, "quest.completed"),
+                    (Q::Failed, "quest.failed"),
+                ] {
+                    ui.selectable_value(status, Some(st), g.i18n.t(key));
+                }
+            });
+            ui.horizontal(|ui| {
+                let mut tick = objective.is_some();
+                ui.checkbox(&mut tick, g.i18n.t("events.quest_objective"));
+                if tick {
+                    let (mut i, done) = objective.unwrap_or((0, true));
+                    ui.add(egui::DragValue::new(&mut i).range(0..=49).prefix("#"));
+                    *objective = Some((i, done));
+                } else {
+                    *objective = None;
+                }
+            });
         }
     }
 }

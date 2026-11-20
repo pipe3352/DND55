@@ -49,6 +49,12 @@ pub enum Command {
         accept: bool,
         attack: usize,
     },
+    /// Inspect, unlock (key), pick or force a lock, or break an object (Utilize action in combat).
+    ObjectAction {
+        entity: EntityId,
+        object: ObjectId,
+        action: ObjectAction,
+    },
     Interact {
         entity: EntityId,
         object: ObjectId,
@@ -462,6 +468,25 @@ pub enum DmCommand {
     },
     /// Reverts the most recent `ManualHp` change.
     UndoHp,
+    /// Creates (id 0) or replaces a journal entry.
+    SaveJournalEntry {
+        entry: crate::model::JournalEntry,
+    },
+    DeleteJournalEntry {
+        id: u64,
+    },
+    /// Creates (id 0) or replaces a quest. Status changes are announced to the table.
+    SaveQuest {
+        quest: crate::model::Quest,
+    },
+    DeleteQuest {
+        id: u64,
+    },
+    /// DM-only notes of a room (never sent to players).
+    SetRoomNotes {
+        room: RoomId,
+        notes: String,
+    },
     TransitionParty {
         to: RoomId,
         override_rules: bool,
@@ -545,4 +570,17 @@ pub enum EraseMode {
     Drawings,
     /// Everything above on every unlocked layer.
     All,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ObjectAction {
+    Inspect,
+    /// Uses the matching key from the character's inventory.
+    UseKey,
+    /// Dexterity (Sleight of Hand) check against the lock DC.
+    PickLock,
+    /// Strength (Athletics) check against the lock DC.
+    ForceLock,
+    /// Strength (Athletics) check against the break DC: the object is destroyed.
+    Break,
 }
