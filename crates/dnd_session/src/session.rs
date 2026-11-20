@@ -41,7 +41,7 @@ pub enum CommandError {
     Rules(String),
 }
 
-type Res<T> = Result<T, CommandError>;
+pub(crate) type Res<T> = Result<T, CommandError>;
 
 fn invalid<T>(s: impl Into<String>) -> Res<T> {
     Err(CommandError::Invalid(s.into()))
@@ -111,6 +111,10 @@ impl Session {
             scripts: vec![],
             pending_dialogue: None,
             hp_undo: Vec::new(),
+            time: Default::default(),
+            merchants: Vec::new(),
+            trades: Vec::new(),
+            prefabs: Vec::new(),
             journal: Vec::new(),
             quests: Vec::new(),
         };
@@ -444,6 +448,18 @@ impl Session {
             Command::EndTurn => self.cmd_end_turn(who),
             Command::ReactionDecision { accept, attack } => self.cmd_reaction(who, accept, attack),
             Command::Interact { entity, object } => self.cmd_interact(who, entity, object),
+            Command::Buy {
+                entity,
+                merchant,
+                item,
+                quantity,
+            } => self.cmd_trade(who, entity, merchant, false, "", quantity, Some(item)),
+            Command::Sell {
+                entity,
+                merchant,
+                item_id,
+                quantity,
+            } => self.cmd_trade(who, entity, merchant, true, &item_id, quantity, None),
             Command::ObjectAction {
                 entity,
                 object,
@@ -1853,6 +1869,7 @@ impl Session {
 
     /// End-of-turn bookkeeping for `entity`.
     pub(crate) fn end_of_turn(&mut self, entity: EntityId) {
+        self.tick_condition_timers(entity);
         let round = self.state.combat.as_ref().map(|c| c.round).unwrap_or(0);
         if let Some(c) = self.state.creatures.get_mut(&entity) {
             // Vex windows tick down.
@@ -2787,9 +2804,18 @@ impl Session {
                 entity,
                 condition,
                 present,
+                rounds,
             } => {
                 let name = self.creature(entity)?.name.clone();
                 let c = self.creature_mut(entity);
+                match (present, rounds) {
+                    (true, Some(r)) if r > 0 => {
+                        c.condition_rounds.insert(condition, r);
+                    }
+                    _ => {
+                        c.condition_rounds.remove(&condition);
+                    }
+                }
                 if present {
                     c.conditions.add(condition);
                 } else {
@@ -2957,6 +2983,15 @@ impl Session {
                 self.remove_from_initiative(entity);
             }
             ManualHp { entity, op } => self.manual_hp(entity, op)?,
+            d @ (SaveMerchant { .. }
+            | DeleteMerchant { .. }
+            | ResolveTrade { .. }
+            | AdvanceTime { .. }
+            | SetTime { .. }
+            | SavePrefab { .. }
+            | DeletePrefab { .. }
+            | PlacePrefab { .. }
+            | ApplyTemplate { .. }) => self.dm_extras(d)?,
             SaveJournalEntry { mut entry } => {
                 entry.title = entry.title.trim().chars().take(120).collect();
                 entry.body = entry.body.chars().take(20_000).collect();

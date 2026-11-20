@@ -589,6 +589,8 @@ impl Session {
         if self.state.combat.is_some() {
             return rules("you can't rest during combat");
         }
+        // 2024: a Short Rest lasts 1 hour, a Long Rest 8 hours.
+        self.state.time.advance(if long { 8 * 60 } else { 60 });
         let party: Vec<EntityId> = self
             .state
             .creatures

@@ -377,6 +377,7 @@ fn open_windows(list: &str, ui: &mut crate::state::UiState, gv: &GameView) {
             }
             "draw" => ui.tool = Tool::Draw,
             "journal" => ui.show_journal = true,
+            "shop" => ui.show_shop = true,
             "eraser" => {
                 ui.dm_tab = DmTab::Editor;
                 ui.tool = Tool::Eraser;

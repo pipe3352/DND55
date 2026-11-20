@@ -49,6 +49,20 @@ pub enum Command {
         accept: bool,
         attack: usize,
     },
+    /// Buys `quantity` of the merchant's stock entry `item`.
+    Buy {
+        entity: EntityId,
+        merchant: u64,
+        item: usize,
+        quantity: u32,
+    },
+    /// Sells items from the character's inventory to a merchant.
+    Sell {
+        entity: EntityId,
+        merchant: u64,
+        item_id: String,
+        quantity: u32,
+    },
     /// Inspect, unlock (key), pick or force a lock, or break an object (Utilize action in combat).
     ObjectAction {
         entity: EntityId,
@@ -428,6 +442,47 @@ pub enum DmCommand {
         entity: EntityId,
         condition: Condition,
         present: bool,
+        /// Duration in rounds (ticks at the end of the creature's turn); `None` = until removed.
+        #[serde(default)]
+        rounds: Option<u32>,
+    },
+    SaveMerchant {
+        merchant: crate::model::Merchant,
+    },
+    DeleteMerchant {
+        id: u64,
+    },
+    /// Approves or refuses a pending purchase/sale.
+    ResolveTrade {
+        id: u64,
+        approve: bool,
+    },
+    AdvanceTime {
+        minutes: u32,
+    },
+    SetTime {
+        day: u32,
+        minute: u32,
+    },
+    /// Saves the given objects of a room as a reusable prefab.
+    SavePrefab {
+        room: RoomId,
+        name: String,
+        objects: Vec<ObjectId>,
+    },
+    DeletePrefab {
+        id: u64,
+    },
+    /// Places a prefab with its top-left corner at `cell`.
+    PlacePrefab {
+        room: RoomId,
+        prefab: u64,
+        cell: Cell,
+    },
+    /// Replaces a room's tiles and objects with a starter layout (undoable).
+    ApplyTemplate {
+        room: RoomId,
+        template: crate::model::MapTemplate,
     },
     StartCombat {
         surprised: Vec<EntityId>,
@@ -521,7 +576,9 @@ impl Command {
                 | DmCommand::MoveObjects { room, .. }
                 | DmCommand::MoveLayer { room, .. }
                 | DmCommand::ResizeMap { room, .. }
-                | DmCommand::EraseArea { room, .. },
+                | DmCommand::EraseArea { room, .. }
+                | DmCommand::PlacePrefab { room, .. }
+                | DmCommand::ApplyTemplate { room, .. },
             ) => Some(*room),
             _ => None,
         }

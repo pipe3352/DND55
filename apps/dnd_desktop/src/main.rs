@@ -33,6 +33,7 @@ mod pixel_tiles;
 mod platform;
 mod pointer;
 mod settings;
+mod shop_ui;
 mod sprites;
 mod state;
 mod terrain_art;
@@ -163,6 +164,7 @@ fn main() {
                 (
                     tokens::animate_tokens,
                     tokens::token_indicators,
+                    map_render::roof_visibility,
                     fx::animate_fx,
                     map_render::flicker_lights,
                 ),

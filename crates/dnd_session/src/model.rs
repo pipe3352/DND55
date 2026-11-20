@@ -2,13 +2,13 @@
 
 use dnd_rules::attack::AttackProfile;
 use dnd_rules::character::CharacterSheet;
-use dnd_rules::conditions::ConditionSet;
+use dnd_rules::conditions::{Condition, ConditionSet};
 use dnd_rules::content::Size;
 use dnd_rules::d20::D20Roll;
 use dnd_rules::damage::Defenses;
 use dnd_rules::hp::{HitPoints, ZeroHpRule};
 use dnd_rules::monster::MonsterTemplate;
-use dnd_world::map::{Cell, GridMap};
+use dnd_world::map::{Cell, GridMap, MapObject};
 use dnd_world::path::DiagonalRule;
 use dnd_world::vision::{PointLight, Senses};
 use dnd_world::{EntityId, RoomId, WorldGraph};
@@ -97,6 +97,9 @@ pub struct Creature {
     /// Cosmetic token facing (quarter turns clockwise, 0 = east). No rules effect.
     #[serde(default)]
     pub facing: u8,
+    /// Remaining rounds of timed conditions (removed at the end of the creature's turn when 0).
+    #[serde(default)]
+    pub condition_rounds: std::collections::BTreeMap<Condition, u32>,
     /// Saving throw bonuses by ability (index = Ability::index()).
     #[serde(default)]
     pub saves: [i32; 6],
@@ -243,6 +246,7 @@ impl Creature {
             concentration: None,
             creature_type: humanoid(),
             facing: 0,
+            condition_rounds: Default::default(),
             saves: [0; 6],
             mods: [0; 6],
             attacks_per_action: 1,
@@ -337,6 +341,7 @@ impl Creature {
             concentration: None,
             creature_type: t.creature_type.clone(),
             facing: 0,
+            condition_rounds: Default::default(),
             saves: t.saves,
             mods,
             attacks_per_action: t.attacks_per_action.max(1),
@@ -645,6 +650,156 @@ pub struct GameState {
     pub journal: Vec<JournalEntry>,
     #[serde(default)]
     pub quests: Vec<Quest>,
+    /// In-game calendar (advanced by the DM and by rests).
+    #[serde(default)]
+    pub time: CampaignTime,
+    #[serde(default)]
+    pub merchants: Vec<Merchant>,
+    /// Purchases/sales waiting for DM approval.
+    #[serde(default)]
+    pub trades: Vec<TradeRequest>,
+    /// Reusable groups of map objects.
+    #[serde(default)]
+    pub prefabs: Vec<Prefab>,
+}
+
+/// Day number (from 1) and minute of the day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CampaignTime {
+    pub day: u32,
+    pub minute: u32,
+}
+
+impl Default for CampaignTime {
+    fn default() -> Self {
+        CampaignTime {
+            day: 1,
+            minute: 8 * 60,
+        }
+    }
+}
+
+impl CampaignTime {
+    pub fn advance(&mut self, minutes: u32) {
+        let total = self.minute + minutes;
+        self.day += total / 1440;
+        self.minute = total % 1440;
+    }
+    pub fn label(&self) -> String {
+        format!(
+            "Day {}, {:02}:{:02}",
+            self.day,
+            self.minute / 60,
+            self.minute % 60
+        )
+    }
+    /// Morning, day, evening or night (for the day/night tint).
+    pub fn phase(&self) -> DayPhase {
+        match self.minute / 60 {
+            5..=7 => DayPhase::Morning,
+            8..=17 => DayPhase::Day,
+            18..=20 => DayPhase::Sunset,
+            _ => DayPhase::Night,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DayPhase {
+    Morning,
+    Day,
+    Sunset,
+    Night,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ShopItem {
+    pub item: dnd_rules::items::ItemStack,
+    /// Price of one item in copper pieces.
+    pub price_cp: u32,
+    /// `None` = unlimited.
+    pub stock: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Merchant {
+    /// 0 = new (the host assigns an id).
+    pub id: u64,
+    pub name: String,
+    /// Asset hash of a portrait PNG.
+    pub portrait: Option<String>,
+    pub stock: Vec<ShopItem>,
+    /// Buys items from players at `buy_rate` percent of their value.
+    pub buys: bool,
+    pub buy_rate: u8,
+    /// Money the merchant can spend buying from players (`None` = unlimited).
+    pub funds_cp: Option<u64>,
+    /// Visible to players.
+    pub open: bool,
+    /// Trades happen at once; otherwise the DM approves each one.
+    pub auto_approve: bool,
+}
+
+impl Default for Merchant {
+    fn default() -> Self {
+        Merchant {
+            id: 0,
+            name: String::new(),
+            portrait: None,
+            stock: vec![],
+            buys: true,
+            buy_rate: 50,
+            funds_cp: None,
+            open: false,
+            auto_approve: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TradeRequest {
+    pub id: u64,
+    pub entity: EntityId,
+    pub merchant: u64,
+    /// true = the character sells to the merchant.
+    pub sell: bool,
+    pub item_id: String,
+    pub quantity: u32,
+    pub total_cp: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Prefab {
+    pub id: u64,
+    pub name: String,
+    /// Objects with positions relative to the group's top-left corner.
+    pub objects: Vec<MapObject>,
+}
+
+/// Starter layouts for an existing room (replace its content; undoable).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MapTemplate {
+    ForestClearing,
+    SmallCave,
+    DungeonChamber,
+    Tavern,
+    VillageSquare,
+    CastleRoom,
+    Crypt,
+    RuinedTemple,
+}
+
+impl MapTemplate {
+    pub const ALL: [MapTemplate; 8] = [
+        MapTemplate::ForestClearing,
+        MapTemplate::SmallCave,
+        MapTemplate::DungeonChamber,
+        MapTemplate::Tavern,
+        MapTemplate::VillageSquare,
+        MapTemplate::CastleRoom,
+        MapTemplate::Crypt,
+        MapTemplate::RuinedTemple,
+    ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

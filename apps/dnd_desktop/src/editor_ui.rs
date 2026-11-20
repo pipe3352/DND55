@@ -694,6 +694,7 @@ pub fn inspector(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
         }
     });
     resize_section(ui, g, room);
+    template_section(ui, g, room, view);
     crate::journal_ui::room_notes(ui, g, view, room);
     ui.add_space(10.0);
     crate::chrome::center_heading(ui, g.i18n.t("audio.room"), theme::WOOD);
@@ -731,6 +732,90 @@ pub fn inspector(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
 }
 
 /// Resize the map after creation: new size, anchor (3×3 grid), loss preview and confirmation.
+fn template_section(ui: &mut Ui, g: &mut GameUi, room: dnd_world::RoomId, view: &ClientView) {
+    use dnd_session::model::MapTemplate;
+    egui::CollapsingHeader::new(theme::gothic(g.i18n.t("template.title"), 18.0).color(theme::WOOD))
+        .id_salt("map-template")
+        .show(ui, |ui| {
+            egui::ComboBox::from_id_salt("tpl-pick")
+                .selected_text(g.i18n.t(&format!("template.{:?}", g.ui.template_pick)))
+                .show_ui(ui, |ui| {
+                    for t in MapTemplate::ALL {
+                        ui.selectable_value(
+                            &mut g.ui.template_pick,
+                            t,
+                            g.i18n.t(&format!("template.{t:?}")),
+                        );
+                    }
+                });
+            ui.checkbox(&mut g.ui.template_confirm, g.i18n.t("template.confirm"));
+            if ui
+                .add_enabled(
+                    g.ui.template_confirm,
+                    egui::Button::new(g.i18n.t("template.apply")),
+                )
+                .clicked()
+            {
+                g.net.cmd(Command::Dm(DmCommand::ApplyTemplate {
+                    room,
+                    template: g.ui.template_pick,
+                }));
+                g.ui.template_confirm = false;
+            }
+        });
+    egui::CollapsingHeader::new(theme::gothic(g.i18n.t("prefab.title"), 18.0).color(theme::WOOD))
+        .id_salt("prefabs")
+        .show(ui, |ui| {
+            if g.ui.placing_prefab.is_some() {
+                ui.label(RichText::new(g.i18n.t("prefab.place")).color(theme::GOLD_BRIGHT));
+            }
+            for p in &view.prefabs {
+                ui.horizontal(|ui| {
+                    if ui
+                        .selectable_label(
+                            g.ui.placing_prefab == Some(p.id),
+                            format!("{} ({})", p.name, p.objects.len()),
+                        )
+                        .clicked()
+                    {
+                        g.ui.placing_prefab = Some(p.id);
+                    }
+                    if ui.small_button("x").clicked() {
+                        g.net.cmd(Command::Dm(DmCommand::DeletePrefab { id: p.id }));
+                    }
+                });
+            }
+            if g.ui.sel_objects.is_empty() {
+                ui.label(RichText::new(g.i18n.t("prefab.none")).small().italics());
+            } else {
+                ui.add(
+                    egui::TextEdit::singleline(&mut g.ui.prefab_name)
+                        .hint_text(g.i18n.t("prefab.name_hint")),
+                );
+                if ui.button(g.i18n.t("prefab.save")).clicked() {
+                    let name = if g.ui.prefab_name.trim().is_empty() {
+                        "Prefab".to_string()
+                    } else {
+                        g.ui.prefab_name.trim().to_string()
+                    };
+                    g.net.cmd(Command::Dm(DmCommand::SavePrefab {
+                        room,
+                        name,
+                        objects: g.ui.sel_objects.clone(),
+                    }));
+                    g.ui.prefab_name.clear();
+                }
+            }
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label(g.i18n.t("roof.label"));
+                for (v, k) in [(0u8, "roof.auto"), (1, "roof.show"), (2, "roof.hide")] {
+                    ui.selectable_value(&mut g.ui.roof_mode, v, g.i18n.t(k));
+                }
+            });
+        });
+}
+
 fn resize_section(ui: &mut Ui, g: &mut GameUi, room: dnd_world::RoomId) {
     use dnd_world::map::Anchor;
     let Some(map) = g.gv.map.clone() else { return };

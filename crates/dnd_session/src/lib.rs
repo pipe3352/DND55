@@ -18,6 +18,7 @@ pub mod scripts;
 pub mod session;
 pub mod spellcasting;
 pub mod view;
+pub mod world_extras;
 
 pub use command::{Command, DmCommand};
 pub use model::{GameState, PlayerId, Principal};

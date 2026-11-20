@@ -86,8 +86,17 @@ pub fn game_ui(
                 crate::chrome::dragon(ui.painter(), r);
                 ui.label(theme::display(g.i18n.t("app.title"), 28.0).color(theme::GOLD_BRIGHT));
                 let tabs_w = if dm { 640.0 } else { 440.0 };
-                let tabs_rect =
-                    egui::Rect::from_center_size(full.center(), egui::vec2(tabs_w, 44.0));
+                // Below ~1900 px the right-hand buttons turn icon-only and the tabs move left,
+                // so the two groups never overlap.
+                let compact = full.width() < 1900.0;
+                let tabs_rect = if compact {
+                    egui::Rect::from_min_size(
+                        egui::pos2(full.left() + 345.0, full.center().y - 22.0),
+                        egui::vec2(tabs_w, 44.0),
+                    )
+                } else {
+                    egui::Rect::from_center_size(full.center(), egui::vec2(tabs_w, 44.0))
+                };
                 if full.width() >= 1380.0 {
                     ui.scope_builder(
                         egui::UiBuilder::new()
@@ -109,12 +118,25 @@ pub fn game_ui(
                         *g.gv = GameView::default();
                         g.next.set(AppState::MainMenu);
                     }
+                    if (dm || !view.merchants.is_empty())
+                        && crate::chrome::bar_button(ui, Some(Icon::Bag), "", false)
+                            .on_hover_text(g.i18n.t("shop.title"))
+                            .clicked()
+                    {
+                        g.ui.show_shop = !g.ui.show_shop;
+                    }
+                    crate::shop_ui::clock(ui, &mut g, &view);
                     if crate::chrome::bar_button(
                         ui,
                         Some(Icon::Book),
-                        g.i18n.t("journal.title"),
+                        if compact {
+                            ""
+                        } else {
+                            g.i18n.t("journal.title")
+                        },
                         false,
                     )
+                    .on_hover_text(g.i18n.t("journal.title"))
                     .clicked()
                     {
                         g.ui.show_journal = !g.ui.show_journal;
@@ -129,7 +151,7 @@ pub fn game_ui(
                         let save = crate::chrome::bar_button(
                             ui,
                             Some(Icon::Seal),
-                            g.i18n.t("game.save"),
+                            if compact { "" } else { g.i18n.t("game.save") },
                             false,
                         )
                         .on_hover_text(g.i18n.t("game.save_help"));
@@ -147,7 +169,11 @@ pub fn game_ui(
                             if crate::chrome::bar_button(
                                 ui,
                                 Some(Icon::Link),
-                                g.i18n.t("invite.players"),
+                                if compact {
+                                    ""
+                                } else {
+                                    g.i18n.t("invite.players")
+                                },
                                 false,
                             )
                             .on_hover_text(format!("{} {code}", g.i18n.t("game.code")))
@@ -370,6 +396,23 @@ pub fn game_ui(
     // Whatever the panels left free is the map canvas: only there do wheel/clicks reach the map.
     let map_rect = root.available_rect_before_wrap();
     *g.map_ptr = crate::pointer::compute(&ctx, map_rect);
+    {
+        // Day/night tint on outdoor maps (visual only; light rules use the map's ambient light).
+        use dnd_session::model::DayPhase;
+        let outdoor = g.gv.map.as_ref().is_some_and(|m| !m.indoor);
+        if outdoor {
+            let tint = match view.time.phase() {
+                DayPhase::Morning => Some(egui::Color32::from_rgba_unmultiplied(255, 190, 170, 22)),
+                DayPhase::Day => None,
+                DayPhase::Sunset => Some(egui::Color32::from_rgba_unmultiplied(240, 120, 50, 40)),
+                DayPhase::Night => Some(egui::Color32::from_rgba_unmultiplied(10, 20, 60, 110)),
+            };
+            if let Some(c) = tint {
+                ctx.layer_painter(egui::LayerId::background())
+                    .rect_filled(map_rect, 0.0, c);
+            }
+        }
+    }
     crate::chrome::map_frame(&ctx.layer_painter(egui::LayerId::background()), map_rect);
     overlays(&ctx, &mut g, &view);
     if editing && !preview {
@@ -1094,6 +1137,17 @@ fn session_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
                 }
             }
         });
+        ui.horizontal(|ui| {
+            ui.label(g.i18n.t("cond.duration"));
+            ui.add(
+                egui::DragValue::new(&mut g.ui.cond_rounds)
+                    .range(0..=100)
+                    .suffix(g.i18n.t("cond.rounds")),
+            );
+            if g.ui.cond_rounds == 0 {
+                ui.label(RichText::new(g.i18n.t("cond.until_removed")).small());
+            }
+        });
         ui.horizontal_wrapped(|ui| {
             use dnd_rules::conditions::Condition::*;
             for cond in [
@@ -1113,8 +1167,18 @@ fn session_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
                 Unconscious,
             ] {
                 let mut on = c.conditions.contains(&cond);
-                if ui.toggle_value(&mut on, format!("{cond:?}")).changed() {
+                let left = c
+                    .condition_rounds
+                    .iter()
+                    .find(|(k, _)| *k == cond)
+                    .map(|(_, r)| format!(" ({r})"))
+                    .unwrap_or_default();
+                if ui
+                    .toggle_value(&mut on, format!("{cond:?}{left}"))
+                    .changed()
+                {
                     g.net.cmd(Command::Dm(DmCommand::SetCondition {
+                        rounds: (g.ui.cond_rounds > 0).then_some(g.ui.cond_rounds),
                         entity: c.id,
                         condition: cond,
                         present: on,
@@ -1210,6 +1274,7 @@ fn right_panel(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
 
 fn overlays(ctx: &egui::Context, g: &mut GameUi, view: &ClientView) {
     crate::journal_ui::journal_window(ctx, g, view);
+    crate::shop_ui::shop_window(ctx, g, view);
     crate::journal_ui::object_menu(ctx, g);
     crate::ui_play::action_bar(ctx, g, view);
     crate::ui_play::reaction_prompts(ctx, g, view);

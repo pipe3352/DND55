@@ -312,6 +312,20 @@ pub struct UiState {
     pub show_graph: bool,
     /// Journal window: open, tab (0 journal, 1 quests), search, entry/quest being edited.
     pub show_journal: bool,
+    /// Shop window: open, selected merchant, merchant being edited (DM), catalog search.
+    pub show_shop: bool,
+    pub shop_sel: Option<u64>,
+    pub shop_edit: Option<dnd_session::model::Merchant>,
+    pub shop_search: String,
+    /// Map editor: prefab waiting to be placed with the next click; name for "save as prefab".
+    pub placing_prefab: Option<u64>,
+    pub prefab_name: String,
+    pub template_pick: dnd_session::model::MapTemplate,
+    pub template_confirm: bool,
+    /// Duration (rounds) used when the DM adds a condition; 0 = until removed.
+    pub cond_rounds: u32,
+    /// Roofs (Overhead layer): 0 auto (hidden while the party is under them), 1 show, 2 hide.
+    pub roof_mode: u8,
     pub journal_tab: u8,
     pub journal_search: String,
     pub journal_edit: Option<dnd_session::model::JournalEntry>,
@@ -444,6 +458,16 @@ impl Default for UiState {
             custom_monster: None,
             show_graph: false,
             show_journal: false,
+            show_shop: false,
+            shop_sel: None,
+            shop_edit: None,
+            shop_search: String::new(),
+            placing_prefab: None,
+            prefab_name: String::new(),
+            template_pick: dnd_session::model::MapTemplate::DungeonChamber,
+            template_confirm: false,
+            cond_rounds: 0,
+            roof_mode: 0,
             journal_tab: 0,
             journal_search: String::new(),
             journal_edit: None,

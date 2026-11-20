@@ -442,7 +442,13 @@ fn label_text(c: &dnd_session::view::CreatureView) -> String {
         let short: Vec<String> = c
             .conditions
             .iter()
-            .map(|k| format!("{k:?}").chars().take(4).collect())
+            .map(|k| {
+                let short: String = format!("{k:?}").chars().take(4).collect();
+                match c.condition_rounds.iter().find(|(x, _)| x == k) {
+                    Some((_, r)) => format!("{short} {r}"),
+                    None => short,
+                }
+            })
             .collect();
         s.push_str(&format!(" [{}]", short.join(",")));
     }

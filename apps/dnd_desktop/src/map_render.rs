@@ -21,6 +21,41 @@ pub struct CatalogRes(pub Catalog);
 #[derive(Component)]
 pub struct MapSprite;
 
+/// Tile sprite of the Overhead (roof) layer: drawn above tokens, faded when the party is under it.
+#[derive(Component)]
+pub struct OverheadTile(pub bool);
+
+/// Roofs become see-through while a party member stands under any roof tile (DM can force).
+pub fn roof_visibility(
+    gv: Res<GameView>,
+    ui: Res<crate::state::UiState>,
+    mut q: Query<(&OverheadTile, &mut Sprite)>,
+) {
+    let Some(map) = &gv.map else { return };
+    let under = gv.view.as_ref().is_some_and(|v| {
+        v.creatures
+            .iter()
+            .filter(|c| c.faction == dnd_session::model::Faction::Party)
+            .any(|c| {
+                map.in_bounds(c.pos)
+                    && map.layer(LayerKind::Overhead).tiles
+                        [(c.pos.1 * map.width + c.pos.0) as usize]
+                        != 0
+            })
+    });
+    let alpha = match ui.roof_mode {
+        1 => 1.0,
+        2 => 0.0,
+        _ if under => 0.15,
+        _ => 1.0,
+    };
+    for (o, mut s) in &mut q {
+        if o.0 && (s.color.alpha() - alpha).abs() > 0.01 {
+            s.color.set_alpha(alpha);
+        }
+    }
+}
+
 /// The fog-of-war overlay (one textured sprite for the whole room).
 #[derive(Component)]
 pub struct FogCell;
@@ -292,7 +327,16 @@ pub fn rebuild_map(
                     color: Color::srgb(k, k, k),
                     ..default()
                 },
-                Transform::from_xyz(p.x, p.y, li as f32 * 0.1),
+                Transform::from_xyz(
+                    p.x,
+                    p.y,
+                    if layer.kind == LayerKind::Overhead {
+                        2.85
+                    } else {
+                        li as f32 * 0.1
+                    },
+                ),
+                OverheadTile(layer.kind == LayerKind::Overhead),
             ));
         }
     }

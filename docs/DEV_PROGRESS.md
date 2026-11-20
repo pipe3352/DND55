@@ -58,8 +58,11 @@ tokens for Large creatures, real-Windows acceptance pass.
 | 2 | Levers/triggers | ✅ existed (scripts WHEN/IF(skill check)/THEN, depth-guarded); + lock/quest actions |
 | 3 | DM journal (8 sections, share), quests (main/side, status, objectives hidden/optional, rewards, NPCs, DM notes), room notes | ✅ `journal_ui.rs`, `DmCommand::{SaveJournalEntry,…,SetRoomNotes}`, `ScriptAction::UpdateQuest` |
 | 3 | Campaign graph improvements | existing graph editor kept (thumbnails, regions, search, drag, notes in DM data) |
-| 4 | Inventory slots/trading UI, merchants/shops, targeting previews, condition icons/durations | ⏳ not started |
-| 5 | NPC dialogue (exists via scripts), campaign time & rests UI, weather (exists), templates/prefabs, elevation/roofs | ⏳ time/prefabs/templates/elevation not started |
+| 4 | Merchants/shops (buy/sell, stock, prices, buy rate, funds, DM approval queue), condition durations (rounds, tick at end of turn, shown on tokens/inspector) | ✅ `model::Merchant`, `Command::{Buy,Sell}`, `DmCommand::{SaveMerchant,ResolveTrade,…}`, `world_extras.rs`, `shop_ui.rs` |
+| 4 | Equipment slots UI, targeting/AoE preview polish, pixel condition icons | ⏳ not started (`GiveItem` trading already exists) |
+| 5 | Campaign clock (day/time, rests advance it, DM popup in top bar), day/night tint on outdoor maps, 8 map templates, prefabs (save selection/place), roofs (Overhead layer above tokens, fades when party is under; DM Auto/Show/Hide) | ✅ `CampaignTime`, `DmCommand::{AdvanceTime,SetTime,SavePrefab,PlacePrefab,ApplyTemplate}`, `map_render::roof_visibility` |
+| 5 | Elevation | ⏳ not started |
 
-Next step: Phase 4 — merchants (`Merchant` model + shop window), then campaign clock.
-Tests: `tests/editor_tools.rs`, `tests/interactions_and_journal.rs`.
+Next step: equipment slots, targeting previews, condition icons, elevation.
+Tests: `tests/editor_tools.rs`, `tests/interactions_and_journal.rs`, `tests/shops_time_prefabs.rs`.
+Top bar: below 1900 px wide, Invite/Save/Journal/Shop are icon-only and tabs sit left (no overlap).

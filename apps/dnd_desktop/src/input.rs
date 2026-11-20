@@ -215,6 +215,19 @@ pub fn map_click(
     {
         return;
     }
+    if let Some(prefab) = ui.placing_prefab {
+        if keys.just_pressed(KeyCode::Escape) {
+            ui.placing_prefab = None;
+        } else if buttons.just_pressed(MouseButton::Left) {
+            net.cmd(Command::Dm(DmCommand::PlacePrefab {
+                room: room_id,
+                prefab,
+                cell,
+            }));
+            ui.placing_prefab = None;
+        }
+        return;
+    }
     let layer = ui.layer;
     let asset = ui.asset.clone();
     match ui.tool {

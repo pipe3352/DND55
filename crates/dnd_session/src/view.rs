@@ -51,6 +51,9 @@ pub struct CreatureView {
     /// Cosmetic facing (quarter turns clockwise, 0 = east).
     #[serde(default)]
     pub facing: u8,
+    /// Remaining rounds of timed conditions.
+    #[serde(default)]
+    pub condition_rounds: Vec<(dnd_rules::conditions::Condition, u32)>,
     pub hidden: bool,
     /// Only for creatures you control (or the DM).
     pub armor_class: Option<i32>,
@@ -283,6 +286,17 @@ pub struct ClientView {
     /// Quests: everything for the DM; revealed ones (no hidden objectives, no notes) for players.
     #[serde(default)]
     pub quests: Vec<crate::model::Quest>,
+    #[serde(default)]
+    pub time: crate::model::CampaignTime,
+    /// Open merchants (all merchants for the DM).
+    #[serde(default)]
+    pub merchants: Vec<crate::model::Merchant>,
+    /// DM: trades waiting for approval; players: their own pending requests.
+    #[serde(default)]
+    pub trades: Vec<crate::model::TradeRequest>,
+    /// DM only.
+    #[serde(default)]
+    pub prefabs: Vec<crate::model::Prefab>,
 }
 
 pub fn audience_includes(a: Audience, who: Principal) -> bool {
@@ -451,6 +465,7 @@ impl Session {
                         CreatureKind::Monster { .. } => None,
                     },
                     facing: c.facing,
+                    condition_rounds: c.condition_rounds.iter().map(|(k, v)| (*k, *v)).collect(),
                     hidden: c.hidden && who == Principal::Dm,
                     armor_class: mine.then_some(c.armor_class),
                     attacks: if mine { c.attacks.clone() } else { vec![] },
@@ -661,6 +676,36 @@ impl Session {
                 .filter(|e| who == Principal::Dm || e.shared)
                 .cloned()
                 .collect(),
+            time: s.time,
+            merchants: s
+                .merchants
+                .iter()
+                .filter(|m| who == Principal::Dm || m.open)
+                .cloned()
+                .map(|mut m| {
+                    if who != Principal::Dm {
+                        m.funds_cp = None;
+                    }
+                    m
+                })
+                .collect(),
+            trades: s
+                .trades
+                .iter()
+                .filter(|t| {
+                    who == Principal::Dm
+                        || s.creatures.get(&t.entity).is_some_and(|c| match who {
+                            Principal::Player(p) => c.controller == Controller::Player(p),
+                            Principal::Dm => true,
+                        })
+                })
+                .cloned()
+                .collect(),
+            prefabs: if who == Principal::Dm {
+                s.prefabs.clone()
+            } else {
+                vec![]
+            },
             quests: s
                 .quests
                 .iter()
