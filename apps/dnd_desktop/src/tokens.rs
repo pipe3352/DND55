@@ -23,6 +23,18 @@ pub struct HpFill;
 #[derive(Component)]
 pub struct HpBack;
 
+/// Small gold arrow showing a north/south facing.
+#[derive(Component)]
+pub struct FacingPip;
+
+fn pip_image() -> crate::pixel::Pix {
+    use crate::pixel::*;
+    let mut p = Pix::new(9, 6);
+    p.poly(&[(4, 0), (8, 5), (0, 5)], GOLD.l);
+    p.outline();
+    p
+}
+
 /// Faction frame drawn over the token face or portrait.
 #[derive(Component)]
 pub struct TokenFrame;
@@ -39,6 +51,7 @@ pub struct TokenArt {
     faces: HashMap<(String, Side), Handle<Image>>,
     frames: HashMap<(Side, bool), Handle<Image>>,
     ring: Option<Handle<Image>>,
+    pip: Option<Handle<Image>>,
 }
 
 impl TokenArt {
@@ -167,6 +180,15 @@ pub fn sync_tokens(
     mut tex: ResMut<TextureCache>,
     mut art: ResMut<TokenArt>,
     mut images: ResMut<Assets<Image>>,
+    mut pips: Query<
+        (&mut Visibility, &mut Transform),
+        (
+            With<FacingPip>,
+            Without<Token>,
+            Without<HpFill>,
+            Without<TokenFrame>,
+        ),
+    >,
     mut frames: Query<
         (&mut Sprite, &mut Transform),
         (With<TokenFrame>, Without<Token>, Without<HpFill>),
@@ -197,6 +219,8 @@ pub fn sync_tokens(
         let c = &view.creatures[i];
         let (img, tint) = token_look(c, &mut tex, &mut art, &mut images);
         sprite.image = img;
+        // Facing: west mirrors the sprite (a directional "frame"); north/south show a ground arrow.
+        sprite.flip_x = c.facing == 2;
         let dead = matches!(c.hp, HpView::Status(HealthStatus::Dead))
             || matches!(c.hp, HpView::Exact { current: 0, .. }) && c.is_monster;
         sprite.color = if dead {
@@ -209,6 +233,21 @@ pub fn sync_tokens(
         for child in children.iter() {
             if let Ok(mut t) = labels.get_mut(child) {
                 t.0 = label_text(c);
+            }
+            if let Ok((mut v, mut pt)) = pips.get_mut(child) {
+                let d = token_px(c.size);
+                *v = if c.facing % 2 == 1 {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                };
+                let down = c.facing == 1;
+                pt.translation = Vec3::new(
+                    0.0,
+                    if down { -d * 0.5 + 2.0 } else { d * 0.5 - 6.0 },
+                    -0.01,
+                );
+                pt.rotation = Quat::from_rotation_z(if down { std::f32::consts::PI } else { 0.0 });
             }
             if let Ok((mut f, mut ftr)) = frames.get_mut(child) {
                 let portrait = has_portrait(c, &tex);
@@ -241,6 +280,10 @@ pub fn sync_tokens(
         let frame = art.frame(side(c.faction), portrait, &mut images);
         let ring = art.ring(&mut images);
         let disc = tex.disc(&mut images);
+        let pip = art
+            .pip
+            .get_or_insert_with(|| images.add(pip_image().into_image()))
+            .clone();
         commands
             .spawn((
                 Token { id: c.id },
@@ -285,6 +328,16 @@ pub fn sync_tokens(
                         e.insert(TurnRing);
                     }
                 }
+                parent.spawn((
+                    FacingPip,
+                    Sprite {
+                        image: pip.clone(),
+                        custom_size: Some(Vec2::new(18.0, 12.0)),
+                        ..default()
+                    },
+                    Transform::from_xyz(0.0, 0.0, -0.01),
+                    Visibility::Hidden,
+                ));
                 parent.spawn((
                     TokenFrame,
                     Sprite {

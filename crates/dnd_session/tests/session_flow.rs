@@ -146,6 +146,7 @@ fn hidden_monsters_and_objects_never_reach_players() {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room,
             asset: "chest".into(),
             cell: (12, 12),
@@ -849,6 +850,7 @@ fn map_is_only_resent_when_revision_changes() {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room,
             asset: "barrel".into(),
             cell: (2, 2),

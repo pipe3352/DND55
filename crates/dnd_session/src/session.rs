@@ -50,7 +50,21 @@ fn rules<T>(s: impl Into<String>) -> Res<T> {
     Err(CommandError::Rules(s.into()))
 }
 
-type RoomSnapshot = (GridMap, Vec<PointLight>);
+/// Creatures of a room and the arrival cells of its edges (deep undo).
+type WorldSnap = (Vec<Creature>, Vec<(dnd_world::EdgeId, Option<Cell>, Option<Cell>)>);
+
+/// Undo state of one room. `world` is only captured for edits that move or remove more than map
+/// content (resize, eraser): creatures in the room and the edges' arrival cells.
+#[derive(Clone)]
+struct RoomSnapshot {
+    map: GridMap,
+    lights: Vec<PointLight>,
+    entry: Cell,
+    explored: Vec<bool>,
+    drawings: Vec<Drawing>,
+    containers: std::collections::BTreeMap<ObjectId, Vec<dnd_rules::items::ItemStack>>,
+    world: Option<WorldSnap>,
+}
 const UNDO_DEPTH: usize = 64;
 
 pub struct Session {
@@ -356,12 +370,11 @@ impl Session {
             return Err(CommandError::NotAuthorized);
         }
         let edited = cmd.edited_room();
-        let snapshot = edited.and_then(|r| {
-            self.state
-                .rooms
-                .get(&r)
-                .map(|rs| (rs.map.clone(), rs.extra_lights.clone()))
-        });
+        let deep = matches!(
+            cmd,
+            Command::Dm(DmCommand::ResizeMap { .. } | DmCommand::EraseArea { .. })
+        );
+        let snapshot = edited.and_then(|r| self.room_snapshot(r, deep));
         let result = self.dispatch(who, cmd);
         match result {
             Ok(()) => {
@@ -2307,6 +2320,7 @@ impl Session {
                 l.locked = locked;
             }
             PlaceObject {
+                rotation,
                 room,
                 asset,
                 cell,
@@ -2322,6 +2336,7 @@ impl Session {
                 }
                 let map = &self.room(room)?.map;
                 let mut obj = MapObject::from_asset(ObjectId(0), &def, cell.0, cell.1);
+                obj.rotation = rotation % 4;
                 if !obj.footprint().all(|c| map.in_bounds(c)) {
                     return invalid("object doesn't fit on the map there");
                 }
@@ -2418,20 +2433,21 @@ impl Session {
             }
             Undo { room } | Redo { room } => {
                 let is_undo = matches!(d, Undo { .. });
-                let current = {
-                    let r = self.room(room)?;
-                    (r.map.clone(), r.extra_lights.clone())
-                };
+                let (undo, redo) = self.undo.entry(room).or_default();
+                let peek = if is_undo { undo.last() } else { redo.last() }
+                    .ok_or_else(|| CommandError::Invalid("nothing to undo/redo".into()))?;
+                let deep = peek.world.is_some();
+                if deep && self.combat_in(room).is_some() {
+                    return rules(
+                        "end combat before undoing a resize or erase that moved creatures",
+                    );
+                }
+                let current = self.room_snapshot(room, deep).expect("room exists");
                 let (undo, redo) = self.undo.entry(room).or_default();
                 let (from, to) = if is_undo { (undo, redo) } else { (redo, undo) };
-                let snap = from
-                    .pop()
-                    .ok_or_else(|| CommandError::Invalid("nothing to undo/redo".into()))?;
+                let snap = from.pop().expect("peeked");
                 to.push(current);
-                let rs = self.state.rooms.get_mut(&room).expect("checked");
-                rs.map = snap.0;
-                rs.extra_lights = snap.1;
-                rs.map_rev += 1;
+                self.restore_snapshot(room, snap);
             }
             SpawnMonster {
                 template,
@@ -2473,6 +2489,23 @@ impl Session {
                 if self.combat_in(room).is_some() {
                     self.roll_into_initiative(id, false);
                 }
+            }
+            ResizeMap {
+                room,
+                width,
+                height,
+                anchor,
+                confirm_loss,
+            } => self.resize_map(room, width, height, anchor, confirm_loss)?,
+            EraseArea {
+                room,
+                cells,
+                mode,
+                protect,
+            } => self.erase_area(room, cells, mode, protect)?,
+            SetFacing { entity, facing } => {
+                self.creature(entity)?;
+                self.creature_mut(entity).facing = facing % 4;
             }
             RemoveCreature { entity } => {
                 self.creature(entity)?;
@@ -3072,6 +3105,277 @@ impl Session {
             },
             format!("{name} rolls Initiative: {}", e.roll.breakdown()),
         );
+    }
+
+    fn room_snapshot(&self, room: RoomId, deep: bool) -> Option<RoomSnapshot> {
+        let rs = self.state.rooms.get(&room)?;
+        Some(RoomSnapshot {
+            map: rs.map.clone(),
+            lights: rs.extra_lights.clone(),
+            entry: rs.entry,
+            explored: rs.explored.clone(),
+            drawings: rs.drawings.clone(),
+            containers: rs.containers.clone(),
+            world: deep.then(|| {
+                (
+                    self.state
+                        .creatures
+                        .values()
+                        .filter(|c| c.room == room)
+                        .cloned()
+                        .collect(),
+                    self.state
+                        .graph
+                        .edges
+                        .iter()
+                        .filter(|e| e.from == room || e.to == room)
+                        .map(|e| (e.id, e.arrival, e.return_arrival))
+                        .collect(),
+                )
+            }),
+        })
+    }
+
+    fn restore_snapshot(&mut self, room: RoomId, s: RoomSnapshot) {
+        let rs = self.state.rooms.get_mut(&room).expect("room exists");
+        rs.map = s.map;
+        rs.extra_lights = s.lights;
+        rs.entry = s.entry;
+        rs.explored = s.explored;
+        rs.drawings = s.drawings;
+        rs.containers = s.containers;
+        rs.map_rev += 1;
+        if let Some((creatures, edges)) = s.world {
+            // Non-party creatures added since are removed; the snapshot's creatures come back.
+            let keep: std::collections::HashSet<EntityId> =
+                creatures.iter().map(|c| c.id).collect();
+            self.state
+                .creatures
+                .retain(|id, c| c.room != room || c.faction == Faction::Party || keep.contains(id));
+            for c in creatures {
+                match self.state.creatures.get_mut(&c.id) {
+                    Some(cur) if cur.faction == Faction::Party => cur.pos = c.pos,
+                    _ => {
+                        self.state.creatures.insert(c.id, c);
+                    }
+                }
+            }
+            for (id, a, r) in edges {
+                if let Some(e) = self.state.graph.edges.iter_mut().find(|e| e.id == id) {
+                    e.arrival = a;
+                    e.return_arrival = r;
+                }
+            }
+        }
+    }
+
+    fn resize_map(
+        &mut self,
+        room: RoomId,
+        width: i32,
+        height: i32,
+        anchor: dnd_world::map::Anchor,
+        confirm_loss: bool,
+    ) -> Res<()> {
+        let rs = self.room(room)?;
+        let (old_w, old_h) = (rs.map.width, rs.map.height);
+        let (map, report) = rs
+            .map
+            .resized(width, height, anchor)
+            .map_err(|e| CommandError::Invalid(e.to_string()))?;
+        let off = report.offset;
+        let inside = |(x, y): Cell| x >= 0 && y >= 0 && x < width && y < height;
+        let shift = |(x, y): Cell| (x + off.0, y + off.1);
+        let outside: Vec<String> = self
+            .state
+            .creatures
+            .values()
+            .filter(|c| c.room == room && !inside(shift(c.pos)))
+            .map(|c| c.name.clone())
+            .collect();
+        if !outside.is_empty() {
+            return rules(format!(
+                "move these creatures inside the new area first: {}",
+                outside.join(", ")
+            ));
+        }
+        if (report.tiles_lost > 0 || !report.objects_lost.is_empty()) && !confirm_loss {
+            return rules(format!(
+                "resizing removes {} tile(s) and {} object(s): confirm to continue",
+                report.tiles_lost,
+                report.objects_lost.len()
+            ));
+        }
+        let rs = self.state.rooms.get_mut(&room).expect("checked");
+        rs.map = map;
+        rs.extra_lights.retain_mut(|l| {
+            l.cell = shift(l.cell);
+            inside(l.cell)
+        });
+        let e = shift(rs.entry);
+        rs.entry = (e.0.clamp(0, width - 1), e.1.clamp(0, height - 1));
+        let mut explored = vec![false; (width * height) as usize];
+        for y in 0..old_h {
+            for x in 0..old_w {
+                let (nx, ny) = shift((x, y));
+                if inside((nx, ny))
+                    && rs
+                        .explored
+                        .get((y * old_w + x) as usize)
+                        .copied()
+                        .unwrap_or(false)
+                {
+                    explored[(ny * width + nx) as usize] = true;
+                }
+            }
+        }
+        rs.explored = explored;
+        let (dx, dy) = (off.0 as f32, off.1 as f32);
+        let mv = |p: &mut (f32, f32)| {
+            p.0 += dx;
+            p.1 += dy;
+        };
+        for d in &mut rs.drawings {
+            match &mut d.shape {
+                DrawShape::Stroke(pts) => pts.iter_mut().for_each(mv),
+                DrawShape::Line(a, b) | DrawShape::Arrow(a, b) => {
+                    mv(a);
+                    mv(b);
+                }
+                DrawShape::Circle(c, _) | DrawShape::Text(c, _) => mv(c),
+            }
+        }
+        rs.containers
+            .retain(|id, _| !report.objects_lost.contains(id));
+        for c in self.state.creatures.values_mut().filter(|c| c.room == room) {
+            c.pos = shift(c.pos);
+        }
+        for e in &mut self.state.graph.edges {
+            let fix = |a: &mut Option<Cell>| {
+                if let Some(c) = a {
+                    let n = shift(*c);
+                    *a = inside(n).then_some(n);
+                }
+            };
+            if e.to == room {
+                fix(&mut e.arrival);
+            }
+            if e.from == room {
+                fix(&mut e.return_arrival);
+            }
+        }
+        self.log(
+            Audience::DmOnly,
+            format!(
+                "Map resized {old_w}×{old_h} → {width}×{height} ({} tiles, {} objects removed).",
+                report.tiles_lost,
+                report.objects_lost.len()
+            ),
+        );
+        Ok(())
+    }
+
+    fn erase_area(
+        &mut self,
+        room: RoomId,
+        cells: Vec<Cell>,
+        mode: crate::command::EraseMode,
+        protect: bool,
+    ) -> Res<()> {
+        use crate::command::EraseMode as M;
+        use dnd_world::map::LayerKind;
+        if cells.len() > 4096 {
+            return invalid("erase area too large");
+        }
+        let rs = self.room(room)?;
+        let cells: Vec<Cell> = cells.into_iter().filter(|c| rs.map.in_bounds(*c)).collect();
+        let set: std::collections::HashSet<Cell> = cells.iter().copied().collect();
+        let objects_locked = rs.map.layer(LayerKind::Furniture).locked;
+        let layers: Vec<LayerKind> = match mode {
+            M::Layer(k) if k != LayerKind::Furniture => vec![k],
+            M::All => rs
+                .map
+                .layers
+                .iter()
+                .map(|l| l.kind)
+                .filter(|k| *k != LayerKind::Furniture)
+                .collect(),
+            _ => vec![],
+        };
+        let erase_objects = matches!(
+            mode,
+            M::Objects(_) | M::All | M::Layer(LayerKind::Furniture)
+        ) && !objects_locked;
+        let category = if let M::Objects(c) = mode { c } else { None };
+        let important = |o: &MapObject, rs: &RoomState| {
+            o.interactable
+                || dnd_world::map::is_door(&o.asset_id)
+                || rs.containers.get(&o.id).is_some_and(|v| !v.is_empty())
+        };
+        let catalog = self.catalog.clone();
+        let rs = self.state.rooms.get_mut(&room).expect("checked");
+        let mut n = 0usize;
+        for k in layers {
+            if rs.map.layer(k).locked {
+                continue;
+            }
+            for c in &cells {
+                if rs.map.set_tile(k, *c, None).is_ok_and(|old| old != 0) {
+                    n += 1;
+                }
+            }
+        }
+        if erase_objects {
+            let doomed: Vec<ObjectId> = rs
+                .map
+                .objects
+                .iter()
+                .filter(|o| o.footprint().any(|f| set.contains(&f)))
+                .filter(|o| {
+                    category.is_none_or(|cat| {
+                        catalog.get(&o.asset_id).is_some_and(|a| a.category == cat)
+                    })
+                })
+                .filter(|o| !protect || !important(o, rs))
+                .map(|o| o.id)
+                .collect();
+            n += doomed.len();
+            rs.map.objects.retain(|o| !doomed.contains(&o.id));
+            rs.containers.retain(|id, _| !doomed.contains(id));
+        }
+        if matches!(mode, M::Lights | M::All) {
+            let before = rs.extra_lights.len();
+            rs.extra_lights.retain(|l| !set.contains(&l.cell));
+            n += before - rs.extra_lights.len();
+        }
+        if matches!(mode, M::Drawings | M::All) {
+            let hit = |p: &(f32, f32)| set.contains(&(p.0.floor() as i32, p.1.floor() as i32));
+            let before = rs.drawings.len();
+            rs.drawings.retain(|d| !match &d.shape {
+                DrawShape::Stroke(pts) => pts.iter().any(hit),
+                DrawShape::Line(a, b) | DrawShape::Arrow(a, b) => hit(a) || hit(b),
+                DrawShape::Circle(c, _) | DrawShape::Text(c, _) => hit(c),
+            });
+            n += before - rs.drawings.len();
+        }
+        if matches!(mode, M::Creatures | M::All) {
+            let doomed: Vec<EntityId> = self
+                .state
+                .creatures
+                .values()
+                .filter(|c| c.room == room && c.faction != Faction::Party && set.contains(&c.pos))
+                .map(|c| c.id)
+                .collect();
+            for id in doomed {
+                self.remove_from_initiative(id);
+                self.state.creatures.remove(&id);
+                n += 1;
+            }
+        }
+        if n == 0 {
+            return rules("nothing to erase there");
+        }
+        Ok(())
     }
 
     fn combat_mut(&mut self) -> Res<&mut Combat> {

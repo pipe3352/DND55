@@ -48,6 +48,9 @@ pub struct CreatureView {
     /// Token icon for player characters ("mage", "knight"…); monsters use `creature_type`.
     #[serde(default)]
     pub token: Option<String>,
+    /// Cosmetic facing (quarter turns clockwise, 0 = east).
+    #[serde(default)]
+    pub facing: u8,
     pub hidden: bool,
     /// Only for creatures you control (or the DM).
     pub armor_class: Option<i32>,
@@ -441,6 +444,7 @@ impl Session {
                         CreatureKind::Pc { sheet } => Some(sheet.token_icon()),
                         CreatureKind::Monster { .. } => None,
                     },
+                    facing: c.facing,
                     hidden: c.hidden && who == Principal::Dm,
                     armor_class: mine.then_some(c.armor_class),
                     attacks: if mine { c.attacks.clone() } else { vec![] },

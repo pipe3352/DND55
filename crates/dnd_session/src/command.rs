@@ -336,6 +336,32 @@ pub enum DmCommand {
         asset: String,
         cell: Cell,
         hidden: bool,
+        /// Quarter turns clockwise chosen before placing (0–3).
+        #[serde(default)]
+        rotation: u8,
+    },
+    /// Resizes a room's map. Content moves with the anchor; anything that would fall outside is
+    /// reported and refused unless `confirm_loss`. Creatures are never removed: if one would end up
+    /// outside, the resize is refused.
+    ResizeMap {
+        room: RoomId,
+        width: i32,
+        height: i32,
+        anchor: dnd_world::map::Anchor,
+        confirm_loss: bool,
+    },
+    /// Universal eraser over `cells`.
+    EraseArea {
+        room: RoomId,
+        cells: Vec<Cell>,
+        mode: EraseMode,
+        /// Skip doors, interactive objects and containers holding items.
+        protect: bool,
+    },
+    /// Cosmetic facing of a creature token (quarter turns clockwise, 0 = east/right).
+    SetFacing {
+        entity: EntityId,
+        facing: u8,
     },
     RemoveObject {
         room: RoomId,
@@ -468,7 +494,9 @@ impl Command {
                 | DmCommand::AddObjects { room, .. }
                 | DmCommand::RemoveObjects { room, .. }
                 | DmCommand::MoveObjects { room, .. }
-                | DmCommand::MoveLayer { room, .. },
+                | DmCommand::MoveLayer { room, .. }
+                | DmCommand::ResizeMap { room, .. }
+                | DmCommand::EraseArea { room, .. },
             ) => Some(*room),
             _ => None,
         }
@@ -500,4 +528,21 @@ pub enum HpOp {
     Restore,
     /// Current HP to 0.
     Zero,
+}
+
+/// What the universal eraser removes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EraseMode {
+    /// Tiles of one layer (the Objects layer removes map objects).
+    Layer(LayerKind),
+    /// Map objects, optionally only one catalog category (furniture, natural, dungeon…).
+    Objects(Option<dnd_world::catalog::Category>),
+    /// Monsters and NPCs (never player characters).
+    Creatures,
+    /// DM/spell point lights.
+    Lights,
+    /// Drawings touching the cells.
+    Drawings,
+    /// Everything above on every unlocked layer.
+    All,
 }

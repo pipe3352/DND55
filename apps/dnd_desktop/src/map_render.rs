@@ -57,12 +57,7 @@ impl ArtCache {
     ) -> Handle<Image> {
         self.tiles
             .entry((id.to_string(), variant))
-            .or_insert_with(|| {
-                images.add(crate::pixel::pixelize(
-                    &art::tile(id, variant, color),
-                    false,
-                ))
-            })
+            .or_insert_with(|| images.add(crate::pixel_tiles::tile_image(id, variant, color)))
             .clone()
     }
     fn transition(
@@ -75,7 +70,7 @@ impl ArtCache {
         if let Some(h) = self.transitions.get(&(id.to_string(), dir)) {
             return h.clone();
         }
-        let base = art::tile(id, 0, color);
+        let base = crate::pixel_tiles::transition_base(id, color);
         // Dithered pixel edge: organic transitions in the same pixel grid as the tiles.
         let h = images.add(crate::pixel::pixelize(&art::transition(&base, dir), true));
         self.transitions.insert((id.to_string(), dir), h.clone());
@@ -770,11 +765,19 @@ pub fn placement_ghost(
     } else {
         (1, 1)
     };
+    // Rotation chosen before placing (R / Shift+R): the footprint swaps on odd quarter turns.
+    let rot = if def.is_object {
+        ui.place_rotation % 4
+    } else {
+        0
+    };
+    let (fw, fh) = if rot % 2 == 1 { (h, w) } else { (w, h) };
     let center = cell_to_world(cell)
         + Vec2::new(
-            (w as f32 - 1.0) * CELL / 2.0,
-            -(h as f32 - 1.0) * CELL / 2.0,
+            (fw as f32 - 1.0) * CELL / 2.0,
+            -(fh as f32 - 1.0) * CELL / 2.0,
         );
+    let quat = Quat::from_rotation_z(-(rot as f32) * std::f32::consts::FRAC_PI_2);
     let image = if def.is_object {
         cache.object(&def.id, w, h, def.color, &mut images)
     } else {
@@ -786,6 +789,7 @@ pub fn placement_ghost(
             s.image = image;
             s.custom_size = Some(size);
             t.translation = center.extend(2.9);
+            t.rotation = quat;
         }
         Err(_) => {
             commands.spawn((
@@ -796,7 +800,7 @@ pub fn placement_ghost(
                     color: Color::srgba(1.0, 1.0, 1.0, 0.55),
                     ..default()
                 },
-                Transform::from_translation(center.extend(2.9)),
+                Transform::from_translation(center.extend(2.9)).with_rotation(quat),
             ));
         }
     }

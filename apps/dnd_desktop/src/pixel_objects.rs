@@ -1474,6 +1474,277 @@ pub fn draw(id: &str, w: u8, hc: u8) -> Option<Pix> {
             }
             return Some(p);
         }
+        // ------------------------------------------------ expansion pack
+        "weapon_rack" => {
+            planks(&mut p, 2, 20, pw - 4, 5, dark, true, 21);
+            front(&mut p, 2, 25, pw - 4, 3, dark);
+            p.srect(2, 3, 3, 22, dark);
+            p.srect(pw - 5, 3, 3, 22, dark);
+            p.rect(4, 6, pw - 8, 2, dark.m);
+            for (k, x) in [10, 20, 30, 40, 52].iter().enumerate() {
+                match k % 3 {
+                    0 => {
+                        p.rect(*x, 2, 2, 20, STEEL.l);
+                        p.rect(x - 2, 17, 6, 2, GOLD.m);
+                    }
+                    1 => {
+                        p.rect(*x, 2, 1, 20, wood.m);
+                        p.srect(x - 3, 2, 4, 5, STEEL);
+                    }
+                    _ => {
+                        p.rect(*x, 0, 1, 22, wood.l);
+                        p.poly(&[(*x, -3), (x + 2, 2), (x - 2, 2)], STEEL.l);
+                    }
+                }
+            }
+            true
+        }
+        "armor_stand" => {
+            p.rect(15, 20, 2, 8, dark.m);
+            p.rect(10, 27, 12, 2, dark.m);
+            p.srect(9, 9, 14, 12, STEEL);
+            p.rect(11, 11, 10, 1, STEEL.l);
+            p.srect(6, 9, 4, 5, STEEL);
+            p.srect(22, 9, 4, 5, STEEL);
+            p.srect(11, 1, 10, 8, STEEL);
+            p.rect(13, 4, 6, 2, c(30, 26, 36));
+            p.rect(15, 12, 2, 7, red.m);
+            true
+        }
+        "anvil" => {
+            p.srect(12, 19, 8, 9, IRON);
+            p.rect(9, 27, 14, 2, IRON.d);
+            p.poly(&[(3, 11), (27, 11), (27, 18), (8, 18)], IRON.m);
+            p.rect(9, 11, 18, 2, IRON.l);
+            p.poly(&[(3, 11), (8, 11), (8, 14)], IRON.l);
+            p.srect(20, 6, 3, 5, wood);
+            p.srect(18, 4, 7, 3, STEEL);
+            true
+        }
+        "bar_counter" => {
+            planks(&mut p, 1, 6, pw - 2, 9, wood, true, 23);
+            front(&mut p, 1, 15, pw - 2, 14, dark);
+            for x in (4..pw - 4).step_by(12) {
+                p.srect(x, 17, 9, 10, dark);
+            }
+            mug(&mut p, 12, 4);
+            mug(&mut p, 40, 5);
+            bottle(&mut p, 70, 12, ramp(70, 120, 70), true, true);
+            bottle(&mut p, 78, 12, ramp(120, 60, 40), false, true);
+            true
+        }
+        "training_dummy" => {
+            p.rect(15, 18, 2, 10, wood.d);
+            p.rect(10, 27, 12, 2, wood.d);
+            p.sell(16.0, 15.0, 6.5, 6.0, ramp(200, 170, 110));
+            p.rect(4, 11, 24, 3, wood.m);
+            p.sell(16.0, 6.0, 4.0, 4.0, ramp(200, 170, 110));
+            p.line(10, 15, 22, 15, c(140, 110, 70));
+            for r in [5.0f32, 3.0] {
+                for i in 0..24 {
+                    let a = i as f32 / 24.0 * std::f32::consts::TAU;
+                    p.set(
+                        (16.0 + a.cos() * r) as i32,
+                        (15.0 + a.sin() * r) as i32,
+                        red.m,
+                    );
+                }
+            }
+            true
+        }
+        "well" => {
+            p.ell(cx, 42.0, 22.0, 12.0, STONE.d);
+            p.sell(cx, 38.0, 22.0, 12.0, STONE);
+            for i in 0..24 {
+                let a = i as f32 / 24.0 * std::f32::consts::TAU;
+                p.set(
+                    (cx + a.cos() * 20.0) as i32,
+                    (38.0 + a.sin() * 10.5) as i32,
+                    STONE.d,
+                );
+            }
+            p.ell(cx, 37.0, 15.0, 7.0, c(20, 28, 40));
+            p.ell(cx, 38.0, 10.0, 4.0, c(40, 70, 100));
+            for x in [8, pw - 10] {
+                p.srect(x, 8, 3, 30, wood);
+            }
+            p.poly(&[(4, 10), (cx as i32, 1), (pw - 4, 10)], red.m);
+            p.rect(8, 16, pw - 16, 2, wood.d);
+            p.line(cx as i32, 17, cx as i32, 30, c(200, 180, 140));
+            p.srect(cx as i32 - 3, 30, 6, 5, wood);
+            true
+        }
+        "signpost" => {
+            p.rect(15, 6, 2, 22, wood.m);
+            p.rect(15, 6, 1, 22, wood.l);
+            p.poly(&[(4, 6), (24, 6), (28, 9), (24, 12), (4, 12)], wood.l);
+            p.poly(&[(8, 14), (27, 14), (27, 19), (8, 19), (4, 16)], wood.m);
+            for (x, y) in [(8, 9), (12, 9), (16, 9), (12, 16), (16, 16), (20, 16)] {
+                p.set(x, y, dark.d);
+            }
+            true
+        }
+        "autumn_tree" => {
+            trunk(&mut p, 14, 16, 29, 4, WOOD);
+            canopy(&mut p, 16.0, 12.0, 14.0, 11.0, ramp(206, 108, 44), 31);
+            speck(&mut p, 3, 2, 26, 20, c(240, 190, 80), 32, 7);
+            for i in 0..5 {
+                p.set(
+                    4 + (h(i, 0, 3) % 24) as i32,
+                    28 + (h(i, 1, 3) % 3) as i32,
+                    c(200, 90, 40),
+                );
+            }
+            true
+        }
+        "willow_tree" => {
+            trunk(&mut p, 29, 26, ph - 3, 6, WOOD);
+            let r = ramp(110, 150, 80);
+            canopy(&mut p, cx, 22.0, 28.0, 18.0, r, 41);
+            for i in 0..22 {
+                let x = 6 + i * 2 + (h(i, 0, 4) % 2) as i32;
+                let len = 12 + (h(i, 1, 4) % 18) as i32;
+                p.line(
+                    x,
+                    26,
+                    x + (h(i, 2, 4) % 3) as i32 - 1,
+                    26 + len,
+                    if i % 2 == 0 { r.m } else { r.d },
+                );
+            }
+            true
+        }
+        "berry_bush" => {
+            canopy(&mut p, 16.0, 20.0, 12.0, 9.0, ramp(60, 104, 52), 51);
+            for (i, (x, y)) in [
+                (10, 16),
+                (14, 21),
+                (19, 14),
+                (22, 20),
+                (12, 24),
+                (17, 18),
+                (24, 24),
+            ]
+            .iter()
+            .enumerate()
+            {
+                let col = if i % 2 == 0 {
+                    c(150, 40, 120)
+                } else {
+                    c(60, 60, 160)
+                };
+                p.rect(*x, *y, 2, 2, col);
+                p.set(*x, *y, c(240, 200, 240));
+            }
+            true
+        }
+        "giant_mushroom" => {
+            p.srect(12, 14, 8, 15, ramp(230, 220, 200));
+            p.rect(10, 27, 12, 2, ramp(230, 220, 200).d);
+            p.sell(16.0, 10.0, 14.0, 8.0, ramp(170, 70, 140));
+            p.rect(2, 12, 28, 3, ramp(170, 70, 140).d);
+            for (x, y) in [(8, 6), (15, 4), (22, 7), (11, 9), (19, 9)] {
+                p.rect(x, y, 2, 2, c(250, 220, 250));
+            }
+            p.outline();
+            glow(&mut p, 16.0, 10.0, 15.0, c(220, 130, 230));
+            p.ground_shadow(16.0, 30.0, 9.0, 1.5);
+            return Some(p);
+        }
+        "lily_pads" => {
+            p.ell(16.0, 16.0, 14.0, 12.0, [60, 100, 130, 150]);
+            for (x, y, r) in [(10.0, 12.0, 5.0f32), (21.0, 18.0, 6.0), (13.0, 22.0, 4.0)] {
+                p.sell(x, y, r, r * 0.8, ramp(80, 140, 70));
+                p.line(
+                    x as i32,
+                    y as i32,
+                    (x + r) as i32,
+                    y as i32,
+                    ramp(80, 140, 70).d,
+                );
+            }
+            p.rect(20, 16, 3, 2, c(240, 180, 210));
+            p.set(21, 15, WHITE);
+            return Some(p);
+        }
+        "crystal_cluster" => {
+            let r = ramp(120, 200, 230);
+            for (x, top, w2) in [
+                (16, 22, 5),
+                (30, 8, 7),
+                (44, 18, 6),
+                (24, 30, 4),
+                (40, 34, 4),
+            ] {
+                let base = 58;
+                p.poly(
+                    &[
+                        (x - w2, base),
+                        (x - w2, top + 6),
+                        (x, top),
+                        (x + w2, top + 6),
+                        (x + w2, base),
+                    ],
+                    r.m,
+                );
+                p.rect(x - w2 + 1, top + 6, w2 - 1, base - top - 6, r.l);
+                p.rect(x + 1, top + 6, w2 - 1, base - top - 6, r.d);
+            }
+            rock(&mut p, 32.0, 58.0, 22.0, 5.0, STONE, 7);
+            p.outline();
+            glow(&mut p, 32.0, 30.0, 30.0, r.l);
+            p.ground_shadow(32.0, 61.0, 26.0, 2.0);
+            return Some(p);
+        }
+        "rune_pillar" => {
+            let r = ramp(90, 80, 120);
+            p.srect(5, ph - 6, 22, 4, r);
+            p.srect(8, 4, 16, ph - 10, r);
+            p.srect(5, 1, 22, 4, r);
+            for y in [9, 15, 21] {
+                p.rect(13, y, 6, 1, c(190, 150, 255));
+                p.set(15, y - 1, c(230, 210, 255));
+                p.set(16, y + 1, c(190, 150, 255));
+            }
+            p.outline();
+            glow(&mut p, 16.0, 15.0, 14.0, c(170, 130, 255));
+            p.ground_shadow(16.0, 30.0, 11.0, 1.6);
+            return Some(p);
+        }
+        "sewer_grate" => {
+            p.srect(5, 5, 22, 22, IRON);
+            p.rect(7, 7, 18, 18, c(16, 16, 20));
+            for x in (8..25).step_by(4) {
+                p.rect(x, 7, 2, 18, IRON.m);
+                p.set(x, 7, IRON.l);
+            }
+            p.rect(7, 15, 18, 2, IRON.m);
+            return Some(p);
+        }
+        "gargoyle_statue" => {
+            let mut g = crate::sprites::creature("mon:monstrosity:gargoyle");
+            for px in &mut g.px {
+                if px[3] > 0 && *px != INK {
+                    let v = (px[0] as u16 + px[1] as u16 + px[2] as u16) / 3;
+                    let v = (v as f32 * 0.6 + 60.0) as u8;
+                    *px = [v, v, v.saturating_add(4), px[3]];
+                }
+            }
+            p.srect(4, 24, 24, 7, STONE);
+            p.blit(&g, 0, -4);
+            true
+        }
+        "treasure_pile" => {
+            p.sell(16.0, 22.0, 12.0, 6.0, GOLD);
+            p.sell(14.0, 18.0, 8.0, 5.0, GOLD);
+            for (x, y) in [(8, 20), (12, 16), (18, 15), (22, 21), (15, 23), (20, 18)] {
+                p.rect(x, y, 2, 1, c(255, 240, 170));
+            }
+            p.rect(20, 11, 4, 5, c(190, 40, 50));
+            p.set(21, 12, c(255, 170, 180));
+            p.srect(6, 13, 5, 6, ramp(80, 120, 200));
+            true
+        }
         _ => return None,
     };
     Some(finish(p, shadow))

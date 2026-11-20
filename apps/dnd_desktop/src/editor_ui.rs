@@ -31,7 +31,7 @@ fn thumb(g: &mut GameUi, ctx: &egui::Context, id: &str) -> Option<egui::TextureH
     let img = if def.is_object {
         crate::pixel_objects::image(&def.id, def.size.0, def.size.1, def.color)
     } else {
-        crate::terrain_art::tile(&def.id, 0, def.color)
+        crate::pixel_tiles::tile_image(&def.id, 0, def.color)
     };
     let (w, h) = (img.width() as usize, img.height() as usize);
     let data = img.data?;
@@ -50,15 +50,7 @@ fn thumb(g: &mut GameUi, ctx: &egui::Context, id: &str) -> Option<egui::TextureH
             }
         }
     }
-    let tex = ctx.load_texture(
-        format!("palette-{id}"),
-        ci,
-        if def.is_object {
-            egui::TextureOptions::NEAREST
-        } else {
-            egui::TextureOptions::LINEAR
-        },
-    );
+    let tex = ctx.load_texture(format!("palette-{id}"), ci, egui::TextureOptions::NEAREST);
     g.thumbs.0.insert(id.to_string(), tex.clone());
     Some(tex)
 }
@@ -307,6 +299,81 @@ pub fn palette(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
         }
         Tool::Object => {
             ui.checkbox(&mut g.ui.object_hidden, g.i18n.t("editor.hidden_object"));
+            ui.horizontal(|ui| {
+                ui.label(format!(
+                    "{}: {}°",
+                    g.i18n.t("editor.place_rotation"),
+                    g.ui.place_rotation as u32 * 90
+                ));
+                if ui
+                    .small_button("-90°")
+                    .on_hover_text(g.i18n.t("props.rotate_ccw"))
+                    .clicked()
+                {
+                    g.ui.place_rotation = (g.ui.place_rotation + 3) % 4;
+                }
+                if ui
+                    .small_button("+90°")
+                    .on_hover_text(g.i18n.t("props.rotate"))
+                    .clicked()
+                {
+                    g.ui.place_rotation = (g.ui.place_rotation + 1) % 4;
+                }
+            });
+        }
+        Tool::Eraser => {
+            crate::chrome::center_heading(ui, g.i18n.t("eraser.title"), theme::GOLD_BRIGHT);
+            ui.horizontal_wrapped(|ui| {
+                for (k, key) in [
+                    "eraser.layer",
+                    "eraser.category",
+                    "eraser.objects",
+                    "eraser.creatures",
+                    "eraser.lights",
+                    "eraser.drawings",
+                    "eraser.all",
+                ]
+                .iter()
+                .enumerate()
+                {
+                    ui.selectable_value(&mut g.ui.erase_kind, k as u8, g.i18n.t(key));
+                }
+            });
+            match g.ui.erase_kind {
+                0 => {
+                    ui.horizontal_wrapped(|ui| {
+                        for k in [
+                            LayerKind::Terrain,
+                            LayerKind::FloorDecoration,
+                            LayerKind::Walls,
+                            LayerKind::Furniture,
+                            LayerKind::Overhead,
+                        ] {
+                            let name = crate::ui_dm::layer_label(g, k);
+                            ui.selectable_value(&mut g.ui.layer, k, name);
+                        }
+                    });
+                }
+                1 => {
+                    ui.horizontal_wrapped(|ui| {
+                        for (cat, key) in [
+                            (Category::Furniture, "cat.furniture"),
+                            (Category::Natural, "cat.natural"),
+                            (Category::Dungeon, "cat.dungeon"),
+                            (Category::Architecture, "cat.architecture"),
+                            (Category::Fantasy, "cat.fantasy"),
+                            (Category::Vegetation, "cat.vegetation"),
+                        ] {
+                            ui.selectable_value(&mut g.ui.erase_cat, cat, g.i18n.t(key));
+                        }
+                    });
+                }
+                _ => {}
+            }
+            ui.add(egui::Slider::new(&mut g.ui.erase_brush, 1..=7).text(g.i18n.t("eraser.brush")));
+            ui.checkbox(&mut g.ui.erase_protect, g.i18n.t("eraser.protect"))
+                .on_hover_text(g.i18n.t("eraser.protect_help"));
+            ui.label(RichText::new(g.i18n.t("eraser.help")).small().italics());
         }
         Tool::Draw => crate::ui_dm::draw_options(ui, g, room, true),
         _ => {}
@@ -626,6 +693,7 @@ pub fn inspector(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
             g.ui.tool = Tool::Entry;
         }
     });
+    resize_section(ui, g, room);
     ui.add_space(10.0);
     crate::chrome::center_heading(ui, g.i18n.t("audio.room"), theme::WOOD);
     room_audio_rows(ui, g, view);
@@ -659,6 +727,104 @@ pub fn inspector(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
         egui::pos2(sr.right() - 30.0, sr.top() + 26.0),
         22.0,
     );
+}
+
+/// Resize the map after creation: new size, anchor (3×3 grid), loss preview and confirmation.
+fn resize_section(ui: &mut Ui, g: &mut GameUi, room: dnd_world::RoomId) {
+    use dnd_world::map::Anchor;
+    let Some(map) = g.gv.map.clone() else { return };
+    egui::CollapsingHeader::new(theme::gothic(g.i18n.t("resize.title"), 18.0).color(theme::WOOD))
+        .id_salt("resize-map")
+        .show(ui, |ui| {
+            if g.ui.resize_w == 0 {
+                g.ui.resize_w = map.width;
+                g.ui.resize_h = map.height;
+            }
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::DragValue::new(&mut g.ui.resize_w)
+                        .range(1..=dnd_world::map::MAX_MAP_SIDE)
+                        .prefix("w "),
+                );
+                ui.label("×");
+                ui.add(
+                    egui::DragValue::new(&mut g.ui.resize_h)
+                        .range(1..=dnd_world::map::MAX_MAP_SIDE)
+                        .prefix("h "),
+                );
+                ui.label(
+                    RichText::new(format!(
+                        "({} × {} → {} × {})",
+                        map.width, map.height, g.ui.resize_w, g.ui.resize_h
+                    ))
+                    .small(),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label(g.i18n.t("resize.anchor"));
+                egui::Grid::new("anchor-grid")
+                    .spacing([2.0, 2.0])
+                    .show(ui, |ui| {
+                        for (i, a) in Anchor::ALL.iter().enumerate() {
+                            let sel = g.ui.resize_anchor == *a;
+                            if ui
+                                .add(
+                                    egui::Button::new(if sel { "•" } else { " " })
+                                        .selected(sel)
+                                        .min_size(vec2(22.0, 20.0)),
+                                )
+                                .clicked()
+                            {
+                                g.ui.resize_anchor = *a;
+                            }
+                            if i % 3 == 2 {
+                                ui.end_row();
+                            }
+                        }
+                    });
+            });
+            let rep = map.resize_report(g.ui.resize_w, g.ui.resize_h, g.ui.resize_anchor);
+            let loses = rep.tiles_lost > 0 || !rep.objects_lost.is_empty();
+            if loses {
+                ui.label(
+                    RichText::new(format!(
+                        "{} {} · {} {}",
+                        rep.tiles_lost,
+                        g.i18n.t("resize.tiles_lost"),
+                        rep.objects_lost.len(),
+                        g.i18n.t("resize.objects_lost")
+                    ))
+                    .color(egui::Color32::from_rgb(170, 40, 40))
+                    .strong(),
+                );
+                ui.checkbox(&mut g.ui.resize_confirm, g.i18n.t("resize.confirm"));
+            }
+            ui.horizontal(|ui| {
+                let changed = (g.ui.resize_w, g.ui.resize_h) != (map.width, map.height);
+                if ui
+                    .add_enabled(
+                        changed && (!loses || g.ui.resize_confirm),
+                        egui::Button::new(g.i18n.t("resize.apply")),
+                    )
+                    .clicked()
+                {
+                    g.net.cmd(Command::Dm(DmCommand::ResizeMap {
+                        room,
+                        width: g.ui.resize_w,
+                        height: g.ui.resize_h,
+                        anchor: g.ui.resize_anchor,
+                        confirm_loss: g.ui.resize_confirm,
+                    }));
+                    g.ui.resize_confirm = false;
+                    g.ui.resize_w = 0;
+                    g.fit.request = true;
+                }
+                if ui.small_button(g.i18n.t("resize.reset")).clicked() {
+                    g.ui.resize_w = 0;
+                }
+            });
+            ui.label(RichText::new(g.i18n.t("resize.help")).small().italics());
+        });
 }
 
 /// Music and ambience pickers with a local preview button each.

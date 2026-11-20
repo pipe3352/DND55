@@ -94,6 +94,9 @@ pub struct Creature {
     /// Creature type ("Humanoid" for player characters).
     #[serde(default = "humanoid")]
     pub creature_type: String,
+    /// Cosmetic token facing (quarter turns clockwise, 0 = east). No rules effect.
+    #[serde(default)]
+    pub facing: u8,
     /// Saving throw bonuses by ability (index = Ability::index()).
     #[serde(default)]
     pub saves: [i32; 6],
@@ -239,6 +242,7 @@ impl Creature {
             resources: Resources::default(),
             concentration: None,
             creature_type: humanoid(),
+            facing: 0,
             saves: [0; 6],
             mods: [0; 6],
             attacks_per_action: 1,
@@ -332,6 +336,7 @@ impl Creature {
             resources: Resources::default(),
             concentration: None,
             creature_type: t.creature_type.clone(),
+            facing: 0,
             saves: t.saves,
             mods,
             attacks_per_action: t.attacks_per_action.max(1),

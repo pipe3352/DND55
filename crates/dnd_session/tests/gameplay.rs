@@ -791,6 +791,7 @@ fn potions_chests_and_giving_items() {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room,
             asset: "chest".into(),
             cell: (5, 6),
@@ -880,6 +881,7 @@ fn scripted_events_trap_lever_and_dialogue() {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room,
             asset: "lever".into(),
             cell: (2, 4),
@@ -890,6 +892,7 @@ fn scripted_events_trap_lever_and_dialogue() {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room,
             asset: "door".into(),
             cell: (9, 9),
@@ -1168,6 +1171,7 @@ fn editor_multi_object_operations_with_undo() {
         dm(
             &mut s,
             DmCommand::PlaceObject {
+                rotation: 0,
                 room,
                 asset: "barrel".into(),
                 cell: (x, 0),

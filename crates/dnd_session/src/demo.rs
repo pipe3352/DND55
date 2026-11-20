@@ -27,6 +27,7 @@ pub fn demo_campaign() -> Session {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room: entrance,
             asset: "torch".into(),
             cell: (1, 1),
@@ -36,6 +37,7 @@ pub fn demo_campaign() -> Session {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room: entrance,
             asset: "torch".into(),
             cell: (14, 1),
@@ -45,6 +47,7 @@ pub fn demo_campaign() -> Session {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room: entrance,
             asset: "table".into(),
             cell: (6, 5),
@@ -54,6 +57,7 @@ pub fn demo_campaign() -> Session {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room: entrance,
             asset: "barrel".into(),
             cell: (13, 9),
@@ -63,6 +67,7 @@ pub fn demo_campaign() -> Session {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room: entrance,
             asset: "door".into(),
             cell: (15, 6),
@@ -101,6 +106,7 @@ pub fn demo_campaign() -> Session {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room: crypt,
             asset: "altar".into(),
             cell: (16, 6),
@@ -110,6 +116,7 @@ pub fn demo_campaign() -> Session {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room: crypt,
             asset: "brazier".into(),
             cell: (15, 3),
@@ -119,6 +126,7 @@ pub fn demo_campaign() -> Session {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room: crypt,
             asset: "pillar".into(),
             cell: (6, 4),
@@ -128,6 +136,7 @@ pub fn demo_campaign() -> Session {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room: crypt,
             asset: "pillar".into(),
             cell: (6, 9),
@@ -137,6 +146,7 @@ pub fn demo_campaign() -> Session {
     dm(
         &mut s,
         DmCommand::PlaceObject {
+            rotation: 0,
             room: crypt,
             asset: "chest".into(),
             cell: (17, 11),

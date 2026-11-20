@@ -1065,6 +1065,25 @@ fn session_tab(ui: &mut Ui, g: &mut GameUi, view: &ClientView) {
             .cloned()
     {
         crate::ui_dm::hp_panel(ui, g, view, c.id);
+        ui.horizontal(|ui| {
+            ui.label(format!(
+                "{}: {}°",
+                g.i18n.t("facing.title"),
+                c.facing as u32 * 90
+            ));
+            for (txt, step) in [("-90°", 3u8), ("+90°", 1)] {
+                if ui
+                    .small_button(txt)
+                    .on_hover_text(g.i18n.t("facing.help"))
+                    .clicked()
+                {
+                    g.net.cmd(Command::Dm(DmCommand::SetFacing {
+                        entity: c.id,
+                        facing: (c.facing + step) % 4,
+                    }));
+                }
+            }
+        });
         ui.horizontal_wrapped(|ui| {
             use dnd_rules::conditions::Condition::*;
             for cond in [

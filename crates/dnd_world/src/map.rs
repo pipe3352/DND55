@@ -76,7 +76,8 @@ impl ObjectLayer {
         match asset_id {
             "carpet" | "rug" | "puddle" | "bloodstain" | "ritual_symbol" | "rune_circle"
             | "pressure_plate" | "spike_trap" | "pit_trap" | "stone_stairs" | "leaf_pile"
-            | "small_stones" | "wildflowers" | "bedroll" | "secret_door" => ObjectLayer::Floor,
+            | "small_stones" | "wildflowers" | "bedroll" | "secret_door" | "lily_pads"
+            | "sewer_grate" | "treasure_pile" => ObjectLayer::Floor,
             "cobweb" | "hanging_cage" | "chains" | "wall_banner" | "lantern" | "stone_arch" => {
                 ObjectLayer::Overhead
             }
@@ -204,6 +205,56 @@ pub enum MapError {
 
 pub const MAX_MAP_SIDE: i32 = 256;
 
+/// Which part of the map stays put when it is resized (the rest grows or is cut on the other sides).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Anchor {
+    TopLeft,
+    Top,
+    TopRight,
+    Left,
+    #[default]
+    Center,
+    Right,
+    BottomLeft,
+    Bottom,
+    BottomRight,
+}
+
+impl Anchor {
+    pub const ALL: [Anchor; 9] = [
+        Anchor::TopLeft,
+        Anchor::Top,
+        Anchor::TopRight,
+        Anchor::Left,
+        Anchor::Center,
+        Anchor::Right,
+        Anchor::BottomLeft,
+        Anchor::Bottom,
+        Anchor::BottomRight,
+    ];
+    /// Offset added to every old cell to get its new position.
+    pub fn offset(self, old: (i32, i32), new: (i32, i32)) -> (i32, i32) {
+        let i = Anchor::ALL.iter().position(|a| *a == self).unwrap_or(4) as i32;
+        let (col, row) = (i % 3, i / 3);
+        let pick = |c: i32, o: i32, n: i32| match c {
+            0 => 0,
+            1 => (n - o) / 2,
+            _ => n - o,
+        };
+        (pick(col, old.0, new.0), pick(row, old.1, new.1))
+    }
+}
+
+/// What a resize would cut away (shown to the DM before shrinking).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResizeReport {
+    pub offset: (i32, i32),
+    /// Non-empty tiles (any layer) outside the new bounds.
+    pub tiles_lost: usize,
+    /// Objects whose footprint would no longer fit.
+    pub objects_lost: Vec<ObjectId>,
+}
+
 impl GridMap {
     pub fn new(width: i32, height: i32, ambient: AmbientLight) -> Result<Self, MapError> {
         if !(1..=MAX_MAP_SIDE).contains(&width) || !(1..=MAX_MAP_SIDE).contains(&height) {
@@ -228,6 +279,71 @@ impl GridMap {
             background: [20, 18, 16],
             indoor: true,
         })
+    }
+
+    /// What resizing to `width`×`height` with `anchor` would remove.
+    pub fn resize_report(&self, width: i32, height: i32, anchor: Anchor) -> ResizeReport {
+        let off = anchor.offset((self.width, self.height), (width, height));
+        let inside = |(x, y): Cell| {
+            x + off.0 >= 0 && y + off.1 >= 0 && x + off.0 < width && y + off.1 < height
+        };
+        let mut tiles_lost = 0;
+        for l in &self.layers {
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    if l.tiles[(y * self.width + x) as usize] != 0 && !inside((x, y)) {
+                        tiles_lost += 1;
+                    }
+                }
+            }
+        }
+        let objects_lost = self
+            .objects
+            .iter()
+            .filter(|o| !o.footprint().all(inside))
+            .map(|o| o.id)
+            .collect();
+        ResizeReport {
+            offset: off,
+            tiles_lost,
+            objects_lost,
+        }
+    }
+
+    /// Resized copy: tiles and objects move by the anchor offset; anything outside is dropped.
+    /// Layer settings, palette, ambient light and background are kept.
+    pub fn resized(
+        &self,
+        width: i32,
+        height: i32,
+        anchor: Anchor,
+    ) -> Result<(GridMap, ResizeReport), MapError> {
+        if !(1..=MAX_MAP_SIDE).contains(&width) || !(1..=MAX_MAP_SIDE).contains(&height) {
+            return Err(MapError::BadSize);
+        }
+        let report = self.resize_report(width, height, anchor);
+        let off = report.offset;
+        let mut m = self.clone();
+        m.width = width;
+        m.height = height;
+        for (nl, ol) in m.layers.iter_mut().zip(&self.layers) {
+            nl.tiles = vec![0; (width * height) as usize];
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    let (nx, ny) = (x + off.0, y + off.1);
+                    if nx >= 0 && ny >= 0 && nx < width && ny < height {
+                        nl.tiles[(ny * width + nx) as usize] =
+                            ol.tiles[(y * self.width + x) as usize];
+                    }
+                }
+            }
+        }
+        m.objects.retain(|o| !report.objects_lost.contains(&o.id));
+        for o in &mut m.objects {
+            o.x += off.0;
+            o.y += off.1;
+        }
+        Ok((m, report))
     }
 
     pub fn in_bounds(&self, (x, y): Cell) -> bool {
@@ -420,6 +536,53 @@ impl GridMap {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn resize_keeps_content_by_anchor_and_reports_losses() {
+        let cat = crate::catalog::Catalog::builtin();
+        let mut m = GridMap::new(10, 8, AmbientLight::Bright).unwrap();
+        m.set_tile(LayerKind::Terrain, (0, 0), cat.get("grass"))
+            .unwrap();
+        m.set_tile(LayerKind::Terrain, (9, 7), cat.get("dirt"))
+            .unwrap();
+        m.objects.push(MapObject::from_asset(
+            ObjectId(1),
+            cat.get("barrel").unwrap(),
+            9,
+            7,
+        ));
+        // Grow by 4×2 anchored bottom-right: everything moves by (+4, +2), nothing lost.
+        let (g, r) = m.resized(14, 10, Anchor::BottomRight).unwrap();
+        assert_eq!(r.offset, (4, 2));
+        assert_eq!((r.tiles_lost, r.objects_lost.len()), (0, 0));
+        assert_eq!(
+            g.tile(LayerKind::Terrain, (13, 9))
+                .map(|p| p.asset_id.as_str()),
+            Some("dirt")
+        );
+        assert_eq!(
+            g.tile(LayerKind::Terrain, (4, 2))
+                .map(|p| p.asset_id.as_str()),
+            Some("grass")
+        );
+        assert_eq!((g.objects[0].x, g.objects[0].y), (13, 9));
+        // Shrink anchored top-left: the bottom-right tile and the barrel are reported and removed.
+        let rep = m.resize_report(5, 5, Anchor::TopLeft);
+        assert_eq!(
+            (rep.tiles_lost, rep.objects_lost.clone()),
+            (1, vec![ObjectId(1)])
+        );
+        let (s, _) = m.resized(5, 5, Anchor::TopLeft).unwrap();
+        assert!(s.objects.is_empty());
+        assert_eq!(
+            s.tile(LayerKind::Terrain, (0, 0))
+                .map(|p| p.asset_id.as_str()),
+            Some("grass")
+        );
+        // Centre anchor splits growth evenly.
+        assert_eq!(Anchor::Center.offset((10, 8), (14, 12)), (2, 2));
+        assert!(m.resized(0, 5, Anchor::Center).is_err());
+    }
+
     #[test]
     fn object_saves_without_layer_still_load_and_new_objects_round_trip() {
         let cat = crate::catalog::Catalog::builtin();

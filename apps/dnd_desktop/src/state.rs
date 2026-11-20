@@ -223,6 +223,19 @@ pub struct UiState {
     pub hp_rules: bool,
     pub hp_type: Option<dnd_rules::damage::DamageType>,
     pub hp_confirm_zero: Option<EntityId>,
+    /// Map editor: rotation (quarter turns) for the next placed object.
+    pub place_rotation: u8,
+    /// Universal eraser: 0 selected layer, 1 objects of a category, 2 all objects, 3 creatures,
+    /// 4 lights, 5 drawings, 6 everything; brush side in cells; protect important objects.
+    pub erase_kind: u8,
+    pub erase_cat: dnd_world::catalog::Category,
+    pub erase_brush: i32,
+    pub erase_protect: bool,
+    /// Resize dialog values (0 = current size).
+    pub resize_w: i32,
+    pub resize_h: i32,
+    pub resize_anchor: dnd_world::map::Anchor,
+    pub resize_confirm: bool,
     /// Attack index chosen; next click on a creature attacks it.
     pub targeting: Option<usize>,
     pub dice_expr: String,
@@ -347,6 +360,15 @@ impl Default for UiState {
             hp_rules: true,
             hp_type: None,
             hp_confirm_zero: None,
+            place_rotation: 0,
+            erase_kind: 0,
+            erase_cat: dnd_world::catalog::Category::Furniture,
+            erase_brush: 1,
+            erase_protect: true,
+            resize_w: 0,
+            resize_h: 0,
+            resize_anchor: dnd_world::map::Anchor::Center,
+            resize_confirm: false,
             targeting: None,
             dice_expr: "1d20".into(),
             dice_mode: RollMode::Normal,
@@ -451,4 +473,28 @@ pub fn cell_to_world(c: (i32, i32)) -> Vec2 {
 
 pub fn world_to_cell(p: Vec2) -> (i32, i32) {
     ((p.x / CELL).floor() as i32, (-p.y / CELL).floor() as i32)
+}
+
+impl UiState {
+    /// The eraser mode for the current settings.
+    pub fn erase_mode(&self) -> dnd_session::command::EraseMode {
+        use dnd_session::command::EraseMode as M;
+        match self.erase_kind {
+            1 => M::Objects(Some(self.erase_cat)),
+            2 => M::Objects(None),
+            3 => M::Creatures,
+            4 => M::Lights,
+            5 => M::Drawings,
+            6 => M::All,
+            _ => M::Layer(self.layer),
+        }
+    }
+    /// Cells covered by the eraser brush centred on `c`.
+    pub fn brush_cells(&self, c: (i32, i32)) -> Vec<(i32, i32)> {
+        let b = self.erase_brush.clamp(1, 9);
+        let lo = -(b - 1) / 2;
+        (lo..lo + b)
+            .flat_map(|dx| (lo..lo + b).map(move |dy| (c.0 + dx, c.1 + dy)))
+            .collect()
+    }
 }

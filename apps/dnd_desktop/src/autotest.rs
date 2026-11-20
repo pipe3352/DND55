@@ -403,6 +403,7 @@ fn showcase_commands(room: dnd_world::RoomId) -> Vec<Command> {
     };
     let obj = |asset: &str, cell: (i32, i32)| {
         Command::Dm(DmCommand::PlaceObject {
+            rotation: 0,
             room,
             asset: asset.into(),
             cell,

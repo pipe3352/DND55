@@ -152,7 +152,6 @@ pub fn rotate(g: &mut GameUi, room: RoomId) {
     for id in g.ui.sel_objects.clone() {
         if let Some(mut o) = map.object(id).cloned() {
             o.rotation = (o.rotation + 1) % 4;
-            std::mem::swap(&mut o.w, &mut o.h);
             g.net.cmd(Command::Dm(DmCommand::UpdateObject {
                 room,
                 object: Box::new(o),

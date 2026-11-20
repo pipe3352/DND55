@@ -28,6 +28,7 @@ mod menu_scene;
 mod net_sync;
 mod pixel;
 mod pixel_objects;
+mod pixel_tiles;
 mod platform;
 mod pointer;
 mod settings;

@@ -1404,7 +1404,7 @@ mod tests {
             let art = object(&a.id, a.size.0, a.size.1, a.color);
             let generic = object("__no_such_object__", a.size.0, a.size.1, a.color);
             assert!(
-                art.data != generic.data,
+                crate::pixel_objects::has(&a.id) || art.data != generic.data,
                 "{} falls back to the generic placeholder",
                 a.id
             );

@@ -222,22 +222,39 @@ pub fn map_click(
             select_input(&buttons, &keys, cell, &mut ui, &mut net, &gv, room_id);
         }
         Tool::Draw => {}
-        Tool::Pencil | Tool::Eraser => {
+        Tool::Eraser => {
+            // Click-and-drag collects brush cells (previewed); one erase (= one undo step) on release.
+            if buttons.just_pressed(MouseButton::Left) {
+                hover.stroke.clear();
+            }
+            if buttons.pressed(MouseButton::Left) {
+                for c in ui.brush_cells(cell) {
+                    if !hover.stroke.contains(&c) {
+                        hover.stroke.push(c);
+                    }
+                }
+            }
+            if buttons.just_released(MouseButton::Left) && !hover.stroke.is_empty() {
+                let cells = std::mem::take(&mut hover.stroke);
+                net.cmd(Command::Dm(DmCommand::EraseArea {
+                    room: room_id,
+                    cells,
+                    mode: ui.erase_mode(),
+                    protect: ui.erase_protect,
+                }));
+            }
+        }
+        Tool::Pencil => {
             if buttons.just_pressed(MouseButton::Left) {
                 hover.stroke.clear();
             }
             if buttons.pressed(MouseButton::Left) && !hover.stroke.contains(&cell) {
                 hover.stroke.push(cell);
-                let a = if ui.tool == Tool::Pencil {
-                    Some(asset)
-                } else {
-                    None
-                };
                 net.cmd(Command::Dm(DmCommand::PaintTiles {
                     room: room_id,
                     layer,
                     cells: vec![cell],
-                    asset: a,
+                    asset: Some(asset),
                 }));
             }
         }
@@ -269,6 +286,7 @@ pub fn map_click(
         Tool::Object => {
             let hidden = ui.object_hidden;
             net.cmd(Command::Dm(DmCommand::PlaceObject {
+                rotation: ui.place_rotation,
                 room: room_id,
                 asset,
                 cell,
@@ -623,12 +641,32 @@ pub fn editor_keys(
         let objects = std::mem::take(&mut ui.sel_objects);
         net.cmd(Command::Dm(DmCommand::RemoveObjects { room, objects }));
     } else if keys.just_pressed(KeyCode::KeyR) && !ctrl {
-        for mut o in selected {
-            o.rotation = (o.rotation + 1) % 4;
-            std::mem::swap(&mut o.w, &mut o.h);
-            net.cmd(Command::Dm(DmCommand::UpdateObject {
-                room,
-                object: Box::new(o),
+        // R: 90° clockwise, Shift+R: counter-clockwise. Objects keep their unrotated w×h; the
+        // footprint follows `rotation`.
+        let step = if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
+            3
+        } else {
+            1
+        };
+        if ui.tool == Tool::Object {
+            ui.place_rotation = (ui.place_rotation + step) % 4;
+        } else if !selected.is_empty() {
+            for mut o in selected {
+                o.rotation = (o.rotation + step) % 4;
+                net.cmd(Command::Dm(DmCommand::UpdateObject {
+                    room,
+                    object: Box::new(o),
+                }));
+            }
+        } else if let Some(id) = ui.selected
+            && let Some(c) = gv
+                .view
+                .as_ref()
+                .and_then(|v| v.creatures.iter().find(|c| c.id == id))
+        {
+            net.cmd(Command::Dm(DmCommand::SetFacing {
+                entity: id,
+                facing: (c.facing + step) % 4,
             }));
         }
     } else if keys.just_pressed(KeyCode::Escape) {
@@ -869,7 +907,21 @@ pub fn draw_overlays(
             Tool::Eraser | Tool::RemoveObject => Color::srgb(1.0, 0.4, 0.3),
             _ => Color::srgb(1.0, 0.85, 0.3),
         };
-        gizmos.rect_2d(cell_to_world(c), Vec2::splat(CELL - 2.0), color);
+        if ui.tool == Tool::Eraser {
+            // Brush preview, and the cells collected so far in this stroke.
+            for b in ui.brush_cells(c) {
+                gizmos.rect_2d(cell_to_world(b), Vec2::splat(CELL - 4.0), color);
+            }
+            for s in &hover.stroke {
+                gizmos.rect_2d(
+                    cell_to_world(*s),
+                    Vec2::splat(CELL - 10.0),
+                    Color::srgba(1.0, 0.3, 0.2, 0.9),
+                );
+            }
+        } else {
+            gizmos.rect_2d(cell_to_world(c), Vec2::splat(CELL - 2.0), color);
+        }
         if let (Tool::Rect, Some(a)) = (ui.tool, ui.rect_start) {
             let (x0, x1) = (a.0.min(c.0), a.0.max(c.0));
             let (y0, y1) = (a.1.min(c.1), a.1.max(c.1));
