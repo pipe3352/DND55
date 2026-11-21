@@ -28,3 +28,9 @@
 ## Checks
 `cargo test -p dnd_desktop sprites pixel_objects`; sheets: `DND55_SPRITE_SHEET=… cargo test dump_sprite_sheet -- --ignored`,
 `DND55_OBJ_SHEET=… cargo test dump_object_sheet -- --ignored`.
+
+## Main menu backdrop v2
+Static, coherent composition (`menu_scene.rs`): moon behind a castle on a rocky crag in a mountain lake,
+moon path and castle reflection on the water, pine shores with lit cottages, dark foreground frame.
+Only sky/atmosphere animate (stars, clouds, mist, water shimmer, fireflies) — the terrain no longer drifts.
+SRD attribution moved to the bottom-right corner.

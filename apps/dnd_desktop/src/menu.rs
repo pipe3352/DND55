@@ -179,12 +179,13 @@ pub fn menu_ui(
             });
     }
     egui::Area::new("attribution".into())
-        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -50.0))
+        .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-24.0, -50.0))
         .show(&ctx, |ui| {
+            ui.set_max_width(430.0);
             ui.label(
                 RichText::new(dnd_rules::SRD_ATTRIBUTION)
-                    .size(11.0)
-                    .color(theme::PARCHMENT_DARK.gamma_multiply(0.8)),
+                    .size(10.0)
+                    .color(theme::PARCHMENT_DARK.gamma_multiply(0.65)),
             );
         });
     Ok(())
